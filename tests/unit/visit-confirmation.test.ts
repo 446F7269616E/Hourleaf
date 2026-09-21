@@ -1,7 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { VisitConfirmationService } from "../../src/background/visit-confirmation";
+import {
+  VisitConfirmationService,
+  resolveVisitConfirmationTabId
+} from "../../src/background/visit-confirmation";
 
 describe("visit confirmation grants", () => {
+  it("binds an extension-page request without sender.tab to its actual confirmation tab", async () => {
+    const root = "chrome-extension://hourleaf/";
+    const target = "https://example.com/video";
+    const pageUrl = `${root}end.html#${new URLSearchParams({ source: "confirmation", siteId: "site:test", returnUrl: target })}`;
+    const sender = { url: pageUrl };
+    const getTab = (id: number) =>
+      Promise.resolve({
+        id,
+        url: id === 8 ? pageUrl : "https://other.example/"
+      });
+    expect(await resolveVisitConfirmationTabId(sender, 8, root, target, "site:test", getTab)).toBe(
+      8
+    );
+    await expect(
+      resolveVisitConfirmationTabId(sender, 9, root, target, "site:test", getTab)
+    ).rejects.toThrow();
+    await expect(
+      resolveVisitConfirmationTabId(sender, undefined, root, target, "site:test", getTab)
+    ).rejects.toThrow();
+    await expect(
+      resolveVisitConfirmationTabId(sender, 8, root, target, "site:other", getTab)
+    ).rejects.toThrow();
+    await expect(
+      resolveVisitConfirmationTabId(
+        { url: root + "popup.html" },
+        8,
+        root,
+        target,
+        "site:test",
+        getTab
+      )
+    ).rejects.toThrow();
+    await expect(
+      resolveVisitConfirmationTabId(
+        { ...sender, tab: { id: 9 } },
+        8,
+        root,
+        target,
+        "site:test",
+        getTab
+      )
+    ).rejects.toThrow();
+  });
+
   it("enforces the independent wait and grants one tab for one policy version", async () => {
     const service = new VisitConfirmationService(null);
     expect(await service.requireConfirmation(12, "site:test", "https://example.com", 4, 3, 0)).toBe(

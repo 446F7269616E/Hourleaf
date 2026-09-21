@@ -478,6 +478,7 @@ export function normalizePlanQueueStore(value: unknown): PlanQueueStore {
         ? raw.scheduledDurationMinutes
         : LEGACY_PLAN_DURATION_MINUTES,
       completionMode: isPlanCompletionMode(raw.completionMode) ? raw.completionMode : "strict",
+      pauseOnVideoEnd: raw.pauseOnVideoEnd === true,
       addedAt,
       completedAt
     });
@@ -522,6 +523,7 @@ export function normalizePlanAccessStore(value: unknown): PlanAccessStore {
       ? grant.scheduledDurationMinutes
       : legacyGrantDurationMinutes(grant.grantedAt, grant.expiresAt),
     completionMode,
+    pauseOnVideoEnd: grant.pauseOnVideoEnd === true,
     ...(flowContinuationKind ? { flowContinuationKind } : {})
   };
   return store;

@@ -99,6 +99,26 @@ export interface TimePeriodSettings {
   groupCount: number;
 }
 
+/** A reusable, named timed-period template stored with the user's settings. */
+export interface CustomTimePeriodPreset {
+  id: string;
+  name: string;
+  periods: CustomTimePeriodPresetPeriod[];
+}
+
+/**
+ * A preset deliberately omits runtime IDs and availability switches. Applying it
+ * always creates new enabled timed periods, so a template cannot share quota
+ * runtime state with a previously applied copy.
+ */
+export interface CustomTimePeriodPresetPeriod {
+  name: string;
+  startTime: TimeOfDay;
+  endTime: TimeOfDay;
+  limitMinutes: number;
+  groupCount: number;
+}
+
 export const TIME_ACCESS_EFFECTS = ["allow", "block"] as const;
 export type TimeAccessEffect = (typeof TIME_ACCESS_EFFECTS)[number];
 
@@ -125,6 +145,8 @@ export interface ManagedSite {
   id: SiteId;
   /** URL origin only, for example https://example.com. Paths are discarded. */
   origin: string;
+  /** Reviewed host match patterns; absent means the legacy exact origin only. */
+  matchPatterns?: string[];
   hostname: string;
   label: string;
   /** @deprecated Compatibility mirror. Website availability is controlled by time periods. */
@@ -137,10 +159,14 @@ export interface ManagedSite {
   updatedAt: number;
 }
 
+export const MAX_VISIT_CONFIRMATION_PROMPT_LENGTH = 160;
+
 export interface VisitConfirmationSettings {
   enabled: boolean;
   /** Independent delay before the user may confirm opening this website. */
   waitSeconds: number;
+  /** Optional user-authored reminder shown on the standalone confirmation page. */
+  prompt?: string;
 }
 
 export interface SiteTargetSettings {
@@ -171,6 +197,10 @@ export interface TemporaryAccessSettings {
 
 export interface PlanModeSettings {
   enabled: boolean;
+  /** Keeps an explicitly-started plan grant separate from configured website time rules. */
+  independentAccessTiming: boolean;
+  /** Uses separate blocking preferences while an active plan exists. */
+  enableAllBlocking: boolean;
   /** Minutes granted after explicitly starting the current planned page. */
   watchDurationMinutes: number;
   /** Default copied into newly-created plan items. */
@@ -236,14 +266,18 @@ export interface LegacySettingsCapsules {
 }
 
 export interface FocusSettings {
-  schemaVersion: 4;
+  schemaVersion: 5;
   enabled: boolean;
   /** Shows the active website allowance as a per-tab toolbar badge. */
   showRemainingMinutesOnIcon: boolean;
   locale: UiLocalePreference;
+  /** The accent palette used by full-page extension screens. */
+  theme: UiTheme;
   endPage: EndPageSettings;
   sites: Record<SiteId, ManagedSite>;
   targets: Record<TargetId, SiteTargetSettings>;
+  /** User-authored, reusable timed-period templates. */
+  customTimePeriodPresets: CustomTimePeriodPreset[];
   legacyCapsules: LegacySettingsCapsules;
   /** @deprecated Compatibility mirror for the optional Bilibili module/UI. */
   sectionRules: Record<SectionId, SectionRule>;
@@ -254,6 +288,9 @@ export interface FocusSettings {
   /** @deprecated Owned by the optional Bilibili module. */
   contentFilters: ContentFilterSettings;
 }
+
+export const UI_THEMES = ["verdant", "ocean", "violet", "amber", "rose"] as const;
+export type UiTheme = (typeof UI_THEMES)[number];
 
 export type DeepPartial<T> = T extends readonly (infer U)[]
   ? DeepPartial<U>[]
@@ -275,7 +312,7 @@ export interface UsageStore {
   days: Record<string, DailyUsage>;
 }
 
-export type UsagePeriod = "day" | "week" | "month";
+export type UsagePeriod = "day" | "week" | "month" | "year";
 
 export interface UsageSummary {
   period: UsagePeriod;
@@ -322,6 +359,10 @@ export interface PeriodRuntimeStatus {
   targetId: TargetId;
   periodId: string;
   method: GroupUnlockMethod;
+  /** Authoritative tracked usage for this period on the local day. */
+  usedSeconds: number;
+  /** Number of allowance groups touched by the tracked usage. */
+  usedGroups: number;
   unlockedGroups: number;
   groupCount: number;
   canUnlock: boolean;
@@ -349,6 +390,8 @@ export interface PlanItem {
   source: PlanItemSource;
   scheduledDurationMinutes: number;
   completionMode: PlanCompletionMode;
+  /** Revokes the active plan grant when the page's primary video ends. */
+  pauseOnVideoEnd: boolean;
   addedAt: number;
   completedAt: number | null;
 }
@@ -362,6 +405,7 @@ interface PlanItemInputMetadata {
 export type PlanItemInput = PlanItemInputMetadata & {
   scheduledDurationMinutes: number;
   completionMode: PlanCompletionMode;
+  pauseOnVideoEnd?: boolean;
 } & ({ url: string; bvid?: string } | { bvid: string; url?: string });
 
 export interface PlanItemPatch extends PlanItemInputMetadata {
@@ -369,6 +413,7 @@ export interface PlanItemPatch extends PlanItemInputMetadata {
   bvid?: string;
   scheduledDurationMinutes?: number;
   completionMode?: PlanCompletionMode;
+  pauseOnVideoEnd?: boolean;
 }
 
 export interface PlanQueueStore {
@@ -387,6 +432,7 @@ export interface PlanWatchGrant {
   expiresAt: number;
   scheduledDurationMinutes: number;
   completionMode: PlanCompletionMode;
+  pauseOnVideoEnd: boolean;
   flowContinuationKind?: "minutes" | "video-end";
 }
 
@@ -415,6 +461,7 @@ export interface PlanNavigationDecision {
   completionMode?: PlanCompletionMode;
   flowDecisionRequired?: boolean;
   flowContinuationKind?: "minutes" | "video-end";
+  pauseOnVideoEnd?: boolean;
 }
 
 export interface PageDecision {
@@ -434,6 +481,7 @@ export interface PageDecision {
     | "flow-extension"
     | "visit-confirmation"
     | "temporary-access"
+    | "plan-access"
     | "domain-allow"
     | "domain-block"
     | "blocked";

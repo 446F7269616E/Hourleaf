@@ -20,6 +20,8 @@ interface ExternalModuleManifest {
   matches?: unknown;
   domainPolicy?: unknown;
   hideSelectors?: unknown;
+  filterGroups?: unknown;
+  shadowRoots?: unknown;
   css?: unknown;
   cssFiles?: unknown;
   dnrRules?: unknown;

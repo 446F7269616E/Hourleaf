@@ -6,15 +6,16 @@ import type { PageDecision, PlanNavigationDecision } from "../shared/types";
 import { STORAGE_KEYS } from "../shared/storage-keys";
 import { resolveSiteModule, subscribeSiteModuleRegistry } from "../modules/registry";
 import { ContentFilterController } from "./content-filters";
+import { LocalPageRuleController } from "./local-page-rules";
 
 const ROOT_ID = "hourleaf-block-root";
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const ROUTE_POLL_INTERVAL_MS = 1_000;
 const SESSION_ID = createSessionId();
 const contentFilters = new ContentFilterController();
-const LOCAL_STYLE_ID = "hourleaf-local-module-style";
-
-subscribeSiteModuleRegistry(() => void evaluatePage());
+const localPageRules = new LocalPageRuleController(document);
+const CONTENT_RUNTIME_KEY = "__hourleafContentRuntimeV1";
+type ContentRuntimeGlobal = typeof globalThis & { [CONTENT_RUNTIME_KEY]?: true };
 
 let lastSeenUrl = window.location.href;
 let evaluationGeneration = 0;
@@ -26,34 +27,55 @@ let planCheckGeneration = 0;
 let initializationRetry: ReturnType<typeof setTimeout> | null = null;
 let flowEndedCleanup: (() => void) | null = null;
 
-configureLocale("system");
+startContentRuntimeOnce();
 
-void initializeContent();
+function startContentRuntimeOnce(): void {
+  const runtimeGlobal = globalThis as ContentRuntimeGlobal;
+  if (runtimeGlobal[CONTENT_RUNTIME_KEY]) return;
+  runtimeGlobal[CONTENT_RUNTIME_KEY] = true;
 
-window.addEventListener("popstate", routeMayHaveChanged);
-window.addEventListener("hashchange", routeMayHaveChanged);
-document.addEventListener("visibilitychange", () => {
-  if (contentStarted) void sendSessionUpdate("heartbeat");
-});
-storageAddChangeListener((changes, areaName) => {
-  if (areaName !== "local") return;
-  const settingsChanged = changes[STORAGE_KEYS.settings];
-  const changed = settingsChanged ?? changes[STORAGE_KEYS.localModules];
-  if (!changed || changed.newValue === undefined) return;
-  void (settingsChanged ? syncContentLocale().then(evaluatePage) : evaluatePage());
-});
-window.addEventListener("pagehide", () => {
-  if (contentStarted) void sendSessionUpdate("stop");
-});
+  subscribeSiteModuleRegistry(() => void evaluatePage());
+  configureLocale("system");
+  void initializeContent();
 
-setInterval(() => {
-  void refreshContentState();
-}, HEARTBEAT_INTERVAL_MS);
+  window.addEventListener("popstate", routeMayHaveChanged);
+  window.addEventListener("hashchange", routeMayHaveChanged);
+  document.addEventListener("visibilitychange", () => {
+    if (contentStarted) void sendSessionUpdate("heartbeat");
+  });
+  // Returning from the standalone end page commonly restores this document
+  // from the back/forward cache. Re-establish a fresh session instead of
+  // waiting for the regular heartbeat, so an unlocked next group starts
+  // tracking and enforcing immediately.
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted && document.visibilityState === "visible") {
+      contentStarted = false;
+      void initializeContent();
+    }
+  });
+  storageAddChangeListener((changes, areaName) => {
+    if (areaName !== "local") return;
+    const settingsChanged = changes[STORAGE_KEYS.settings];
+    const changed =
+      settingsChanged ?? changes[STORAGE_KEYS.localModules] ?? changes[STORAGE_KEYS.planAccess];
+    if (!changed || changed.newValue === undefined) return;
+    void (settingsChanged ? syncContentLocale().then(evaluatePage) : evaluatePage());
+  });
+  window.addEventListener("pagehide", () => {
+    if (!contentStarted) return;
+    contentStarted = false;
+    void sendSessionUpdate("stop");
+  });
 
-// Isolated content-script worlds cannot reliably monkey-patch the page's History
-// object in every browser. A cheap URL-only poll covers pushState/replaceState and
-// Site-specific SPA navigation is covered without injecting code into the page world.
-setInterval(routeMayHaveChanged, ROUTE_POLL_INTERVAL_MS);
+  setInterval(() => {
+    void refreshContentState();
+  }, HEARTBEAT_INTERVAL_MS);
+
+  // Isolated content-script worlds cannot reliably monkey-patch the page's History
+  // object in every browser. A cheap URL-only poll covers pushState/replaceState and
+  // site-specific SPA navigation is covered without injecting code into the page world.
+  setInterval(routeMayHaveChanged, ROUTE_POLL_INTERVAL_MS);
+}
 
 function routeMayHaveChanged(): void {
   if (window.location.href === lastSeenUrl) return;
@@ -128,6 +150,16 @@ async function enforcePlanNavigation(): Promise<"allowed" | "redirected" | "unav
             url: window.location.href
           });
           goToEnd({ source: "plan", itemId: decision.itemId, reason: "expired" });
+        });
+      } else if (decision.pauseOnVideoEnd && decision.itemId) {
+        monitorVideoEnd(`plan-pause:${decision.itemId}`, undefined, async () => {
+          await sendRequest({
+            type: "STOP_PLAN_ACCESS",
+            itemId: decision.itemId as string,
+            reason: "video-ended",
+            url: window.location.href
+          });
+          goToEnd({ source: "plan", itemId: decision.itemId, reason: "video-ended" });
         });
       }
       return "allowed";
@@ -212,7 +244,7 @@ async function evaluatePage(): Promise<void> {
     if (generation !== evaluationGeneration || topLevelUrl !== window.location.href) return;
     configureLocale(settings.locale);
     contentFilters.apply(module?.contentSettings(settings) ?? settings.contentFilters, url);
-    applyLocalPageRules(localRules.css, localRules.hideSelectors);
+    localPageRules.apply(localRules);
     if (!decision.blocked) {
       removeBlockPage();
       if (decision.needsReminder && decision.activePeriodId) {
@@ -379,18 +411,20 @@ function renderFlowChoice(
   const title = element("h1", "", t("end.flowTitle"));
   const message = element("p", "message", t("end.flowDescription"));
   const minutes = document.createElement("select");
-  minutes.setAttribute("aria-label", t("common.minutes"));
+  minutes.setAttribute("aria-label", t("end.extensionDuration"));
   for (let value = 1; value <= 15; value += 1) {
     const option = document.createElement("option");
     option.value = String(value);
-    option.textContent = t("end.extendMinutes", { minutes: value });
+    option.textContent = t("end.minuteOption", { minutes: value });
     if (value === 5) option.selected = true;
     minutes.append(option);
   }
-  const continueButton = element("button", "primary", t("end.unlock"));
+  const duration = element("label", "flow-duration");
+  duration.append(element("span", "", t("end.extendPrefix")), minutes);
+  const continueButton = element("button", "primary", t("end.continue"));
   continueButton.type = "button";
   const actions = element("div", "actions");
-  actions.append(minutes, continueButton);
+  actions.append(duration, continueButton);
   const status = element("div", "status");
   status.setAttribute("role", "status");
   if (selectedVideo) {
@@ -457,7 +491,11 @@ function goToEnd(context: EndContext): void {
   if (context.reason) params.set("reason", context.reason);
   if (context.groupIndex !== undefined) params.set("groupIndex", String(context.groupIndex));
   if (context.groupCount !== undefined) params.set("groupCount", String(context.groupCount));
-  if (context.returnUrl) params.set("returnUrl", context.returnUrl);
+  // Returning through a verified source URL is more reliable than restoring a
+  // BFCache entry with history.back(). In particular, it avoids replaying a
+  // stale content-script lifecycle after a group unlock.
+  const returnUrl = context.returnUrl ?? (context.source === "focus" ? window.location.href : undefined);
+  if (returnUrl) params.set("returnUrl", returnUrl);
   if (context.waitSeconds !== undefined) params.set("waitSeconds", String(context.waitSeconds));
   window.location.assign(`${runtimeGetURL("end.html")}#${params.toString()}`);
 }
@@ -564,19 +602,6 @@ async function showReminder(title: string, message: string, key: string): Promis
   });
   document.documentElement.append(reminder);
   setTimeout(() => reminder.remove(), 8_000);
-}
-
-function applyLocalPageRules(css: string, hideSelectors: string[]): void {
-  document.getElementById(LOCAL_STYLE_ID)?.remove();
-  const hideCss = hideSelectors
-    .map((selector) => `${selector} { display: none !important; }`)
-    .join("\n");
-  const combined = [hideCss, css].filter((part) => part.trim()).join("\n\n");
-  if (!combined) return;
-  const style = document.createElement("style");
-  style.id = LOCAL_STYLE_ID;
-  style.textContent = combined;
-  (document.head ?? document.documentElement).append(style);
 }
 
 /** @deprecated Kept as a compatibility renderer for module integrations. */
@@ -785,6 +810,8 @@ const BLOCK_PAGE_CSS = `
   h1 { margin: 0; color: #172033; font-size: clamp(28px, 6vw, 38px); line-height: 1.18; letter-spacing: -.03em; }
   .message { margin: 18px auto 0; max-width: 390px; color: #56627a; font-size: 16px; line-height: 1.75; }
   .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 30px; }
+  .flow-duration { display: inline-flex; min-height: 46px; align-items: center; gap: 8px; color: #56627a; font: 650 14px/1 ui-sans-serif; }
+  select { min-height: 46px; padding: 0 34px 0 14px; border: 1px solid #d8deea; border-radius: 13px; color: #29354d; background: #fff; font: 650 14px/1 ui-sans-serif; }
   button { min-height: 46px; padding: 0 20px; border: 1px solid #d8deea; border-radius: 13px; color: #29354d; background: #fff; font: 650 14px/1 ui-sans-serif; cursor: pointer; }
   button.primary { border-color: #00aeec; color: #fff; background: #00aeec; }
   @media (hover: hover) and (pointer: fine) { button:hover { filter: brightness(.97); transform: translateY(-1px); } }
@@ -796,7 +823,8 @@ const BLOCK_PAGE_CSS = `
     .backdrop { color: #f3f6fc; background: radial-gradient(circle at 20% 10%, #163951, transparent 36%), #10141d; }
     .card { border-color: rgba(255,255,255,.1); background: rgba(27, 34, 48, .94); box-shadow: 0 28px 80px rgba(0,0,0,.4); }
     h1 { color: #f3f6fc; } .message { color: #b8c1d4; } .eyebrow, .hint { color: #929db3; }
-    button { border-color: #465168; color: #e8edf7; background: #273044; }
+    button, select { border-color: #465168; color: #e8edf7; background: #273044; }
+    .flow-duration { color: #b8c1d4; }
     button.primary { border-color: #00aeec; background: #00aeec; color: #fff; }
   }
   @media (prefers-reduced-motion: no-preference) { button { transition: transform .15s ease, filter .15s ease; } }

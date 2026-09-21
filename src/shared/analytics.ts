@@ -122,6 +122,9 @@ export function getPeriodRange(period: UsagePeriod, anchor: Date): { start: Date
   } else if (period === "month") {
     start = new Date(safeAnchor.getFullYear(), safeAnchor.getMonth(), 1);
     end = new Date(safeAnchor.getFullYear(), safeAnchor.getMonth() + 1, 0);
+  } else if (period === "year") {
+    start = new Date(safeAnchor.getFullYear(), 0, 1);
+    end = new Date(safeAnchor.getFullYear(), 11, 31);
   } else {
     start = new Date(safeAnchor.getFullYear(), safeAnchor.getMonth(), safeAnchor.getDate());
     end = new Date(start);

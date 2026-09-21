@@ -1,10 +1,11 @@
 import type { BrowserContext } from "@playwright/test";
 
 export interface MockSettings {
-  schemaVersion: 4;
+  schemaVersion: 5;
   enabled: boolean;
   showRemainingMinutesOnIcon: boolean;
   locale: "system" | "zh-CN" | "en";
+  theme: "verdant" | "ocean" | "violet" | "amber" | "rose";
   endPage: {
     view: "dashboard" | "message" | "minimal";
     motivationalMessage: string;
@@ -22,8 +23,9 @@ export interface MockSettings {
       hostname: string;
       label: string;
       enabled: boolean;
+      matchPatterns?: string[];
       restrictionMode: "lenient" | "flow" | "strict";
-      visitConfirmation?: { enabled: boolean; waitSeconds: number };
+      visitConfirmation?: { enabled: boolean; waitSeconds: number; prompt?: string };
       targetIds: string[];
       createdAt: number;
       updatedAt: number;
@@ -54,6 +56,17 @@ export interface MockSettings {
       moduleSectionId?: string;
     }
   >;
+  customTimePeriodPresets: Array<{
+    id: string;
+    name: string;
+    periods: Array<{
+      name: string;
+      startTime: string;
+      endTime: string;
+      limitMinutes: number;
+      groupCount: number;
+    }>;
+  }>;
   sectionRules: Record<
     string,
     { enabled: boolean; dailyLimitMinutes: number | null; schedules: unknown[] }
@@ -61,6 +74,8 @@ export interface MockSettings {
   temporaryAccess: { enabled: boolean; durationMinutes: number; maxUsesPerDay: number };
   planMode: {
     enabled: boolean;
+    independentAccessTiming: boolean;
+    enableAllBlocking: boolean;
     watchDurationMinutes: number;
     defaultCompletionMode: "lenient" | "flow" | "strict";
     autoCompleteOnStart: boolean;
@@ -74,10 +89,11 @@ export interface MockSettings {
 }
 
 const initialSettings: MockSettings = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   enabled: true,
   showRemainingMinutesOnIcon: true,
   locale: "zh-CN",
+  theme: "verdant",
   endPage: {
     view: "dashboard",
     motivationalMessage: "",
@@ -87,10 +103,16 @@ const initialSettings: MockSettings = {
     "site:bilibili": {
       id: "site:bilibili",
       origin: "https://www.bilibili.com",
+      matchPatterns: ["https://*.bilibili.com/*"],
       hostname: "www.bilibili.com",
       label: "哔哩哔哩",
       enabled: true,
       restrictionMode: "strict",
+      visitConfirmation: {
+        enabled: true,
+        waitSeconds: 0,
+        prompt: "先确认这次访问与当前任务相关。"
+      },
       targetIds: [
         "module:bilibili:home",
         "module:bilibili:dynamic",
@@ -133,6 +155,7 @@ const initialSettings: MockSettings = {
       }
     ])
   ),
+  customTimePeriodPresets: [],
   sectionRules: {
     home: { enabled: true, dailyLimitMinutes: null, schedules: [] },
     dynamic: { enabled: true, dailyLimitMinutes: null, schedules: [] },
@@ -145,6 +168,8 @@ const initialSettings: MockSettings = {
   temporaryAccess: { enabled: true, durationMinutes: 5, maxUsesPerDay: 3 },
   planMode: {
     enabled: false,
+    independentAccessTiming: true,
+    enableAllBlocking: true,
     watchDurationMinutes: 45,
     defaultCompletionMode: "flow",
     autoCompleteOnStart: false
@@ -189,6 +214,7 @@ export async function installWebExtensionMock(context: BrowserContext): Promise<
       source: "manual" | "watch-later" | "favorite";
       scheduledDurationMinutes: number;
       completionMode: "lenient" | "flow" | "strict";
+      pauseOnVideoEnd: boolean;
       addedAt: number;
       completedAt: number | null;
     }> = [];
@@ -244,16 +270,19 @@ export async function installWebExtensionMock(context: BrowserContext): Promise<
           watchDurationMinutes?: number;
           defaultCompletionMode?: "lenient" | "flow" | "strict";
           autoCompleteOnStart?: boolean;
+          independentAccessTiming?: boolean;
           url?: string;
           siteId?: string;
           targetId?: string;
           moduleId?: string;
+          groupId?: string;
           action?: string;
           id?: string;
           title?: string;
           source?: "manual" | "watch-later" | "favorite";
           scheduledDurationMinutes?: number;
           completionMode?: "lenient" | "flow" | "strict";
+          pauseOnVideoEnd?: boolean;
           completed?: boolean;
         };
       }) {
@@ -291,6 +320,7 @@ export async function installWebExtensionMock(context: BrowserContext): Promise<
                   definition: clone(module),
                   source: "local-file",
                   enabled: false,
+                  disabledFilterGroupIds: [],
                   importedAt: 1,
                   updatedAt: 1
                 }
@@ -310,6 +340,30 @@ export async function installWebExtensionMock(context: BrowserContext): Promise<
             const moduleId = String(payload.moduleId ?? "");
             const installation = localModules.installations[moduleId];
             if (installation) installation.enabled = payload.enabled === true;
+            result = ok({
+              store: localModules,
+              runtime: {
+                userScripts: "available",
+                declarativeNetRequest: "available",
+                warnings: []
+              }
+            });
+            break;
+          }
+          case "SET_LOCAL_MODULE_FILTER_ENABLED": {
+            const moduleId = String(payload.moduleId ?? "");
+            const groupId = String(payload.groupId ?? "");
+            const installation = localModules.installations[moduleId];
+            if (installation) {
+              const disabled = new Set(
+                Array.isArray(installation.disabledFilterGroupIds)
+                  ? (installation.disabledFilterGroupIds as string[])
+                  : []
+              );
+              if (payload.enabled === true) disabled.delete(groupId);
+              else disabled.add(groupId);
+              installation.disabledFilterGroupIds = [...disabled];
+            }
             result = ok({
               store: localModules,
               runtime: {
@@ -358,6 +412,9 @@ export async function installWebExtensionMock(context: BrowserContext): Promise<
             result = ok(settings.sites[siteId]);
             break;
           }
+          case "CLOSE_RELATED_TABS":
+            result = ok({ closedCount: 1 });
+            break;
           case "UPDATE_SITE_TARGET": {
             const targetId = String(payload.targetId ?? "");
             const target = settings.targets[targetId];
@@ -408,6 +465,9 @@ export async function installWebExtensionMock(context: BrowserContext): Promise<
               ...settings,
               planMode: {
                 enabled: payload.enabled ?? settings.planMode.enabled,
+                independentAccessTiming:
+                  payload.independentAccessTiming ?? settings.planMode.independentAccessTiming,
+                enableAllBlocking: settings.planMode.enableAllBlocking,
                 watchDurationMinutes:
                   payload.watchDurationMinutes ?? settings.planMode.watchDurationMinutes,
                 defaultCompletionMode:
@@ -438,6 +498,7 @@ export async function installWebExtensionMock(context: BrowserContext): Promise<
                 source: payload.source ?? "manual",
                 scheduledDurationMinutes: payload.scheduledDurationMinutes ?? 45,
                 completionMode: payload.completionMode ?? "flow",
+                pauseOnVideoEnd: payload.pauseOnVideoEnd ?? false,
                 addedAt: Date.now(),
                 completedAt: null
               }

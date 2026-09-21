@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "format": "hourleaf.local-module",
+  "id": "hourleaf.local.xiaohongshu-focus",
+  "name": "小红书专注模块",
+  "author": "Hourleaf contributors",
+  "version": "1.0.0",
+  "description": "非官方本地模块：提供小红书网页版首页推荐流的可选过滤。",
+  "matches": ["https://www.xiaohongshu.com/*"],
+  "domainPolicy": "timed",
+  "hideSelectors": [],
+  "filterGroups": [
+    {
+      "id": "home-recommendations",
+      "name": "首页推荐",
+      "description": "隐藏首页和探索首页中的普通推荐笔记。",
+      "selectors": [
+        "html[data-hourleaf-xhs-page='home'] .feeds-container section.note-item:not([data-type='ad']):not([impression*='ads']):not(:has([data-type='ad'], [data-type='commercial'], [class*='commercial'], [class*='sponsor']))",
+        "html[data-hourleaf-xhs-page='home'] .feeds-container .note-item:not(section):not([data-type='ad']):not([impression*='ads']):not(:has([data-type='ad'], [data-type='commercial'], [class*='commercial'], [class*='sponsor']))"
+      ]
+    }
+  ],
+  "cssFiles": [],
+  "userScriptFiles": ["focus.user.js"]
+}

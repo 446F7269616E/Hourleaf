@@ -1,3 +1,5 @@
+import { activeBlockingProfile } from "../../src/modules/local/profiles";
+import { createDefaultSettings } from "../../src/shared/config";
 import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
@@ -37,6 +39,84 @@ const manifest = {
 };
 
 describe("local module boundary", () => {
+  it("keeps plan blocking edits separate through plan exit, worker restart and module updates", async () => {
+    const storage = new MemoryStorage();
+    (globalThis as typeof globalThis & { browser?: ExtensionApi }).browser = {
+      runtime: {
+        sendMessage: () => Promise.resolve(),
+        onMessage: { addListener: () => undefined }
+      },
+      storage: { local: storage }
+    };
+    const repository = new LocalModuleRepository(storage);
+    const definition = normalizeLocalModuleDefinition({
+      ...manifest,
+      css: "",
+      userScript: "",
+      hideSelectors: [],
+      filterGroups: [
+        { id: "feed", name: "Feed", selectors: [".feed"] },
+        { id: "comments", name: "Comments", selectors: [".comments"] }
+      ]
+    })!;
+    await repository.import(definition);
+    await repository.setFilterGroupEnabled(definition.id, "comments", false);
+    const service = new LocalModuleService(repository, "chromium");
+    const original = await repository.get();
+    expect((await service.getPageRules("https://example.com/", "normal")).hideSelectors).toEqual(
+      []
+    );
+    expect((await service.getPageRules("https://example.com/", "plan")).hideSelectors).toEqual([
+      ".feed",
+      ".comments"
+    ]);
+    expect(await repository.get()).toEqual(original);
+    await service.setFilterGroupEnabled(definition.id, "feed", false, "plan");
+    expect((await service.getPageRules("https://example.com/", "plan")).hideSelectors).toEqual([
+      ".comments"
+    ]);
+    const restarted = new LocalModuleService(new LocalModuleRepository(storage), "chromium");
+    expect(
+      (await restarted.getSnapshot("normal")).store.installations[definition.id]
+    ).toMatchObject({ enabled: false, disabledFilterGroupIds: ["comments"] });
+    expect((await restarted.getSnapshot("plan")).store.installations[definition.id]).toMatchObject({
+      enabled: true,
+      disabledFilterGroupIds: ["feed"]
+    });
+    await repository.import({
+      ...definition,
+      version: "1.1.0",
+      filterGroups: [
+        ...definition.filterGroups,
+        { id: "related", name: "Related", description: "", selectors: [".related"] }
+      ]
+    });
+    expect((await restarted.getPageRules("https://example.com/", "plan")).hideSelectors).toEqual([
+      ".comments",
+      ".related"
+    ]);
+    const settings = { ...createDefaultSettings().planMode, enabled: true };
+    expect(activeBlockingProfile(settings, true)).toBe("plan");
+    expect(activeBlockingProfile(settings, false)).toBe("normal");
+    expect(activeBlockingProfile({ ...settings, enableAllBlocking: false }, true)).toBe("normal");
+    expect(activeBlockingProfile({ ...settings, enabled: false }, true)).toBe("normal");
+  });
+
+  it("bounds declarative shadow roots and validates them again at normalization", () => {
+    const base = { ...manifest, css: "", userScript: "" };
+    expect(normalizeLocalModuleDefinition(base)?.shadowRoots).toEqual([]);
+    for (const shadowRoots of [
+      {},
+      Array.from({ length: 9 }, () => ({ hostSelector: "#host" })),
+      [{ hostSelector: " " }],
+      [{ hostSelector: "#host { display:none }" }],
+      [{ hostSelector: "#host", mountEvent: "bad event" }],
+      [{ hostSelector: "#host", mountEvent: 123 }]
+    ]) {
+      expect(normalizeLocalModuleDefinition({ ...base, shadowRoots })).toBeNull();
+    }
+  });
+
   it("imports the release Bilibili module from its real repository files", () => {
     const readModuleFile = (name: string): string =>
       readFileSync(new URL(`../../optional-modules/bilibili/${name}`, import.meta.url), "utf8");
@@ -49,14 +129,78 @@ describe("local module boundary", () => {
     expect(module).toMatchObject({
       id: "hourleaf.local.bilibili-focus",
       name: "Bilibili 专注模块",
-      version: "1.1.0",
+      version: "1.2.1",
       author: "Hourleaf contributors",
       domainPolicy: "timed"
     });
     expect(module.matches).toContain("https://www.bilibili.com/*");
+    expect(module.hideSelectors).toEqual([]);
+    expect(module.shadowRoots).toEqual([{ hostSelector: "#bewly", mountEvent: "bewlyMounted" }]);
+    expect(module.filterGroups.map((group) => group.id)).toEqual([
+      "home-recommendations",
+      "dynamic-feed",
+      "related-videos",
+      "comments"
+    ]);
     expect(module.capabilities).toEqual(
       expect.arrayContaining(["hide-elements", "css", "user-script"])
     );
+  });
+
+  it.each([
+    {
+      slug: "xiaohongshu",
+      files: ["hourleaf-module.json", "focus.user.js"],
+      id: "hourleaf.local.xiaohongshu-focus",
+      match: "https://www.xiaohongshu.com/*",
+      groups: ["home-recommendations"],
+      capabilities: ["hide-elements", "user-script"]
+    },
+    {
+      slug: "x",
+      files: ["hourleaf-module.json"],
+      id: "hourleaf.local.x-focus",
+      match: "https://x.com/*",
+      groups: ["home-timeline"],
+      capabilities: ["hide-elements"]
+    },
+    {
+      slug: "youtube",
+      files: ["hourleaf-module.json"],
+      id: "hourleaf.local.youtube-focus",
+      match: "https://www.youtube.com/*",
+      groups: ["home-recommendations", "shorts", "related-videos", "comments"],
+      capabilities: ["hide-elements"]
+    },
+    {
+      slug: "baidu-tieba",
+      files: ["hourleaf-module.json"],
+      id: "hourleaf.local.baidu-tieba-focus",
+      match: "https://tieba.baidu.com/*",
+      groups: ["home-recommendations"],
+      capabilities: ["hide-elements"]
+    }
+  ])("imports the $slug module from its real repository files", (candidate) => {
+    const module = parseLocalModuleFiles(
+      candidate.files.map((name) => ({
+        name,
+        text: readFileSync(
+          new URL(`../../optional-modules/${candidate.slug}/${name}`, import.meta.url),
+          "utf8"
+        )
+      }))
+    );
+
+    expect(module).toMatchObject({
+      id: candidate.id,
+      version: "1.0.0",
+      author: "Hourleaf contributors",
+      domainPolicy: "timed",
+      hideSelectors: []
+    });
+    expect(module.matches).toEqual([candidate.match]);
+    expect(module.filterGroups.map((group) => group.id)).toEqual(candidate.groups);
+    expect(module.capabilities).toEqual(expect.arrayContaining(candidate.capabilities));
   });
 
   it("resolves only files selected in the same local import", () => {
@@ -78,6 +222,68 @@ describe("local module boundary", () => {
     );
     expect(localModuleMatches(module, "https://example.com/path")).toBe(true);
     expect(localModuleMatches(module, "https://other.example/path")).toBe(false);
+  });
+
+  it("persists independent filter-group choices and applies only enabled selectors", async () => {
+    const storage = new MemoryStorage();
+    (globalThis as typeof globalThis & { browser?: ExtensionApi }).browser = {
+      runtime: {
+        sendMessage: () => Promise.resolve(),
+        onMessage: { addListener: () => undefined }
+      },
+      storage: { local: storage }
+    };
+    const definition = parseLocalModuleFiles([
+      {
+        name: "hourleaf-module.json",
+        text: JSON.stringify({
+          ...manifest,
+          cssFiles: [],
+          userScriptFiles: [],
+          hideSelectors: [".always-hidden"],
+          shadowRoots: [{ hostSelector: "#custom-home", mountEvent: "homeMounted" }],
+          filterGroups: [
+            {
+              id: "home-feed",
+              name: "主页推荐",
+              selectors: [".home-feed"]
+            },
+            {
+              id: "comments",
+              name: "评论",
+              selectors: ["#comments"]
+            }
+          ]
+        })
+      }
+    ]);
+    const service = new LocalModuleService(new LocalModuleRepository(storage), "chromium");
+    await service.import(definition);
+    await service.setEnabled(definition.id, true);
+
+    expect((await service.getPageRules("https://example.com/page")).hideSelectors).toEqual([
+      ".always-hidden",
+      ".home-feed",
+      "#comments"
+    ]);
+
+    await service.setFilterGroupEnabled(definition.id, "home-feed", false);
+    expect((await service.getPageRules("https://example.com/page")).shadowRules).toEqual([
+      {
+        hostSelector: "#custom-home",
+        mountEvent: "homeMounted",
+        css: "",
+        hideSelectors: [".always-hidden", "#comments"]
+      }
+    ]);
+    expect((await service.getPageRules("https://unrelated.example/page")).shadowRules).toEqual([]);
+    expect((await service.getPageRules("https://example.com/page")).hideSelectors).toEqual([
+      ".always-hidden",
+      "#comments"
+    ]);
+    expect(
+      (await service.getSnapshot()).store.installations[definition.id]?.disabledFilterGroupIds
+    ).toEqual(["home-feed"]);
   });
 
   it("accepts standalone user-script metadata without fetching anything", () => {

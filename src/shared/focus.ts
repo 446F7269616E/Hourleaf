@@ -10,6 +10,7 @@ import type {
   SiteTargetSettings,
   TargetId
 } from "./types";
+import { siteMatchesUrl } from "./site-scope";
 
 const ACCESS_HISTORY_DAYS = 35;
 
@@ -208,7 +209,11 @@ export class FocusDecisionService {
       now,
       usage.byPeriod,
       runtimeEntry?.unlockedGroups ?? 1,
-      settings.endPage.groupUnlock.method !== "none"
+      // Every group boundary is an explicit transition. Even the "open
+      // immediately" option must first route through the end page so the
+      // person can decide whether to consume the next group. The configured
+      // method controls the action on that page, not whether a boundary exists.
+      true
     );
     const details: Pick<
       PageDecision,
@@ -256,15 +261,13 @@ export class FocusDecisionService {
     requestedTargetId?: TargetId
   ): Promise<FocusTarget | null> {
     if (this.targetResolver) return this.targetResolver(url, requestedTargetId);
-    let origin: string;
     try {
       const parsed = new URL(url);
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-      origin = parsed.origin;
     } catch {
       return null;
     }
-    const site = Object.values(settings.sites).find((candidate) => candidate.origin === origin);
+    const site = Object.values(settings.sites).find((candidate) => siteMatchesUrl(candidate, url));
     if (!site) return null;
     const targetId = requestedTargetId ?? site.targetIds[0];
     const target = targetId ? settings.targets[targetId] : undefined;

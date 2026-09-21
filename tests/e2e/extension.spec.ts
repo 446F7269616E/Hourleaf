@@ -93,9 +93,8 @@ test("popup exposes the current-site time summary and receives a background resp
     result: { ok: true }
   });
 
-  await expect(page.getByTestId("popup-today-time")).toBeVisible();
   await expect(page.getByTestId("popup-remaining-time")).toBeVisible();
-  await expect(page.getByTestId("popup-open-dashboard")).toBeVisible();
+  await expect(page.getByTestId("popup-open-plan")).toBeVisible();
   await expect(page.getByRole("checkbox")).toHaveCount(0);
 });
 
@@ -151,6 +150,8 @@ test("dashboard exposes every supported range and chart fallback", async ({
   await expect(page.getByTestId("dashboard-range-day")).toBeVisible();
   await expect(page.getByTestId("dashboard-range-week")).toBeVisible();
   await expect(page.getByTestId("dashboard-range-month")).toBeVisible();
+  await expect(page.getByTestId("dashboard-range-year")).toBeVisible();
+  await expect(page.getByTestId("dashboard-current-range")).toBeVisible();
   await expect(page.getByTestId("dashboard-total-time")).toBeVisible();
   await expect(page.getByTestId("dashboard-section-list")).toBeVisible();
   await expect(page.getByTestId("dashboard-trend-chart")).toBeVisible();

@@ -8,12 +8,21 @@
 
 只有网站特有的能力才应进入模块：
 
-- 隐藏该网站独有的推荐流、推广、评论或导航元素；
+- 隐藏该网站独有的推荐流、评论或非商业导航干扰；
 - 为精确来源声明默认的 `timed`、`always-allow` 或 `always-block` 策略；
 - 用少量本地 CSS 降低视觉干扰；
 - 用无网络、无扩展权限的用户脚本提供轻量键盘操作。
 
 计时、时间段、计划、访问确认、结束页和统计属于通用核心。模块不得复制这些功能，也不得读取或修改 Hourleaf storage。
+
+### 商业内容边界（内部开发约束）
+
+Hourleaf 网站模块只负责减少与用户当前意图无关的干扰，不得隐藏、遮挡、自动跳过或削弱网站用于盈利的内容，包括广告、推广、赞助、付费展示、会员/购买入口、创作者商业化入口及其他商业投放。这个约束只用于开发与评审，不写入模块名称、描述、开关名称或其他用户可见文案。
+
+- 不得选择同时容纳普通内容与商业内容的整块列表、网格、侧栏或时间线容器；应选择可验证的普通子项，并显式排除稳定的商业标记。
+- 如果当前 DOM 无法稳定区分普通内容与商业内容，则该区域不提供过滤能力；不得依赖语言文本、排名位置或“看起来像”广告来猜测。
+- 网站改版、A/B 实验或未登录状态使排除条件失效时，必须安全地保留内容，而不是扩大隐藏范围。
+- 站点研究记录要保存来源、许可证、验证页面与选择器借鉴点；只借鉴 DOM 语义和工程方法，不复制大段第三方代码。
 
 ## 2. 目录与文件
 
@@ -30,6 +39,7 @@ optional-modules/<slug>/
 - JSON 清单必须显式引用 CSS 与脚本；不允许未声明文件、子目录或远程文件。
 - `id` 一经发布不得复用给另一个模块；建议使用反向域名或 `hourleaf.local.<site>-<purpose>`。
 - 清单、CSS 和用户脚本元数据中的 `format`、`id`、`name`、`author`、`version` 必须一致。
+- 面向用户开关的选择器放入 `filterGroups`；组 `id` 只使用稳定的小写 kebab-case，已发布后不得改名。`hideSelectors` 仅保留模块启用后必须始终生效的少量规则。
 
 最小清单：
 
@@ -41,10 +51,18 @@ optional-modules/<slug>/
   "name": "Example Focus",
   "author": "Example Author",
   "version": "1.0.0",
-  "description": "隐藏 Example 网站中的推荐与推广区域。",
+  "description": "提供 Example 网站推荐内容的可选过滤。",
   "matches": ["https://example.com/*"],
   "domainPolicy": "timed",
-  "hideSelectors": [".recommendations", ".sponsored-card"],
+  "hideSelectors": [],
+  "filterGroups": [
+    {
+      "id": "home-recommendations",
+      "name": "首页推荐",
+      "description": "隐藏首页中的普通推荐卡片。",
+      "selectors": [".recommendations > .card:not([data-placement])"]
+    }
+  ],
   "cssFiles": ["focus.css"],
   "userScriptFiles": []
 }
@@ -74,9 +92,12 @@ optional-modules/<slug>/
 - 用 `!important` 重置整站字体、颜色或布局；
 - 隐藏播放、暂停、字幕、登录、隐私或无障碍关键控件；
 - 依赖单一账号、实验分组或语言环境才存在的选择器；
+- 隐藏包含广告、推广、赞助、付费展示或商业入口的混合容器；
 - `@import`、`url()`、远程字体、图片、追踪像素和任何网络资源。
 
 `hideSelectors` 由核心生成隐藏规则。`focus.css` 只承担无法用隐藏表达的轻量视觉调整，并必须支持深浅色、200% 缩放和 `prefers-reduced-motion`。
+
+第三方界面使用开放 Shadow DOM 时，在清单的 `shadowRoots` 中显式声明宿主及必要的低频挂载事件，复用核心 `LocalPageRuleController`；不要在用户脚本中另建样式注入器。选择器在根内部求值，必须自行限定首页等区域，避免 `.video-card` 一类通用类名误伤搜索、收藏或历史。新增适配需覆盖先后挂载、重新挂载、分页追加、分组启停、未知节点保留及模块间样式隔离。
 
 ## 5. 用户脚本
 
@@ -151,6 +172,7 @@ unzip -l dist/modules/hourleaf-module-<slug>-<version>.zip
 - [ ] 功能确实需要网站模块，而不是通用核心功能；
 - [ ] 作者、格式、ID、版本、描述和引用文件一致；
 - [ ] 来源精确、最小且逐一测试；
+- [ ] 所有组选择器只命中普通干扰内容；混合列表已下钻到子项并显式排除商业标记；
 - [ ] 没有 DNR、远程资源、账号数据、网络请求或扩展权限；
 - [ ] 选择器不会隐藏主要控制、隐私提示或无障碍入口；
 - [ ] 脚本事件有输入保护和安全降级，没有轮询或无界扫描；

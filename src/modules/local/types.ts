@@ -12,6 +12,21 @@ export const LOCAL_MODULE_CAPABILITIES = [
 export type LocalModuleCapability = (typeof LOCAL_MODULE_CAPABILITIES)[number];
 export type LocalModuleDomainPolicy = "timed" | "always-allow" | "always-block";
 
+/** Explicit open shadow hosts; lifecycle events only trigger local root discovery. */
+export interface LocalModuleShadowRoot {
+  hostSelector: string;
+  mountEvent?: string;
+}
+
+/** A user-visible, independently configurable set of page elements. */
+export interface LocalModuleFilterGroup {
+  /** Stable within a module so settings survive compatible module updates. */
+  id: string;
+  name: string;
+  description: string;
+  selectors: string[];
+}
+
 export const LOCAL_DNR_RESOURCE_TYPES = [
   "main_frame",
   "sub_frame",
@@ -55,17 +70,30 @@ export interface LocalModuleDefinition {
   /** Exact HTTP(S) origin match patterns. Wildcard hosts are intentionally rejected. */
   matches: string[];
   domainPolicy: LocalModuleDomainPolicy;
+  /** Legacy selectors that remain enabled whenever the module is enabled. */
   hideSelectors: string[];
+  /** Optional user-configurable selector groups. */
+  filterGroups: LocalModuleFilterGroup[];
+  shadowRoots?: LocalModuleShadowRoot[];
   css: string;
   dnrRules: LocalDnrRule[];
   userScript: string;
   capabilities: LocalModuleCapability[];
 }
 
+export type LocalModuleProfile = "normal" | "plan";
+export interface LocalModulePreferences {
+  enabled: boolean;
+  disabledFilterGroupIds: string[];
+}
+
 export interface LocalModuleInstallation {
   definition: LocalModuleDefinition;
   source: "local-file";
   enabled: boolean;
+  /** Group ids explicitly disabled by the user; new groups default to enabled. */
+  disabledFilterGroupIds: string[];
+  planPreferences?: LocalModulePreferences;
   importedAt: number;
   updatedAt: number;
 }
@@ -94,6 +122,7 @@ export interface LocalModuleRuntimeStatus {
 }
 
 export interface LocalModuleSnapshot {
+  profile?: LocalModuleProfile;
   store: LocalModuleStore;
   runtime: LocalModuleRuntimeStatus;
 }
@@ -102,6 +131,8 @@ export interface LocalPageRules {
   css: string;
   hideSelectors: string[];
   moduleIds: string[];
+  /** Keep each module's styles scoped to its own declared hosts. */
+  shadowRules?: Array<LocalModuleShadowRoot & { css: string; hideSelectors: string[] }>;
 }
 
 export interface LocalModuleFile {

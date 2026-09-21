@@ -25,6 +25,7 @@
 - [ ] 描述只承诺已实现功能，说明本地统计和按需网站权限。
 - [ ] 截图来自候选版本，不含真实账号、头像、历史或其他个人数据。
 - [ ] GitHub 商店候选 ZIP 与可选模块文件分开；不宣称可绕过商店正常安装。
+- [ ] 本地 Debug 目录没有复制到 `dist/<platform>`，没有进入提交、Action artifact、GitHub Release 或商店上传；`npm run package` 的 Debug 门禁已通过。
 
 ## 平台
 

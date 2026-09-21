@@ -1,5 +1,7 @@
 import {
   getSessionStorageArea,
+  tabsGet,
+  type ExtensionMessageSender,
   storageGet,
   storageSet,
   type StorageAreaLike
@@ -115,6 +117,12 @@ export class VisitConfirmationService {
     });
   }
 
+  async clear(): Promise<void> {
+    await this.update((store) => {
+      store.byTab = {};
+    });
+  }
+
   async revokeIfOriginChanged(
     tabId: number,
     nextUrl: string,
@@ -204,4 +212,44 @@ function cloneStore(store: VisitGrantStore): VisitGrantStore {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Extension-page messages may omit sender.tab in Chromium. Verify the explicit own-tab id. */
+export async function resolveVisitConfirmationTabId(
+  sender: ExtensionMessageSender | undefined,
+  requestedTabId: number | undefined,
+  extensionRoot: string,
+  returnUrl: string,
+  siteId: string,
+  getTab: typeof tabsGet = tabsGet
+): Promise<number> {
+  const tabId = sender?.tab?.id ?? requestedTabId;
+  if (
+    !Number.isInteger(tabId) ||
+    (tabId as number) < 0 ||
+    (sender?.tab?.id !== undefined &&
+      requestedTabId !== undefined &&
+      sender.tab.id !== requestedTabId)
+  ) {
+    throw new Error("Visit confirmation requires its own browser tab");
+  }
+  const page = new URL(sender?.url ?? "about:blank");
+  const expected = new URL("end.html", extensionRoot);
+  const params = new URLSearchParams(page.hash.slice(1));
+  if (
+    page.protocol !== expected.protocol ||
+    page.host !== expected.host ||
+    page.pathname !== expected.pathname ||
+    params.get("source") !== "confirmation" ||
+    params.get("returnUrl") !== returnUrl ||
+    params.get("siteId") !== siteId
+  ) {
+    throw new Error("The visit confirmation page does not match this request");
+  }
+  const tab = await getTab(tabId as number);
+  // Without the broad tabs permission, Chromium may omit even an extension tab URL.
+  // Sender URL validation above and the pending per-tab grant remain authoritative.
+  if (!tab || (tab.url !== undefined && tab.url !== sender?.url))
+    throw new Error("The confirmation tab has navigated away");
+  return tabId as number;
 }

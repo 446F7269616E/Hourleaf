@@ -37,7 +37,7 @@
 }
 
 .plan-heading {
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-7);
 }
 
 .plan-view-control {
@@ -795,6 +795,21 @@ summary.plan-mindmap__branch-title::after {
   line-height: 1.5;
 }
 
+.plan-checkbox-field {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-3);
+}
+
+.plan-checkbox-field input {
+  margin-top: 0.2rem;
+}
+
+.plan-checkbox-field > span {
+  display: grid;
+  gap: var(--space-1);
+}
+
 .plan-select {
   appearance: auto;
 }
@@ -1018,6 +1033,13 @@ summary.plan-mindmap__branch-title::after {
   }
 
   .plan-view-control {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .plan-view-control .segmented {
     display: grid;
     width: 100%;
     grid-template-columns: repeat(2, minmax(0, 1fr));

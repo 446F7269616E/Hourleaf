@@ -72,6 +72,8 @@ export interface ExtensionApi {
   tabs?: {
     query(queryInfo: Record<string, unknown>, callback?: (tabs: ExtensionTab[]) => void): unknown;
     get?(tabId: number, callback?: (tab: ExtensionTab) => void): unknown;
+    getCurrent?(callback?: (tab?: ExtensionTab) => void): unknown;
+    remove?(tabIds: number | number[], callback?: () => void): unknown;
     onActivated?: ExtensionEvent<(activeInfo: { tabId: number; windowId: number }) => void>;
     onUpdated?: ExtensionEvent<
       (tabId: number, changeInfo: { url?: string; status?: string }, tab: ExtensionTab) => void
@@ -116,6 +118,10 @@ export interface ExtensionApi {
     getRegisteredContentScripts?(
       filter?: { ids?: string[] },
       callback?: (scripts: Array<{ id: string; matches?: string[] }>) => void
+    ): unknown;
+    executeScript?(
+      injection: { target: { tabId: number }; files: string[] },
+      callback?: (results: unknown[]) => void
     ): unknown;
   };
   userScripts?: {
@@ -280,12 +286,35 @@ export async function tabsQuery(queryInfo: Record<string, unknown>): Promise<Ext
   return callbackResult<ExtensionTab[]>((resolve) => context.api.tabs?.query(queryInfo, resolve));
 }
 
+/** The extension page's own tab, never the currently focused tab. */
+export async function tabsGetCurrent(): Promise<ExtensionTab | null> {
+  const context = requireContext();
+  const tabs = context.api.tabs;
+  if (!tabs?.getCurrent) return null;
+  if (context.mode === "promise") return (await tabs.getCurrent()) as ExtensionTab | null;
+  return (
+    (await callbackResult<ExtensionTab | undefined>((resolve) => tabs.getCurrent?.(resolve))) ??
+    null
+  );
+}
+
 export async function tabsGet(tabId: number): Promise<ExtensionTab | null> {
   const context = requireContext();
   const tabs = context.api.tabs;
   if (!tabs?.get) return null;
   if (context.mode === "promise") return (await tabs.get(tabId)) as ExtensionTab;
   return callbackResult<ExtensionTab>((resolve) => tabs.get?.(tabId, resolve));
+}
+
+export async function tabsRemove(tabIds: number | number[]): Promise<void> {
+  const context = requireContext();
+  const tabs = context.api.tabs;
+  if (!tabs?.remove) throw new Error("This browser cannot close tabs from the extension");
+  if (context.mode === "promise") {
+    await tabs.remove(tabIds);
+    return;
+  }
+  await callbackVoid((resolve) => tabs.remove?.(tabIds, resolve));
 }
 
 export function tabsAddActivatedListener(
@@ -433,6 +462,21 @@ export async function scriptingUnregisterContentScripts(ids?: string[]): Promise
     return;
   }
   await callbackVoid((resolve) => scripting.unregisterContentScripts?.(filter, resolve));
+}
+
+/** Injects an extension-owned file into an already open top-level tab. */
+export async function scriptingExecuteScript(tabId: number, file = "content.js"): Promise<void> {
+  const context = requireContext();
+  const scripting = context.api.scripting;
+  if (!scripting?.executeScript) {
+    throw new Error("Programmatic content script injection is unavailable");
+  }
+  const injection = { target: { tabId }, files: [file] };
+  if (context.mode === "promise") {
+    await scripting.executeScript(injection);
+    return;
+  }
+  await callbackResult<unknown[]>((resolve) => scripting.executeScript?.(injection, resolve));
 }
 
 export async function scriptingGetRegisteredContentScripts(): Promise<

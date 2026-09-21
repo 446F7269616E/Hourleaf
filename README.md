@@ -1,6 +1,6 @@
 # Hourleaf
 
-Hourleaf 是一款本地优先、开源、跨浏览器的网站专注扩展。你可以只授权自己想管理的网站，为同一网站设置多个独立时间段、使用分组和到期模式，并在本机查看日 / 周 / 月使用时间。
+Hourleaf 是一款本地优先、开源、跨浏览器的网站专注扩展。你可以只授权自己想管理的网站，为同一网站设置多个独立时间段、使用分组和到期模式，并在本机查看日 / 周 / 月 / 年使用时间。
 
 > [!IMPORTANT]
 > **免责声明与非盈利说明**：Hourleaf 仅供学习、研究和技术交流，作者以非盈利方式维护本项目。软件按现状提供，不保证计时、拦截、本地规则或第三方页面适配在所有环境中持续、准确或无误运行，也不能替代用户对重要安排、文件和数据的自行核验。使用者应自行检查并承担导入规则、CSS 或用户脚本的风险。
@@ -16,13 +16,14 @@ Hourleaf 是一款本地优先、开源、跨浏览器的网站专注扩展。�
 - 把一个时段额度平均分成多组，并用等待、数学题或本地密码开启下一组；
 - 网站可选择宽容、心流或严格模式；结束访问后进入可自定义的独立结束页；
 - 仅在页面可见、窗口聚焦且设备未空闲时计时；
-- 可用时段优先于不可用时段，支持跨午夜和晨间、午间、晚间、饭点预设；
-- 通过计划清单安排要访问的页面；每项有预定时长和到期模式，支持自适应列表及可拖拽、缩放、适配画布的思维导图视图；
-- 在仪表盘查看今天、本周和本月的使用分布；
+- 可用时段优先于不可用时段，支持跨午夜，并可一键添加三餐、两段分割、午前、午后、晚间、早起鸟、夜猫子及可命名复用的自定义预设；
+- 通过计划清单安排要访问的页面；每项有独立预定时长、到期模式和可选的视频结束暂停，支持自适应列表及可拖拽、缩放、适配画布的思维导图视图；
+- 在仪表盘查看今天、本周、本月和本年的使用分布；
 - 在浏览器快速访问入口查看当前网站今日已用时间和剩余时间；
 - 所有设置、计划和聚合统计默认只保存在浏览器本地；
 - 支持精确域名黑名单/白名单、元素隐藏与自包含 CSS；
 - 从本地 `.json`、`.css`、`.user.js` 文件导入、启停或删除可选模块；
+- 在独立“屏蔽”页面按网站启停模块及其推荐流、评论等可配置内容分组；
 - Chromium / Firefox 用户脚本仅通过浏览器的隔离 User Scripts API 执行；
 - 使用同一套界面和数据契约构建 Chromium、Firefox 与 Safari 版本。
 - 界面支持简体中文、英文和跟随系统语言。
@@ -31,7 +32,7 @@ Hourleaf 是一款本地优先、开源、跨浏览器的网站专注扩展。�
 
 Hourleaf 商店包只提供通用、可解释的专注核心：计时、精确网站权限、域名策略、元素隐藏、CSS、模块导入器和平台允许的用户脚本隔离环境。商店包不内置 Bilibili 或其他网站的专用可执行模块。
 
-GitHub 的 [Release 页面](https://github.com/446F7269616E/Hourleaf/releases/latest) 提供与扩展安装包分开的可选模块 ZIP，[可选模块目录](./optional-modules/) 保留可审查源码。Hourleaf 不会联网读取目录、检查模块更新或根据 URL 执行代码。用户需要先下载并阅读文件，再在“设置 → 模块设置”中手动选择本地文件、核对网站范围并授权。Bilibili 专注模块已从仓库历史适配恢复并按当前本地模块安全边界重写，但不会预装。
+GitHub 的 [Release 页面](https://github.com/446F7269616E/Hourleaf/releases/latest) 提供与扩展安装包分开的可选模块 ZIP，[可选模块目录](./optional-modules/) 保留可审查源码。Hourleaf 不会联网读取目录、检查模块更新或根据 URL 执行代码。用户需要先下载并阅读文件，再在“屏蔽”页面手动选择本地文件、核对网站范围并授权。Bilibili、小红书、X、YouTube 和百度贴吧专注模块按当前本地模块安全边界维护，但不会预装。
 
 模块清单只接受精确 HTTP(S) 来源，并拒绝无法保持协议、主机与端口精确边界的 DNR 规则；CSS 禁止远程 `@import`；用户脚本不会通过 `eval`、`Function`、script 标签或通用 scripting API 执行。
 
@@ -60,6 +61,8 @@ npm run package
 - `dist/chromium`、`dist/firefox`、`dist/safari`：完整扩展；
 - `dist/packages`：商店候选 ZIP 与 `SHA256SUMS`；
 - `optional-modules/`：源码仓库中的可选本地模块，不进入商店构建产物。
+
+本地联调可运行 `npm run build:debug`，默认生成仓库外的独立 Chromium 侧载目录，并预置当前可选模块及对应网站规则。该目录不得发布或上传；完整隔离约束见[本地 Debug 构建](./docs/LOCAL_DEBUG_BUILD.md)。
 
 Chromium 可在 `chrome://extensions` 打开开发者模式后加载 `dist/chromium`。Firefox 可在 `about:debugging#/runtime/this-firefox` 临时载入 `dist/firefox/manifest.json`。
 
@@ -97,6 +100,7 @@ npm run build
 - [发布清单](./docs/RELEASE_CHECKLIST.md)
 - [界面文案规范](./docs/UX_WRITING.md)
 - [模块开发准则](./docs/MODULE_DEVELOPMENT.md)
+- [本地 Debug 构建](./docs/LOCAL_DEBUG_BUILD.md)
 
 欢迎提交 issue 和 pull request。请先阅读 [CONTRIBUTING.md](./CONTRIBUTING.md) 与 [SECURITY.md](./SECURITY.md)。
 

@@ -4,8 +4,8 @@
   "id": "hourleaf.local.bilibili-focus",
   "name": "Bilibili 专注模块",
   "author": "Hourleaf contributors",
-  "version": "1.1.0",
-  "description": "非官方本地模块：恢复旧版 Bilibili 适配中的推荐流、动态、相关视频、评论、搜索建议与推广元素过滤，并支持按斜杠键聚焦搜索。",
+  "version": "1.2.1",
+  "description": "非官方本地模块：提供首页推荐、动态、相关视频与评论的可选过滤，并支持按斜杠键聚焦搜索。",
   "matches": [
     "https://www.bilibili.com/*",
     "https://live.bilibili.com/*",
@@ -13,30 +13,51 @@
     "https://search.bilibili.com/*"
   ],
   "domainPolicy": "timed",
-  "hideSelectors": [
-    ".recommended-container",
-    ".recommended-container_floor-aside",
-    ".feed2 .container",
-    ".bili-dyn-list",
-    ".bili-dyn-list__items",
-    ".opus-list",
-    "#reco_list",
-    ".recommend-list-v1",
-    ".rec-list",
-    ".video-page-card-small",
-    "#comment",
-    ".comment-container",
-    ".reply-warp",
-    "bili-comments",
-    ".nav-search-suggest",
-    ".search-panel",
-    ".suggest-wrap",
-    ".ad-report",
-    ".banner-card",
-    ".floor-single-card",
-    ".video-card-ad-small",
-    "a[href*='cm.bilibili.com']"
+  "hideSelectors": [],
+  "filterGroups": [
+    {
+      "id": "home-recommendations",
+      "name": "首页推荐",
+      "description": "隐藏首页中的普通推荐视频卡片。",
+      "selectors": [
+        ".recommended-container .bili-video-card:not(:has(.bili-video-card__info--ad, .ad-report, [data-target-url*='cm.bilibili.com'], a[href*='cm.bilibili.com']))",
+        ".feed2 .container .feed-card:not(:has(.bili-video-card__info--ad, .ad-report, [data-target-url*='cm.bilibili.com'], a[href*='cm.bilibili.com']))",
+        ".feed2 .container .bili-feed-card:not(:has(.bili-video-card__info--ad, .ad-report, [data-target-url*='cm.bilibili.com'], a[href*='cm.bilibili.com']))",
+        "#bewly-wrapper main > header ~ div > [class^='grid-'] > div:has(> div > .video-card > a[href^='https://www.bilibili.com/video/']):not(:has(.ad-report, [class*='commercial'], a[href*='cm.bilibili.com']))"
+      ]
+    },
+    {
+      "id": "dynamic-feed",
+      "name": "动态信息流",
+      "description": "隐藏动态页中的普通动态卡片。",
+      "selectors": [
+        ".bili-dyn-list__item:not(:has([data-module='goods'], .bili-dyn-card-commercial, [class*='commercial']))",
+        ".opus-list .bili-dyn-list__item:not(:has([data-module='goods'], .bili-dyn-card-commercial, [class*='commercial']))"
+      ]
+    },
+    {
+      "id": "related-videos",
+      "name": "相关视频",
+      "description": "隐藏播放页中的普通相关视频卡片。",
+      "selectors": [
+        "#reco_list .video-page-card-small:not(:has(.ad-report, [data-target-url*='cm.bilibili.com'], a[href*='cm.bilibili.com']))",
+        ".recommend-list-v1 .video-page-card-small:not(:has(.ad-report, [data-target-url*='cm.bilibili.com'], a[href*='cm.bilibili.com']))",
+        ".rec-list .video-page-card-small:not(:has(.ad-report, [data-target-url*='cm.bilibili.com'], a[href*='cm.bilibili.com']))"
+      ]
+    },
+    {
+      "id": "comments",
+      "name": "评论区",
+      "description": "隐藏视频、动态与文章页面中的评论区域。",
+      "selectors": ["#comment", ".comment-container", ".reply-warp", "bili-comments"]
+    }
   ],
   "cssFiles": ["focus.css"],
-  "userScriptFiles": ["focus.user.js"]
+  "userScriptFiles": ["focus.user.js"],
+  "shadowRoots": [
+    {
+      "hostSelector": "#bewly",
+      "mountEvent": "bewlyMounted"
+    }
+  ]
 }

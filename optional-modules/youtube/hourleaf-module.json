@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "format": "hourleaf.local-module",
+  "id": "hourleaf.local.youtube-focus",
+  "name": "YouTube 专注模块",
+  "author": "Hourleaf contributors",
+  "version": "1.0.0",
+  "description": "非官方本地模块：提供 YouTube 首页推荐、相关视频、Shorts 与评论的可选过滤。",
+  "matches": ["https://www.youtube.com/*"],
+  "domainPolicy": "timed",
+  "hideSelectors": [],
+  "filterGroups": [
+    {
+      "id": "home-recommendations",
+      "name": "首页推荐",
+      "description": "隐藏首页中的普通推荐视频卡片。",
+      "selectors": [
+        "ytd-browse[page-subtype='home'] ytd-rich-item-renderer:not(:has(ytd-ad-slot-renderer, ytd-display-ad-renderer, ytd-promoted-sparkles-web-renderer, ytd-banner-promo-renderer))"
+      ]
+    },
+    {
+      "id": "shorts",
+      "name": "Shorts",
+      "description": "隐藏页面中的普通 Shorts 卡片与列表项。",
+      "selectors": [
+        "ytd-reel-shelf-renderer ytd-reel-item-renderer:not(:has(ytd-ad-slot-renderer, ytd-display-ad-renderer, ytd-promoted-sparkles-web-renderer))",
+        "ytd-rich-shelf-renderer[is-shorts] ytd-rich-item-renderer:not(:has(ytd-ad-slot-renderer, ytd-display-ad-renderer, ytd-promoted-sparkles-web-renderer))"
+      ]
+    },
+    {
+      "id": "related-videos",
+      "name": "相关视频",
+      "description": "隐藏播放页侧栏中的普通相关视频卡片。",
+      "selectors": [
+        "ytd-watch-flexy #related ytd-compact-video-renderer:not(:has(ytd-ad-slot-renderer, ytd-display-ad-renderer, ytd-promoted-sparkles-web-renderer))"
+      ]
+    },
+    {
+      "id": "comments",
+      "name": "评论区",
+      "description": "隐藏普通视频播放页中的评论区域。",
+      "selectors": ["ytd-watch-flexy #comments"]
+    }
+  ],
+  "cssFiles": [],
+  "userScriptFiles": []
+}

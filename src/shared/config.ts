@@ -2,10 +2,12 @@ import {
   CONTENT_FILTER_IDS,
   type ContentFilterId,
   type ContentFilterSettings,
+  type CustomTimePeriodPreset,
   type DeepPartial,
   type FocusSettings,
   type EndPageSettings,
   type ManagedSite,
+  MAX_VISIT_CONFIRMATION_PROMPT_LENGTH,
   type PlanModeSettings,
   SECTION_IDS,
   type SectionId,
@@ -17,12 +19,17 @@ import {
   type TimeAccessRule,
   type TimeAccessEffect,
   type TimePeriodSettings,
+  UI_THEMES,
+  type UiTheme,
   type Weekday
 } from "./types";
+import { normalizeSiteMatchPatterns } from "./site-scope";
 
-export const SETTINGS_SCHEMA_VERSION = 4 as const;
+export const SETTINGS_SCHEMA_VERSION = 5 as const;
 export const MAX_TIME_ACCESS_RULES = 64;
 export const MAX_TIME_PERIODS = 64;
+export const MAX_CUSTOM_TIME_PERIOD_PRESETS = 32;
+export const MAX_CUSTOM_TIME_PERIOD_PRESET_PERIODS = 16;
 export const MAX_MANAGED_SITES = 256;
 export const MAX_TARGETS = 512;
 
@@ -51,6 +58,7 @@ export const DEFAULT_SETTINGS: Readonly<FocusSettings> = Object.freeze({
   enabled: true,
   showRemainingMinutesOnIcon: true,
   locale: "system",
+  theme: "verdant",
   endPage: Object.freeze({
     view: "dashboard",
     motivationalMessage: "",
@@ -58,6 +66,7 @@ export const DEFAULT_SETTINGS: Readonly<FocusSettings> = Object.freeze({
   }),
   sites: Object.freeze({}),
   targets: Object.freeze({}),
+  customTimePeriodPresets: [] as CustomTimePeriodPreset[],
   sectionRules: Object.freeze(
     Object.fromEntries(
       SECTION_IDS.map((section) => [section, Object.freeze(defaultRule(section))])
@@ -70,6 +79,8 @@ export const DEFAULT_SETTINGS: Readonly<FocusSettings> = Object.freeze({
   }),
   planMode: Object.freeze({
     enabled: false,
+    independentAccessTiming: true,
+    enableAllBlocking: true,
     watchDurationMinutes: 45,
     defaultCompletionMode: "flow",
     autoCompleteOnStart: false
@@ -90,6 +101,8 @@ export const DEFAULT_SETTINGS: Readonly<FocusSettings> = Object.freeze({
       ),
       planMode: Object.freeze({
         enabled: false,
+        independentAccessTiming: true,
+        enableAllBlocking: true,
         watchDurationMinutes: 45,
         defaultCompletionMode: "flow",
         autoCompleteOnStart: false
@@ -119,6 +132,7 @@ export function mergeSettings(
     enabled: patch.enabled ?? base.enabled,
     showRemainingMinutesOnIcon: patch.showRemainingMinutesOnIcon ?? base.showRemainingMinutesOnIcon,
     locale: patch.locale ?? base.locale,
+    theme: patch.theme ?? base.theme,
     endPage: {
       ...base.endPage,
       ...(patch.endPage ?? {}),
@@ -129,6 +143,9 @@ export function mergeSettings(
     },
     sites: { ...base.sites },
     targets: { ...base.targets },
+    customTimePeriodPresets: patch.customTimePeriodPresets
+      ? normalizeCustomTimePeriodPresets(patch.customTimePeriodPresets)
+      : base.customTimePeriodPresets.map(cloneCustomTimePeriodPreset),
     sectionRules: { ...base.sectionRules },
     temporaryAccess: {
       ...base.temporaryAccess,
@@ -274,6 +291,11 @@ export function normalizeSettings(value: unknown): FocusSettings {
       : {};
   const planMode: PlanModeSettings = {
     enabled: typeof rawPlanMode.enabled === "boolean" ? rawPlanMode.enabled : false,
+    independentAccessTiming:
+      typeof rawPlanMode.independentAccessTiming === "boolean"
+        ? rawPlanMode.independentAccessTiming
+        : true,
+    enableAllBlocking: rawPlanMode.enableAllBlocking !== false,
     watchDurationMinutes: clampInteger(rawPlanMode.watchDurationMinutes, 1, 360, 45),
     defaultCompletionMode:
       rawPlanMode.defaultCompletionMode === "lenient" ||
@@ -315,6 +337,7 @@ export function normalizeSettings(value: unknown): FocusSettings {
     defaults.contentFilters
   );
   const { sites, targets } = normalizeManagedConfiguration(value.sites, value.targets);
+  const customTimePeriodPresets = normalizeCustomTimePeriodPresets(value.customTimePeriodPresets);
 
   return {
     schemaVersion: SETTINGS_SCHEMA_VERSION,
@@ -324,9 +347,11 @@ export function normalizeSettings(value: unknown): FocusSettings {
         ? value.showRemainingMinutesOnIcon
         : defaults.showRemainingMinutesOnIcon,
     locale: value.locale === "zh-CN" || value.locale === "en" ? value.locale : ("system" as const),
+    theme: isUiTheme(value.theme) ? value.theme : defaults.theme,
     endPage,
     sites,
     targets,
+    customTimePeriodPresets,
     sectionRules,
     temporaryAccess,
     planMode,
@@ -350,11 +375,13 @@ function normalizeManagedConfiguration(
     if (!isStableId(siteId) || !isRecord(rawValue)) continue;
     const origin = normalizeOrigin(rawValue.origin);
     if (!origin) continue;
+    const matchPatterns = normalizeSiteMatchPatterns(origin, rawValue.matchPatterns);
     const createdAt = normalizeTimestamp(rawValue.createdAt);
     const updatedAt = normalizeTimestamp(rawValue.updatedAt, createdAt);
     sites[siteId] = {
       id: siteId,
       origin,
+      ...(matchPatterns ? { matchPatterns } : {}),
       hostname: new URL(origin).hostname,
       label: normalizeLabel(rawValue.label, new URL(origin).hostname),
       // Schema v4.1 removes the hidden website master switch. Keep the field
@@ -585,6 +612,41 @@ function normalizeTimePeriodName(value: unknown): string {
   return name === "全天" || name === "时间段" ? "" : name;
 }
 
+function normalizeCustomTimePeriodPresets(value: unknown): CustomTimePeriodPreset[] {
+  if (!Array.isArray(value)) return [];
+  const presets: CustomTimePeriodPreset[] = [];
+  const usedIds = new Set<string>();
+  for (const rawPreset of value.slice(0, MAX_CUSTOM_TIME_PERIOD_PRESETS)) {
+    if (!isRecord(rawPreset) || !isStableId(rawPreset.id) || usedIds.has(rawPreset.id)) continue;
+    const name = normalizeTimePeriodName(rawPreset.name);
+    if (!name || !Array.isArray(rawPreset.periods)) continue;
+    const periods = rawPreset.periods
+      .slice(0, MAX_CUSTOM_TIME_PERIOD_PRESET_PERIODS)
+      .map(normalizeCustomTimePeriodPresetPeriod)
+      .filter(isDefined);
+    if (periods.length === 0) continue;
+    usedIds.add(rawPreset.id);
+    presets.push({ id: rawPreset.id, name, periods });
+  }
+  return presets;
+}
+
+function normalizeCustomTimePeriodPresetPeriod(
+  value: unknown
+): CustomTimePeriodPreset["periods"][number] | undefined {
+  if (!isRecord(value)) return undefined;
+  const startTime = normalizeTime(value.startTime);
+  const endTime = normalizeTime(value.endTime);
+  if (!startTime || !endTime) return undefined;
+  return {
+    name: normalizeTimePeriodName(value.name),
+    startTime,
+    endTime,
+    limitMinutes: clampInteger(value.limitMinutes, 1, 1440, 45),
+    groupCount: clampInteger(value.groupCount, 1, 24, 1)
+  };
+}
+
 export function isTimeOfDay(value: unknown): value is string {
   return typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
@@ -595,6 +657,10 @@ function normalizeTime(value: unknown): string | undefined {
 
 function isWeekday(value: unknown): value is Weekday {
   return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 6;
+}
+
+function isUiTheme(value: unknown): value is UiTheme {
+  return typeof value === "string" && (UI_THEMES as readonly string[]).includes(value);
 }
 
 function clampInteger(value: unknown, min: number, max: number, fallback: number): number {
@@ -616,6 +682,7 @@ function cloneSettings(settings: Readonly<FocusSettings>): FocusSettings {
     enabled: settings.enabled,
     showRemainingMinutesOnIcon: settings.showRemainingMinutesOnIcon,
     locale: settings.locale,
+    theme: settings.theme,
     endPage: {
       ...settings.endPage,
       groupUnlock: { ...settings.endPage.groupUnlock }
@@ -626,10 +693,12 @@ function cloneSettings(settings: Readonly<FocusSettings>): FocusSettings {
         {
           ...site,
           targetIds: [...site.targetIds],
+          ...(site.matchPatterns ? { matchPatterns: [...site.matchPatterns] } : {}),
           ...(site.visitConfirmation ? { visitConfirmation: { ...site.visitConfirmation } } : {})
         }
       ])
     ),
+    customTimePeriodPresets: settings.customTimePeriodPresets.map(cloneCustomTimePeriodPreset),
     targets: Object.fromEntries(
       Object.entries(settings.targets).map(([id, target]) => [
         id,
@@ -680,6 +749,7 @@ function createUnsafeDefaultSettings(): FocusSettings {
     enabled: true,
     showRemainingMinutesOnIcon: true,
     locale: "system",
+    theme: "verdant",
     endPage: {
       view: "dashboard",
       motivationalMessage: "",
@@ -687,10 +757,13 @@ function createUnsafeDefaultSettings(): FocusSettings {
     },
     sites: {},
     targets: {},
+    customTimePeriodPresets: [],
     sectionRules,
     temporaryAccess: { enabled: true, durationMinutes: 5, maxUsesPerDay: 3 },
     planMode: {
       enabled: false,
+      independentAccessTiming: true,
+      enableAllBlocking: true,
       watchDurationMinutes: 45,
       defaultCompletionMode: "flow",
       autoCompleteOnStart: false
@@ -702,6 +775,13 @@ function createUnsafeDefaultSettings(): FocusSettings {
       slashToSearch: true
     },
     legacyCapsules: {}
+  };
+}
+
+function cloneCustomTimePeriodPreset(preset: CustomTimePeriodPreset): CustomTimePeriodPreset {
+  return {
+    ...preset,
+    periods: preset.periods.map((period) => ({ ...period }))
   };
 }
 
@@ -730,11 +810,17 @@ function normalizeTimestamp(value: unknown, fallback = Date.now()): number {
 function normalizeVisitConfirmation(value: unknown): {
   enabled: boolean;
   waitSeconds: number;
+  prompt?: string;
 } {
   const raw = isRecord(value) ? value : {};
+  const prompt =
+    typeof raw.prompt === "string"
+      ? raw.prompt.trim().slice(0, MAX_VISIT_CONFIRMATION_PROMPT_LENGTH)
+      : "";
   return {
     enabled: raw.enabled === true,
-    waitSeconds: clampInteger(raw.waitSeconds, 0, 60, 3)
+    waitSeconds: clampInteger(raw.waitSeconds, 0, 60, 3),
+    ...(prompt ? { prompt } : {})
   };
 }
 

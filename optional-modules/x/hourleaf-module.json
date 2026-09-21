@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "format": "hourleaf.local-module",
+  "id": "hourleaf.local.x-focus",
+  "name": "X 专注模块",
+  "author": "Hourleaf contributors",
+  "version": "1.0.0",
+  "description": "非官方本地模块：提供 X 网页版主页信息流的可选过滤。",
+  "matches": ["https://x.com/*"],
+  "domainPolicy": "timed",
+  "hideSelectors": [],
+  "filterGroups": [
+    {
+      "id": "home-timeline",
+      "name": "主页时间线",
+      "description": "隐藏主页时间线中的普通帖子卡片。",
+      "selectors": [
+        "main [data-testid='primaryColumn']:has(a[href='/home'][role='tab'][aria-selected='true']) [data-testid='cellInnerDiv']:has(article[data-testid='tweet']):not(:has([data-testid='placementTracking']))"
+      ]
+    }
+  ],
+  "cssFiles": [],
+  "userScriptFiles": []
+}

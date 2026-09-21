@@ -1,15 +1,31 @@
-import { createDefaultTimePeriod, MAX_TIME_PERIODS } from "../shared/config";
+import {
+  createDefaultTimePeriod,
+  MAX_CUSTOM_TIME_PERIOD_PRESETS,
+  MAX_CUSTOM_TIME_PERIOD_PRESET_PERIODS,
+  MAX_TIME_PERIODS
+} from "../shared/config";
 import { configureLocale, localizeDocumentTitle, t, type MessageKey } from "../shared/i18n";
 import { sendRequest } from "../shared/messages";
-import type {
-  FocusSettings,
-  ManagedSite,
-  RestrictionMode,
-  SiteTargetSettings,
-  TimePeriodBehavior,
-  TimePeriodSettings,
-  Weekday
+import {
+  MAX_VISIT_CONFIRMATION_PROMPT_LENGTH,
+  type FocusSettings,
+  type CustomTimePeriodPreset,
+  type ManagedSite,
+  type RestrictionMode,
+  type SiteTargetSettings,
+  type TimePeriodBehavior,
+  type TimePeriodSettings,
+  type Weekday
 } from "../shared/types";
+import { siteMatchesUrl } from "../shared/site-scope";
+import {
+  PERIOD_PRESETS,
+  applyCustomPresetToPeriods,
+  applyPresetToPeriods,
+  buildCustomPresetPeriods,
+  buildPresetPeriods,
+  type PeriodPresetId
+} from "../shared/time-period-presets";
 import {
   assertAppRoot,
   describeError,
@@ -20,6 +36,7 @@ import {
   toast
 } from "../styles/dom";
 import { createPageNavigation } from "../ui/page-navigation";
+import { applyTheme } from "../ui/theme";
 import {
   addManagedSite,
   normalizeWebsiteInput,
@@ -43,7 +60,10 @@ const WEEKDAYS: ReadonlyArray<{
 
 const app = assertAppRoot();
 let draft: FocusSettings | null = null;
-let savedConfiguration: Pick<FocusSettings, "sites" | "targets"> | null = null;
+let savedConfiguration: Pick<
+  FocusSettings,
+  "sites" | "targets" | "customTimePeriodPresets"
+> | null = null;
 let selectedSiteId: string | null = null;
 let saveState: HTMLElement | null = null;
 let saveStateText: HTMLElement | null = null;
@@ -52,6 +72,7 @@ let saveLoop: Promise<boolean> | null = null;
 let saveStatus: "saved" | "unsaved" | "saving" | "error" = "saved";
 const pendingSiteIds = new Set<string>();
 const pendingTargetIds = new Set<string>();
+let customPresetsPending = false;
 
 configureLocale("system");
 window.addEventListener("beforeunload", (event) => {
@@ -64,10 +85,11 @@ async function loadOptions(preferredOrigin?: string): Promise<void> {
   try {
     draft = clone(await sendRequest({ type: "GET_SETTINGS" }));
     configureLocale(draft.locale);
+    applyTheme(draft.theme);
     localizeDocumentTitle("configuration");
     selectedSiteId =
       (preferredOrigin
-        ? Object.values(draft.sites).find((site) => site.origin === preferredOrigin)?.id
+        ? Object.values(draft.sites).find((site) => siteMatchesUrl(site, preferredOrigin))?.id
         : selectedSiteId && draft.sites[selectedSiteId]
           ? selectedSiteId
           : sortedSites()[0]?.id) ?? null;
@@ -150,6 +172,7 @@ function renderOptions(): void {
             className: "options-site-editor",
             children: [
               createSiteContext(site),
+              createVisitConfirmationCard(site),
               createRestrictionModeCard(site),
               createTimePeriodWorkspace(site)
             ]
@@ -162,17 +185,17 @@ function renderOptions(): void {
     element("div", {
       className: "options-shell app-shell",
       children: [
-        createPageNavigation({ currentPage: "options", actions: [saveState] }),
+        createPageNavigation({ currentPage: "options" }),
         element("header", {
-          className: "options-header",
+          className: "options-header page-heading",
           children: [
             element("div", {
-              children: [
-                element("h1", { className: "page-title", text: t("options.title") }),
-                element("p", { text: t("options.description") })
-              ]
+            children: [element("h1", { className: "page-title", text: t("options.title") })]
             }),
-            createAddSiteButton()
+            element("div", {
+              className: "options-header__actions",
+              children: [createAddSiteButton()]
+            })
           ]
         }),
         content
@@ -298,48 +321,7 @@ function createRestrictionModeCard(site: ManagedSite): HTMLElement {
     description.textContent = t(`options.mode.${current.restrictionMode}Description`);
     markSiteDirty(site.id);
   });
-  const confirmation = site.visitConfirmation ?? { enabled: false, waitSeconds: 3 };
-  site.visitConfirmation = confirmation;
-  const waitSeconds = element("input", {
-    className: "input visit-confirmation__wait",
-    attrs: {
-      type: "number",
-      min: 0,
-      max: 60,
-      step: 1,
-      value: confirmation.waitSeconds,
-      "aria-label": t("options.visitConfirmationWait")
-    }
-  });
-  waitSeconds.disabled = !confirmation.enabled;
-  const confirmationSwitch = createToggle(
-    t("options.visitConfirmation"),
-    confirmation.enabled,
-    "visit-confirmation-toggle"
-  );
-  confirmationSwitch.input.addEventListener("change", () => {
-    const current = draft?.sites[site.id];
-    if (!current) return;
-    current.visitConfirmation = {
-      ...(current.visitConfirmation ?? { enabled: false, waitSeconds: 3 }),
-      enabled: confirmationSwitch.input.checked
-    };
-    current.updatedAt = Date.now();
-    waitSeconds.disabled = !confirmationSwitch.input.checked;
-    markSiteDirty(site.id);
-  });
-  waitSeconds.addEventListener("change", () => {
-    const current = draft?.sites[site.id];
-    if (!current) return;
-    const value = clamp(waitSeconds.value, 0, 60, 3);
-    waitSeconds.value = String(value);
-    current.visitConfirmation = {
-      ...(current.visitConfirmation ?? { enabled: false, waitSeconds: 3 }),
-      waitSeconds: value
-    };
-    current.updatedAt = Date.now();
-    markSiteDirty(site.id);
-  });
+
   return element("section", {
     className: "restriction-mode-card card",
     attrs: { "aria-labelledby": "restriction-mode-title" },
@@ -361,28 +343,133 @@ function createRestrictionModeCard(site: ManagedSite): HTMLElement {
             children: [mode, description]
           })
         ]
+      })
+    ]
+  });
+}
+
+function createVisitConfirmationCard(site: ManagedSite): HTMLElement {
+  const confirmation = site.visitConfirmation ?? { enabled: false, waitSeconds: 3 };
+  site.visitConfirmation = confirmation;
+  const waitSeconds = element("input", {
+    className: "input visit-confirmation__wait",
+    attrs: {
+      type: "number",
+      min: 0,
+      max: 60,
+      step: 1,
+      value: confirmation.waitSeconds,
+      "aria-label": t("options.visitConfirmationWait")
+    }
+  });
+  const prompt = element("textarea", {
+    className: "input visit-confirmation__prompt",
+    text: confirmation.prompt ?? "",
+    attrs: {
+      rows: 2,
+      maxlength: MAX_VISIT_CONFIRMATION_PROMPT_LENGTH,
+      placeholder: t("options.visitConfirmationPromptPlaceholder"),
+      "aria-label": t("options.visitConfirmationPrompt"),
+      "aria-describedby": `visit-confirmation-prompt-hint-${site.id}`
+    }
+  });
+  const confirmationSwitch = createToggle(
+    t("options.visitConfirmation"),
+    confirmation.enabled,
+    "visit-confirmation-toggle"
+  );
+  const fields = element("div", {
+    className: "visit-confirmation-card__fields",
+    children: [
+      element("label", {
+        className: "visit-confirmation__field",
+        children: [
+          element("span", { text: t("options.visitConfirmationWait") }),
+          element("span", {
+            className: "visit-confirmation__wait-control",
+            children: [waitSeconds, element("span", { text: t("common.seconds") })]
+          })
+        ]
       }),
-      element("div", {
-        className: "visit-confirmation",
+      element("label", {
+        className: "visit-confirmation__field visit-confirmation__field--prompt",
+        children: [
+          element("span", { text: t("options.visitConfirmationPrompt") }),
+          prompt,
+          element("small", {
+            className: "field__hint",
+            text: t("options.visitConfirmationPromptHint"),
+            attrs: { id: `visit-confirmation-prompt-hint-${site.id}` }
+          })
+        ]
+      })
+    ]
+  });
+  const updateEnabledState = (): void => {
+    fields.hidden = !confirmationSwitch.input.checked;
+    waitSeconds.disabled = !confirmationSwitch.input.checked;
+    prompt.disabled = !confirmationSwitch.input.checked;
+  };
+  confirmationSwitch.input.addEventListener("change", () => {
+    const current = draft?.sites[site.id];
+    if (!current) return;
+    current.visitConfirmation = {
+      ...(current.visitConfirmation ?? { enabled: false, waitSeconds: 3 }),
+      enabled: confirmationSwitch.input.checked
+    };
+    current.updatedAt = Date.now();
+    updateEnabledState();
+    markSiteDirty(site.id);
+  });
+  waitSeconds.addEventListener("change", () => {
+    const current = draft?.sites[site.id];
+    if (!current) return;
+    const value = clamp(waitSeconds.value, 0, 60, 3);
+    waitSeconds.value = String(value);
+    current.visitConfirmation = {
+      ...(current.visitConfirmation ?? { enabled: false, waitSeconds: 3 }),
+      waitSeconds: value
+    };
+    current.updatedAt = Date.now();
+    markSiteDirty(site.id);
+  });
+  prompt.addEventListener("change", () => {
+    const current = draft?.sites[site.id];
+    if (!current) return;
+    const value = prompt.value.trim().slice(0, MAX_VISIT_CONFIRMATION_PROMPT_LENGTH);
+    prompt.value = value;
+    const nextConfirmation = {
+      ...(current.visitConfirmation ?? { enabled: false, waitSeconds: 3 }),
+      ...(value ? { prompt: value } : {})
+    };
+    if (!value) delete nextConfirmation.prompt;
+    current.visitConfirmation = nextConfirmation;
+    current.updatedAt = Date.now();
+    markSiteDirty(site.id);
+  });
+  updateEnabledState();
+
+  return element("section", {
+    className: "visit-confirmation-card card",
+    attrs: { "aria-labelledby": `visit-confirmation-title-${site.id}` },
+    children: [
+      element("header", {
+        className: "visit-confirmation-card__header",
         children: [
           element("div", {
             className: "visit-confirmation__copy",
             children: [
-              element("h3", { text: t("options.visitConfirmation") }),
+              element("h2", {
+                text: t("options.visitConfirmation"),
+                attrs: { id: `visit-confirmation-title-${site.id}` }
+              }),
               element("p", { text: t("options.visitConfirmationDescription") })
-            ]
-          }),
-          element("label", {
-            className: "visit-confirmation__field",
-            children: [
-              element("span", { text: t("options.visitConfirmationWait") }),
-              waitSeconds,
-              element("span", { text: t("common.seconds") })
             ]
           }),
           confirmationSwitch.label
         ]
-      })
+      }),
+      fields
     ]
   });
 }
@@ -419,7 +506,7 @@ function createTimePeriodWorkspace(site: ManagedSite): HTMLElement {
 
 function createTargetPeriods(target: SiteTargetSettings, targetIndex: number): HTMLElement {
   const add = element("button", {
-    className: "btn btn--primary",
+    className: "btn",
     attrs: {
       type: "button",
       "data-testid": targetIndex === 0 ? "period-add" : `period-add-${target.id}`
@@ -428,6 +515,15 @@ function createTargetPeriods(target: SiteTargetSettings, targetIndex: number): H
   });
   add.disabled = target.timePeriods.length >= MAX_TIME_PERIODS;
   add.addEventListener("click", () => openPeriodDialog(target));
+  const quickAdd = element("button", {
+    className: "btn btn--primary",
+    attrs: {
+      type: "button",
+      "data-testid": targetIndex === 0 ? "period-quick-add" : `period-quick-add-${target.id}`
+    },
+    text: t("options.quickAdd")
+  });
+  quickAdd.addEventListener("click", () => openQuickAddDialog(target, quickAdd));
 
   return element("article", {
     className: "card period-target",
@@ -441,7 +537,10 @@ function createTargetPeriods(target: SiteTargetSettings, targetIndex: number): H
               element("p", { text: `${target.timePeriods.length} · ${t("options.timePeriods")}` })
             ]
           }),
-          add
+          element("div", {
+            className: "period-target__actions",
+            children: [quickAdd, add]
+          })
         ]
       }),
       target.timePeriods.length > 0
@@ -452,6 +551,632 @@ function createTargetPeriods(target: SiteTargetSettings, targetIndex: number): H
         : element("p", { className: "schedule-empty", text: t("options.noPeriods") })
     ]
   });
+}
+
+function openQuickAddDialog(target: SiteTargetSettings, trigger: HTMLButtonElement): void {
+  let selectedPresetId: PeriodPresetId = "meals";
+  let selectedCustomPresetId: string | null = null;
+  const titleId = `period-quick-add-title-${target.id}`;
+  const note = element("p", {
+    className: "schedule-note",
+    attrs: { role: "status", "aria-live": "polite" }
+  });
+  const preview = element("section", {
+    className: "period-quick-add__preview",
+    attrs: { "aria-live": "polite" }
+  });
+  const confirm = element("button", {
+    className: "btn btn--primary",
+    text: t("options.quickAdd.apply"),
+    attrs: { type: "button", "data-testid": "period-quick-add-confirm" }
+  });
+  const cancel = element("button", {
+    className: "btn",
+    text: t("common.cancel"),
+    attrs: { type: "button" }
+  });
+  const close = element("button", {
+    className: "btn btn--icon",
+    attrs: { type: "button", "aria-label": t("common.close") },
+    children: [icon("close")]
+  });
+  const dialog = element("dialog", {
+    className: "dialog period-quick-add",
+    attrs: {
+      "aria-labelledby": titleId,
+      "data-testid": "period-quick-add-dialog"
+    }
+  });
+  const previewPanel = element("div", {
+    className: "period-quick-add__preview-panel",
+    children: [
+      preview,
+      element("div", {
+        className: "period-quick-add__apply",
+        children: [confirm]
+      })
+    ]
+  });
+  const radios = PERIOD_PRESETS.map((preset, index) => {
+    const input = element("input", {
+      attrs: {
+        type: "radio",
+        name: `period-preset-${target.id}`,
+        value: preset.id,
+        checked: index === 0,
+        "data-testid": `period-preset-${preset.id}`
+      }
+    });
+    input.addEventListener("change", () => {
+      if (!input.checked) return;
+      selectedPresetId = preset.id;
+      selectedCustomPresetId = null;
+      note.textContent = "";
+      renderPreview();
+    });
+    return element("label", {
+      className: "period-quick-add__preset",
+      children: [
+        input,
+        element("span", {
+          children: [
+            element("strong", { text: t(preset.labelKey as MessageKey) }),
+            element("small", { text: t(preset.descriptionKey as MessageKey) })
+          ]
+        })
+      ]
+    });
+  });
+  const customPresets = (draft?.customTimePeriodPresets ?? []).map((preset) => {
+    const input = element("input", {
+      attrs: {
+        type: "radio",
+        name: `period-preset-${target.id}`,
+        value: preset.id,
+        "data-testid": `period-custom-preset-${preset.id}`
+      }
+    });
+    input.addEventListener("change", () => {
+      if (!input.checked) return;
+      selectedCustomPresetId = preset.id;
+      note.textContent = "";
+      renderPreview();
+    });
+    return element("label", {
+      className: "period-quick-add__preset",
+      children: [
+        input,
+        element("span", {
+          children: [
+            element("strong", { text: preset.name }),
+            element("small", {
+              text: t("options.quickAdd.customPresetDescription", { count: preset.periods.length })
+            })
+          ]
+        })
+      ]
+    });
+  });
+  const custom = element("button", {
+    className: "period-quick-add__custom",
+    text: t("options.quickAdd.custom"),
+    attrs: { type: "button", "data-testid": "period-preset-custom" }
+  });
+  custom.addEventListener("click", () => {
+    dialog.close();
+    openCustomPresetDialog(target, trigger);
+  });
+  dialog.append(
+    element("header", {
+      className: "dialog__header",
+      children: [
+        element("div", {
+          children: [
+            element("h2", { text: t("options.quickAdd.title"), attrs: { id: titleId } }),
+            element("p", { text: t("options.quickAdd.description") })
+          ]
+        }),
+        close
+      ]
+    }),
+    element("div", {
+      className: "period-quick-add__layout",
+      children: [
+        element("div", {
+          className: "period-quick-add__sidebar",
+          children: [
+            element("div", {
+              className: "period-quick-add__preset-list",
+              attrs: { role: "radiogroup", "aria-label": t("options.quickAdd.presetList") },
+              children: [...radios, ...customPresets]
+            }),
+            custom
+          ]
+        }),
+        previewPanel
+      ]
+    }),
+    note,
+    element("footer", {
+      className: "dialog__footer",
+      children: [cancel]
+    })
+  );
+
+  function renderPreview(): void {
+    const customPreset = selectedCustomPresetId
+      ? draft?.customTimePeriodPresets.find((preset) => preset.id === selectedCustomPresetId)
+      : undefined;
+    const periods = customPreset
+      ? buildCustomPresetPeriods(customPreset, previewIds())
+      : (buildPresetPeriods(selectedPresetId, previewIds(), (key) => t(key as MessageKey)) ?? []);
+    const timeline = element("div", {
+      className: "period-quick-add__timeline",
+      attrs: {
+        role: "img",
+        "aria-label": t("options.quickAdd.timelineLabel"),
+        "data-testid": "period-quick-add-timeline"
+      },
+      children: Array.from({ length: 24 }, (_, hour) => {
+        const periodIndex = periods.findIndex((period) => periodCoversHour(period, hour));
+        return element("span", {
+          className:
+            periodIndex >= 0
+              ? `period-quick-add__hour period-color-${periodIndex % 6}`
+              : "period-quick-add__hour",
+          attrs: {
+            "aria-hidden": "true",
+            title: `${String(hour).padStart(2, "0")}:00`,
+            "data-hour": hour,
+            "data-state": periodIndex >= 0 ? "available" : "unavailable"
+          }
+        });
+      })
+    });
+    preview.replaceChildren(
+      element("div", {
+        className: "period-quick-add__timeline-wrap",
+        children: [
+          timeline,
+          element("div", {
+            className: "period-quick-add__timeline-scale",
+            attrs: { "aria-hidden": "true" },
+            children: ["00", "06", "12", "18", "24"].map((label) =>
+              element("span", { text: label })
+            )
+          }),
+          element("p", {
+            className: "period-quick-add__legend",
+            text: t("options.quickAdd.unavailable")
+          })
+        ]
+      }),
+      element("h3", { text: t("options.quickAdd.willAdd") }),
+      element("ul", {
+        className: "period-quick-add__summary",
+        attrs: { "data-testid": "period-quick-add-summary" },
+        children: periods.map((period, index) =>
+          element("li", {
+            children: [
+              element("span", {
+                className: `period-quick-add__swatch period-color-${index % 6}`,
+                attrs: { "aria-hidden": "true" }
+              }),
+              element("div", {
+                children: [
+                  element("strong", { text: period.name }),
+                  element("span", {
+                    text: `${formatClockTime(period.startTime)}–${formatClockTime(period.endTime)}`
+                  }),
+                  element("small", {
+                    text: t("options.groupSummary", {
+                      limit: period.limitMinutes ?? 0,
+                      groups: period.groupCount,
+                      perGroup: formatGroupMinutes((period.limitMinutes ?? 0) / period.groupCount)
+                    })
+                  })
+                ]
+              })
+            ]
+          })
+        )
+      })
+    );
+  }
+
+  close.addEventListener("click", () => dialog.close());
+  cancel.addEventListener("click", () => dialog.close());
+  confirm.addEventListener("click", () => {
+    const current = draft?.targets[target.id];
+    if (!current) return;
+    const customPreset = selectedCustomPresetId
+      ? draft?.customTimePeriodPresets.find((preset) => preset.id === selectedCustomPresetId)
+      : undefined;
+    const result = customPreset
+      ? applyCustomPresetToPeriods(
+          current.timePeriods,
+          customPreset,
+          () => createDefaultTimePeriod().id
+        )
+      : applyPresetToPeriods(
+          current.timePeriods,
+          selectedPresetId,
+          () => createDefaultTimePeriod().id,
+          (key) => t(key as MessageKey)
+        );
+    if (!result.ok) {
+      note.textContent =
+        result.reason === "limit-reached"
+          ? t("options.periodLimitReached")
+          : t("common.actionFailed");
+      return;
+    }
+    current.timePeriods = result.periods;
+    dialog.close();
+    renderOptionsPreservingScroll();
+    markTargetDirty(target.id);
+    toast(t("options.quickAdd.added"));
+  });
+  dialog.addEventListener("close", () => {
+    dialog.remove();
+    trigger.focus();
+  });
+  document.body.append(dialog);
+  renderPreview();
+  dialog.showModal();
+  radios[0]?.querySelector("input")?.focus();
+}
+
+function openCustomPresetDialog(target: SiteTargetSettings, trigger: HTMLButtonElement): void {
+  type DraftPeriod = CustomTimePeriodPreset["periods"][number] & { key: string };
+  let nextKey = 1;
+  const periods: DraftPeriod[] = [
+    {
+      key: `custom-period-${nextKey++}`,
+      name: "",
+      startTime: "09:00",
+      endTime: "10:00",
+      limitMinutes: 45,
+      groupCount: 1
+    }
+  ];
+  const titleId = `custom-period-preset-title-${target.id}`;
+  const name = element("input", {
+    className: "input",
+    attrs: {
+      type: "text",
+      required: true,
+      maxlength: 60,
+      "data-testid": "period-custom-preset-name"
+    }
+  });
+  const note = element("p", { className: "schedule-note", attrs: { role: "status" } });
+  const rows = element("div", { className: "period-custom-preset__rows" });
+  const preview = element("section", {
+    className: "period-quick-add__preview",
+    attrs: { "aria-live": "polite" }
+  });
+  const addPeriod = element("button", {
+    className: "btn",
+    text: t("options.quickAdd.customAddPeriod"),
+    attrs: { type: "button", "data-testid": "period-custom-add-row" }
+  });
+  const cancel = element("button", {
+    className: "btn",
+    text: t("common.cancel"),
+    attrs: { type: "button" }
+  });
+  const save = element("button", {
+    className: "btn btn--primary",
+    text: t("options.quickAdd.customSaveAndAdd"),
+    attrs: { type: "submit", "data-testid": "period-custom-save" }
+  });
+  const close = element("button", {
+    className: "btn btn--icon",
+    attrs: { type: "button", "aria-label": t("common.close") },
+    children: [icon("close")]
+  });
+  const dialog = element("dialog", {
+    className: "dialog period-quick-add period-custom-preset",
+    attrs: {
+      "aria-labelledby": titleId,
+      "data-testid": "period-custom-preset-dialog"
+    }
+  });
+  const form = element("form");
+  const closeDialog = () => {
+    dialog.close();
+  };
+
+  const updatePreview = () => {
+    renderPeriodPreview(
+      preview,
+      periods.map((period, index) => ({
+        id: `period:custom-preview-${index}`,
+        name: period.name || t("options.quickAdd.customPeriodFallback", { count: index + 1 }),
+        enabled: true,
+        days: [0, 1, 2, 3, 4, 5, 6],
+        startTime: period.startTime,
+        endTime: period.endTime,
+        behavior: "timed",
+        limitMinutes: period.limitMinutes,
+        groupCount: period.groupCount
+      }))
+    );
+  };
+
+  const renderRows = () => {
+    rows.replaceChildren(
+      ...periods.map((period, index) => {
+        const periodName = element("input", {
+          className: "input",
+          attrs: {
+            type: "text",
+            maxlength: 60,
+            required: true,
+            value: period.name,
+            placeholder: t("options.quickAdd.customPeriodFallback", { count: index + 1 })
+          }
+        });
+        const start = element("input", {
+          className: "input",
+          attrs: { type: "time", required: true, value: period.startTime }
+        });
+        const end = element("input", {
+          className: "input",
+          attrs: { type: "time", required: true, value: period.endTime }
+        });
+        const limit = element("input", {
+          className: "input",
+          attrs: { type: "number", required: true, min: 1, max: 1440, value: period.limitMinutes }
+        });
+        const groups = element("input", {
+          className: "input",
+          attrs: { type: "number", required: true, min: 1, max: 24, value: period.groupCount }
+        });
+        const remove = element("button", {
+          className: "btn btn--icon btn--danger",
+          attrs: {
+            type: "button",
+            "aria-label": t("options.quickAdd.customRemovePeriod", { count: index + 1 })
+          },
+          children: [icon("trash")]
+        });
+        remove.disabled = periods.length === 1;
+        const bind = (input: HTMLInputElement, update: (value: string) => void) => {
+          input.addEventListener("input", () => {
+            update(input.value);
+            updatePreview();
+          });
+        };
+        bind(periodName, (value) => (period.name = value));
+        bind(start, (value) => (period.startTime = value));
+        bind(end, (value) => (period.endTime = value));
+        bind(limit, (value) => (period.limitMinutes = clamp(value, 1, 1440, 45)));
+        bind(groups, (value) => (period.groupCount = clamp(value, 1, 24, 1)));
+        remove.addEventListener("click", () => {
+          periods.splice(index, 1);
+          renderRows();
+          updatePreview();
+        });
+        return element("fieldset", {
+          className: "period-custom-preset__row",
+          children: [
+            element("legend", {
+              text: t("options.quickAdd.customPeriodFallback", { count: index + 1 })
+            }),
+            createField(t("options.periodName"), periodName),
+            element("div", {
+              className: "time-fields",
+              children: [
+                createField(t("options.periodStart"), start),
+                element("span", { className: "time-fields__dash", text: t("options.periodTo") }),
+                createField(t("options.periodEnd"), end)
+              ]
+            }),
+            element("div", {
+              className: "period-dialog__timed",
+              children: [
+                createField(t("options.periodLimit"), limit, t("common.minutes")),
+                createField(t("options.periodGroups"), groups),
+                remove
+              ]
+            })
+          ]
+        });
+      })
+    );
+  };
+
+  addPeriod.addEventListener("click", () => {
+    if (periods.length >= MAX_CUSTOM_TIME_PERIOD_PRESET_PERIODS) {
+      note.textContent = t("options.quickAdd.customPeriodLimit");
+      return;
+    }
+    periods.push({
+      key: `custom-period-${nextKey++}`,
+      name: "",
+      startTime: "09:00",
+      endTime: "10:00",
+      limitMinutes: 45,
+      groupCount: 1
+    });
+    note.textContent = "";
+    renderRows();
+    updatePreview();
+    rows.querySelector<HTMLInputElement>("input")?.focus();
+  });
+  close.addEventListener("click", closeDialog);
+  cancel.addEventListener("click", closeDialog);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const presetName = name.value.trim();
+    if (!presetName) {
+      note.textContent = t("options.quickAdd.customNameRequired");
+      name.focus();
+      return;
+    }
+    if (periods.some((period) => !period.name.trim())) {
+      note.textContent = t("options.quickAdd.customPeriodNameRequired");
+      return;
+    }
+    if ((draft?.customTimePeriodPresets.length ?? 0) >= MAX_CUSTOM_TIME_PERIOD_PRESETS) {
+      note.textContent = t("options.quickAdd.customPresetLimit");
+      return;
+    }
+    const customPreset: CustomTimePeriodPreset = {
+      id: `preset:${createDefaultTimePeriod().id}`,
+      name: presetName,
+      periods: periods.map((period) => ({
+        name: period.name.trim(),
+        startTime: period.startTime,
+        endTime: period.endTime,
+        limitMinutes: period.limitMinutes,
+        groupCount: period.groupCount
+      }))
+    };
+    const current = draft?.targets[target.id];
+    if (!draft || !current) return;
+    const result = applyCustomPresetToPeriods(
+      current.timePeriods,
+      customPreset,
+      () => createDefaultTimePeriod().id
+    );
+    if (!result.ok) {
+      note.textContent = t("options.periodLimitReached");
+      return;
+    }
+    draft.customTimePeriodPresets = [...draft.customTimePeriodPresets, customPreset];
+    current.timePeriods = result.periods;
+    closeDialog();
+    renderOptionsPreservingScroll();
+    markCustomPresetsDirty();
+    markTargetDirty(target.id);
+    toast(t("options.quickAdd.customAdded"));
+  });
+
+  form.append(
+    element("header", {
+      className: "dialog__header",
+      children: [
+        element("div", {
+          children: [
+            element("h2", { text: t("options.quickAdd.customTitle"), attrs: { id: titleId } }),
+            element("p", { text: t("options.quickAdd.customDescription") })
+          ]
+        }),
+        close
+      ]
+    }),
+    element("div", {
+      className: "period-quick-add__layout",
+      children: [
+        element("div", {
+          className: "period-quick-add__sidebar",
+          children: [createField(t("options.quickAdd.customName"), name), rows, addPeriod]
+        }),
+        preview
+      ]
+    }),
+    note,
+    element("footer", { className: "dialog__footer", children: [cancel, save] })
+  );
+  dialog.append(form);
+  dialog.addEventListener("close", () => {
+    dialog.remove();
+    trigger.focus();
+  });
+  document.body.append(dialog);
+  renderRows();
+  updatePreview();
+  dialog.showModal();
+  name.focus();
+}
+
+function periodCoversHour(period: TimePeriodSettings, hour: number): boolean {
+  const start = Number(period.startTime.slice(0, 2)) * 60 + Number(period.startTime.slice(3));
+  const end = Number(period.endTime.slice(0, 2)) * 60 + Number(period.endTime.slice(3));
+  const minute = hour * 60;
+  if (start === end) return true;
+  return start < end ? minute >= start && minute < end : minute >= start || minute < end;
+}
+
+function previewIds(): () => string {
+  let index = 0;
+  return () => `period:preview-${index++}`;
+}
+
+function renderPeriodPreview(preview: HTMLElement, periods: readonly TimePeriodSettings[]): void {
+  const timeline = element("div", {
+    className: "period-quick-add__timeline",
+    attrs: {
+      role: "img",
+      "aria-label": t("options.quickAdd.timelineLabel"),
+      "data-testid": "period-quick-add-timeline"
+    },
+    children: Array.from({ length: 24 }, (_, hour) => {
+      const periodIndex = periods.findIndex((period) => periodCoversHour(period, hour));
+      return element("span", {
+        className:
+          periodIndex >= 0
+            ? `period-quick-add__hour period-color-${periodIndex % 6}`
+            : "period-quick-add__hour",
+        attrs: {
+          "aria-hidden": "true",
+          title: `${String(hour).padStart(2, "0")}:00`,
+          "data-hour": hour,
+          "data-state": periodIndex >= 0 ? "available" : "unavailable"
+        }
+      });
+    })
+  });
+  preview.replaceChildren(
+    element("div", {
+      className: "period-quick-add__timeline-wrap",
+      children: [
+        timeline,
+        element("div", {
+          className: "period-quick-add__timeline-scale",
+          attrs: { "aria-hidden": "true" },
+          children: ["00", "06", "12", "18", "24"].map((label) => element("span", { text: label }))
+        }),
+        element("p", {
+          className: "period-quick-add__legend",
+          text: t("options.quickAdd.unavailable")
+        })
+      ]
+    }),
+    element("h3", { text: t("options.quickAdd.willAdd") }),
+    element("ul", {
+      className: "period-quick-add__summary",
+      attrs: { "data-testid": "period-quick-add-summary" },
+      children: periods.map((period, index) =>
+        element("li", {
+          children: [
+            element("span", {
+              className: `period-quick-add__swatch period-color-${index % 6}`,
+              attrs: { "aria-hidden": true }
+            }),
+            element("div", {
+              children: [
+                element("strong", { text: displayPeriodName(period) }),
+                element("span", {
+                  text: `${formatClockTime(period.startTime)}–${formatClockTime(period.endTime)}`
+                }),
+                element("small", {
+                  text: t("options.groupSummary", {
+                    limit: period.limitMinutes ?? 0,
+                    groups: period.groupCount,
+                    perGroup: formatGroupMinutes((period.limitMinutes ?? 0) / period.groupCount)
+                  })
+                })
+              ]
+            })
+          ]
+        })
+      )
+    })
+  );
 }
 
 function createPeriodItem(target: SiteTargetSettings, period: TimePeriodSettings): HTMLLIElement {
@@ -782,7 +1507,11 @@ function openAddSiteDialog(): void {
         if (!(await flushAutoSave())) return;
         const website = normalizeWebsiteInput(input.value);
         setButtonBusy(submit, true, t("options.requestingPermission"));
-        if (!(await requestWebsitePermission(website.permissionPattern))) {
+        note.textContent =
+          website.family === "bilibili"
+            ? t("options.bilibiliScopeNote")
+            : t("options.permissionNote");
+        if (!(await requestWebsitePermission(website.permissionPatterns))) {
           note.textContent = t("options.permissionDenied");
           return;
         }
@@ -885,6 +1614,11 @@ function markTargetDirty(targetId: string): void {
   scheduleAutoSave();
 }
 
+function markCustomPresetsDirty(): void {
+  customPresetsPending = true;
+  scheduleAutoSave();
+}
+
 function scheduleAutoSave(): void {
   if (!isDirty()) {
     saveStatus = "saved";
@@ -911,7 +1645,10 @@ async function flushAutoSave(): Promise<boolean> {
   }
   if (saveLoop) return saveLoop;
   saveLoop = (async () => {
-    while (draft && (pendingSiteIds.size > 0 || pendingTargetIds.size > 0)) {
+    while (
+      draft &&
+      (pendingSiteIds.size > 0 || pendingTargetIds.size > 0 || customPresetsPending)
+    ) {
       saveStatus = "saving";
       updateSaveState();
       const siteId = pendingSiteIds.values().next().value;
@@ -942,6 +1679,28 @@ async function flushAutoSave(): Promise<boolean> {
           }
         } catch (error) {
           pendingSiteIds.add(siteId);
+          return handleAutoSaveError(error);
+        }
+        continue;
+      }
+
+      if (customPresetsPending) {
+        customPresetsPending = false;
+        const persistedPresets = clone(draft.customTimePeriodPresets);
+        const persistedSnapshot = snapshot(persistedPresets);
+        try {
+          const normalized = await sendRequest({
+            type: "UPDATE_SETTINGS",
+            patch: { customTimePeriodPresets: persistedPresets }
+          });
+          if (savedConfiguration) {
+            savedConfiguration.customTimePeriodPresets = clone(normalized.customTimePeriodPresets);
+          }
+          if (draft && snapshot(draft.customTimePeriodPresets) === persistedSnapshot) {
+            draft.customTimePeriodPresets = clone(normalized.customTimePeriodPresets);
+          }
+        } catch (error) {
+          customPresetsPending = true;
           return handleAutoSaveError(error);
         }
         continue;
@@ -1043,8 +1802,14 @@ function isDirty(): boolean {
   );
 }
 
-function configurationOf(settings: FocusSettings): Pick<FocusSettings, "sites" | "targets"> {
-  return clone({ sites: settings.sites, targets: settings.targets });
+function configurationOf(
+  settings: FocusSettings
+): Pick<FocusSettings, "sites" | "targets" | "customTimePeriodPresets"> {
+  return clone({
+    sites: settings.sites,
+    targets: settings.targets,
+    customTimePeriodPresets: settings.customTimePeriodPresets
+  });
 }
 
 function snapshot(value: unknown): string {

@@ -22,6 +22,7 @@
   "scripts": {
     "build": "node scripts/build.mjs all",
     "build:chromium": "node scripts/build.mjs chromium",
+    "build:debug": "node scripts/build.mjs debug",
     "build:firefox": "node scripts/build.mjs firefox",
     "build:safari": "node scripts/build.mjs safari",
     "typecheck": "tsc --noEmit",

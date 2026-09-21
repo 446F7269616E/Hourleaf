@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AnalyticsService } from "../../src/shared/analytics";
 import type { ExtensionApi, StorageAreaLike } from "../../src/shared/browser";
 import { createDefaultSettings } from "../../src/shared/config";
@@ -30,12 +30,22 @@ const storage = new MemoryStorage();
 let settings: SettingsRepository;
 let analytics: AnalyticsService;
 let decisions: FocusDecisionService;
+let executeScript: ReturnType<typeof vi.fn>;
+let queryTabs: ReturnType<typeof vi.fn>;
+let registerContentScripts: ReturnType<typeof vi.fn>;
 const siteId = "site:test";
 const targetId = "target:test";
 const managedUrl = "https://example.com/focus";
 
 beforeEach(async () => {
   for (const key of Object.keys(storage.values)) delete storage.values[key];
+  executeScript = vi.fn(() => Promise.resolve([]));
+  registerContentScripts = vi.fn(() => Promise.resolve());
+  queryTabs = vi.fn(() =>
+    Promise.resolve([
+      { id: 17, active: true, windowId: 1, url: "https://new.example/already-open" }
+    ])
+  );
   (globalThis as typeof globalThis & { browser?: ExtensionApi }).browser = {
     runtime: { sendMessage: () => Promise.resolve(), onMessage: { addListener: () => undefined } },
     storage: { local: storage },
@@ -44,9 +54,13 @@ beforeEach(async () => {
       remove: () => Promise.resolve(true)
     },
     scripting: {
-      registerContentScripts: () => Promise.resolve(),
+      registerContentScripts,
       unregisterContentScripts: () => Promise.resolve(),
-      getRegisteredContentScripts: () => Promise.resolve([])
+      getRegisteredContentScripts: () => Promise.resolve([]),
+      executeScript
+    },
+    tabs: {
+      query: queryTabs
     }
   };
   settings = new SettingsRepository(storage);
@@ -155,6 +169,8 @@ describe("focus decisions", () => {
       motivationalMessage: "Stay focused"
     });
     expect(addedSite).toBeDefined();
+    expect(queryTabs).toHaveBeenCalledWith({ url: ["https://new.example/*"] });
+    expect(executeScript).toHaveBeenCalledWith({ target: { tabId: 17 }, files: ["content.js"] });
     expect(addedSite?.targetIds.some((id) => updated.targets[id]?.moduleId === manifest.id)).toBe(
       true
     );
@@ -173,6 +189,28 @@ describe("focus decisions", () => {
     expect(updated.targets[targetId]).toBeUndefined();
     expect(updated.locale).toBe("en");
     expect(updated.endPage.motivationalMessage).toBe("One step at a time");
+  });
+
+  it("uses one reviewed Bilibili family configuration across related subdomains", async () => {
+    const managedSites = new ManagedSiteService(settings);
+
+    const added = await managedSites.addAuthorized("https://bilibili.com");
+
+    expect(added).toMatchObject({
+      granted: true,
+      origin: "https://www.bilibili.com",
+      site: { matchPatterns: ["https://*.bilibili.com/*"] }
+    });
+    expect(registerContentScripts).toHaveBeenCalledWith([
+      expect.objectContaining({ matches: ["https://*.bilibili.com/*"] })
+    ]);
+    await expect(managedSites.resolve("https://t.bilibili.com/123")).resolves.toMatchObject({
+      site: { id: added.site?.id }
+    });
+    await expect(managedSites.resolve("https://space.bilibili.com/456")).resolves.toMatchObject({
+      site: { id: added.site?.id }
+    });
+    await expect(managedSites.resolve("https://evilbilibili.com/")).resolves.toBeNull();
   });
 
   it("uses period switches even when legacy website and target switches were disabled", async () => {

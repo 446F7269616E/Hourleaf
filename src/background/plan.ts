@@ -32,7 +32,7 @@ export class PlanService {
     private readonly now: () => number = Date.now
   ) {}
 
-  async getState(): Promise<PlanState> {
+  async getState(options: { reconcile?: boolean } = {}): Promise<PlanState> {
     const [settings, queue, access] = await Promise.all([
       this.settingsRepository.get(),
       this.queueRepository.get(),
@@ -43,7 +43,7 @@ export class PlanService {
     let planSettings = settings.planMode;
     const shouldClearGrant = Boolean(access.activeGrant && !activeGrant);
     const shouldDisableMode = settings.planMode.enabled && !activeGrant;
-    if (shouldClearGrant || shouldDisableMode) {
+    if (options.reconcile !== false && (shouldClearGrant || shouldDisableMode)) {
       await Promise.all([
         shouldClearGrant
           ? this.accessRepository.update((store) => {
@@ -96,7 +96,8 @@ export class PlanService {
         title: patch.title ?? item.title,
         source: patch.source ?? item.source,
         scheduledDurationMinutes: patch.scheduledDurationMinutes ?? item.scheduledDurationMinutes,
-        completionMode: patch.completionMode ?? item.completionMode
+        completionMode: patch.completionMode ?? item.completionMode,
+        pauseOnVideoEnd: patch.pauseOnVideoEnd ?? item.pauseOnVideoEnd
       });
       if (
         queue.items.some((candidate) => candidate.id !== id && candidate.url === normalized.url)
@@ -173,7 +174,8 @@ export class PlanService {
       grantedAt,
       expiresAt: grantedAt + item.scheduledDurationMinutes * 60_000,
       scheduledDurationMinutes: item.scheduledDurationMinutes,
-      completionMode: item.completionMode
+      completionMode: item.completionMode,
+      pauseOnVideoEnd: item.pauseOnVideoEnd
     };
     await this.accessRepository.update((store) => {
       store.activeGrant = grant;
@@ -290,6 +292,7 @@ export class PlanService {
       ...(item.bvid ? { bvid: item.bvid } : {}),
       expiresAt: grant.expiresAt,
       completionMode: grant.completionMode,
+      ...(grant.pauseOnVideoEnd ? { pauseOnVideoEnd: true } : {}),
       ...(grant.flowContinuationKind ? { flowContinuationKind: grant.flowContinuationKind } : {})
     };
   }
@@ -385,6 +388,25 @@ export class PlanService {
     return this.getState();
   }
 
+  async pauseAtVideoEnd(itemId: string, expectedUrl?: string): Promise<PlanState> {
+    const normalizedExpectedUrl = expectedUrl ? normalizePlanUrl(expectedUrl)?.href : undefined;
+    await this.accessRepository.update((store) => {
+      const grant = store.activeGrant;
+      if (
+        !grant ||
+        grant.itemId !== itemId ||
+        !grant.pauseOnVideoEnd ||
+        grant.flowContinuationKind !== undefined ||
+        (expectedUrl !== undefined && normalizedExpectedUrl !== grant.url)
+      ) {
+        throw new Error("This plan item is no longer waiting for the video to end");
+      }
+      delete store.activeGrant;
+    });
+    await this.settingsRepository.update({ planMode: { enabled: false } });
+    return this.getState();
+  }
+
   async importItems(
     inputs: PlanItemInput[],
     source: PlanItemSource = "manual"
@@ -466,7 +488,14 @@ function persistedPlanInput(
   input: NormalizedPlanItemInput
 ): Pick<
   PlanItem,
-  "url" | "origin" | "title" | "source" | "bvid" | "scheduledDurationMinutes" | "completionMode"
+  | "url"
+  | "origin"
+  | "title"
+  | "source"
+  | "bvid"
+  | "scheduledDurationMinutes"
+  | "completionMode"
+  | "pauseOnVideoEnd"
 > {
   return {
     url: input.url,
@@ -475,12 +504,13 @@ function persistedPlanInput(
     source: input.source,
     scheduledDurationMinutes: input.scheduledDurationMinutes,
     completionMode: input.completionMode,
+    pauseOnVideoEnd: input.pauseOnVideoEnd,
     ...(input.bvid ? { bvid: input.bvid } : {})
   };
 }
 
 function planItemAuthorizationIdentity(item: PlanItem): string {
-  return `${item.url}\n${item.bvid ?? ""}\n${item.scheduledDurationMinutes}\n${item.completionMode}`;
+  return `${item.url}\n${item.bvid ?? ""}\n${item.scheduledDurationMinutes}\n${item.completionMode}\n${item.pauseOnVideoEnd}`;
 }
 
 function createId(): string {

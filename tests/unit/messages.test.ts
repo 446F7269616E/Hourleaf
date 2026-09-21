@@ -1,7 +1,51 @@
 import { describe, expect, it } from "vitest";
 import { isHttpUrl, parseMessageRequest } from "../../src/shared/messages";
+import { createDefaultSettings } from "../../src/shared/config";
+import { createConfigurationBackup } from "../../src/shared/configuration-backup";
 
 describe("message boundary", () => {
+  it("accepts only a fully validated configuration backup message", () => {
+    const backup = createConfigurationBackup(
+      createDefaultSettings(),
+      { schemaVersion: 1, items: [] },
+      { schemaVersion: 1, installations: {} },
+      new Date(0)
+    );
+    expect(
+      parseMessageRequest({
+        version: 1,
+        requestId: "configuration-import",
+        type: "IMPORT_CONFIGURATION",
+        payload: { backup }
+      })?.request
+    ).toEqual({ type: "IMPORT_CONFIGURATION", backup });
+    expect(
+      parseMessageRequest({
+        version: 1,
+        requestId: "configuration-import-bad",
+        type: "IMPORT_CONFIGURATION",
+        payload: { backup: { ...backup, schemaVersion: 99 } }
+      })
+    ).toBeNull();
+  });
+  it("accepts only scoped related-tab close requests", () => {
+    expect(
+      parseMessageRequest({
+        version: 1,
+        requestId: "close-focus-tabs",
+        type: "CLOSE_RELATED_TABS",
+        payload: { source: "focus", siteId: "site:test" }
+      })?.request
+    ).toEqual({ type: "CLOSE_RELATED_TABS", source: "focus", siteId: "site:test" });
+    expect(
+      parseMessageRequest({
+        version: 1,
+        requestId: "close-broad-tabs",
+        type: "CLOSE_RELATED_TABS",
+        payload: { source: "focus", siteId: "site:test", all: true }
+      })
+    ).toBeNull();
+  });
   it("accepts a bounded versioned request", () => {
     expect(
       parseMessageRequest({
@@ -14,6 +58,14 @@ describe("message boundary", () => {
       requestId: "request-123",
       request: { type: "GET_USAGE", period: "week", anchorDate: "2026-08-06" }
     });
+    expect(
+      parseMessageRequest({
+        version: 1,
+        requestId: "request-year",
+        type: "GET_USAGE",
+        payload: { period: "year" }
+      })?.request
+    ).toEqual({ type: "GET_USAGE", period: "year" });
   });
 
   it("rejects malformed, unknown and unsupported URL messages", () => {
@@ -42,7 +94,8 @@ describe("message boundary", () => {
           title: "计划视频",
           url: "https://www.bilibili.com/video/BV1xx411c7mD?spm_id_from=333",
           scheduledDurationMinutes: 45,
-          completionMode: "flow"
+          completionMode: "flow",
+          pauseOnVideoEnd: true
         }
       })
     ).toEqual({
@@ -52,7 +105,8 @@ describe("message boundary", () => {
         title: "计划视频",
         url: "https://www.bilibili.com/video/BV1xx411c7mD?spm_id_from=333",
         scheduledDurationMinutes: 45,
-        completionMode: "flow"
+        completionMode: "flow",
+        pauseOnVideoEnd: true
       }
     });
     expect(
@@ -91,6 +145,12 @@ describe("message boundary", () => {
         url: "https://www.bilibili.com/video/BV1xx411c7mD",
         scheduledDurationMinutes: 45,
         completionMode: "unknown"
+      },
+      {
+        url: "https://www.bilibili.com/video/BV1xx411c7mD",
+        scheduledDurationMinutes: 45,
+        completionMode: "strict",
+        pauseOnVideoEnd: "yes"
       }
     ]) {
       expect(
@@ -110,14 +170,19 @@ describe("message boundary", () => {
         version: 1,
         requestId: "plan-settings",
         type: "SET_PLAN_MODE",
-        payload: { defaultCompletionMode: "strict", autoCompleteOnStart: true }
+        payload: {
+          defaultCompletionMode: "strict",
+          autoCompleteOnStart: true,
+          independentAccessTiming: false
+        }
       })
     ).toEqual({
       requestId: "plan-settings",
       request: {
         type: "SET_PLAN_MODE",
         defaultCompletionMode: "strict",
-        autoCompleteOnStart: true
+        autoCompleteOnStart: true,
+        independentAccessTiming: false
       }
     });
 
@@ -147,6 +212,18 @@ describe("message boundary", () => {
         requestId: "plan-flow-video",
         type: "CONTINUE_PLAN_FLOW",
         payload: { itemId: "plan-item", continuation: { kind: "video-end" } }
+      })
+    ).not.toBeNull();
+    expect(
+      parseMessageRequest({
+        version: 1,
+        requestId: "plan-pause-video",
+        type: "STOP_PLAN_ACCESS",
+        payload: {
+          itemId: "plan-item",
+          reason: "video-ended",
+          url: "https://example.com/planned"
+        }
       })
     ).not.toBeNull();
     expect(
@@ -220,7 +297,13 @@ describe("message boundary", () => {
         type: "UPDATE_MANAGED_SITE",
         payload: {
           siteId: "site:test",
-          patch: { visitConfirmation: { enabled: true, waitSeconds: 3 } }
+          patch: {
+            visitConfirmation: {
+              enabled: true,
+              waitSeconds: 3,
+              prompt: "确认当前任务需要这个网站"
+            }
+          }
         }
       })
     ).not.toBeNull();
@@ -232,6 +315,19 @@ describe("message boundary", () => {
         payload: {
           siteId: "site:test",
           patch: { visitConfirmation: { enabled: true, waitSeconds: 61 } }
+        }
+      })
+    ).toBeNull();
+    expect(
+      parseMessageRequest({
+        version: 1,
+        requestId: "visit-settings-prompt-too-long",
+        type: "UPDATE_MANAGED_SITE",
+        payload: {
+          siteId: "site:test",
+          patch: {
+            visitConfirmation: { enabled: true, waitSeconds: 3, prompt: "x".repeat(161) }
+          }
         }
       })
     ).toBeNull();
@@ -250,5 +346,38 @@ describe("message boundary", () => {
         siteId: "site:test"
       }
     });
+  });
+
+  it("validates local module filter-group updates", () => {
+    expect(
+      parseMessageRequest({
+        version: 1,
+        requestId: "module-filter",
+        type: "SET_LOCAL_MODULE_FILTER_ENABLED",
+        payload: {
+          moduleId: "hourleaf.local.youtube-focus",
+          groupId: "home-recommendations",
+          enabled: false
+        }
+      })?.request
+    ).toEqual({
+      type: "SET_LOCAL_MODULE_FILTER_ENABLED",
+      moduleId: "hourleaf.local.youtube-focus",
+      groupId: "home-recommendations",
+      enabled: false
+    });
+    expect(
+      parseMessageRequest({
+        version: 1,
+        requestId: "module-filter-extra",
+        type: "SET_LOCAL_MODULE_FILTER_ENABLED",
+        payload: {
+          moduleId: "hourleaf.local.youtube-focus",
+          groupId: "home-recommendations",
+          enabled: true,
+          unexpected: true
+        }
+      })
+    ).toBeNull();
   });
 });

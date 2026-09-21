@@ -5,7 +5,12 @@ import {
   resolveToolbarBadgeText
 } from "../../src/shared/remaining-time";
 import { createDefaultSettings } from "../../src/shared/config";
-import type { PageDecision, SiteTargetSettings, UsageSummary } from "../../src/shared/types";
+import type {
+  PageDecision,
+  PlanNavigationDecision,
+  SiteTargetSettings,
+  UsageSummary
+} from "../../src/shared/types";
 
 const target: SiteTargetSettings = {
   id: "target:test",
@@ -110,5 +115,69 @@ describe("remaining time presentation", () => {
     expect(resolveToolbarBadgeText(settings, usage, decision)).toBe("35");
     settings.showRemainingMinutesOnIcon = false;
     expect(resolveToolbarBadgeText(settings, usage, decision)).toBe("");
+  });
+
+  it("shows a newly selected focus-flow duration instead of the exhausted quota", () => {
+    const settings = createDefaultSettings();
+    settings.targets[target.id] = target;
+    const nowMs = new Date("2026-08-13T09:00:00+08:00").getTime();
+    const exhaustedUsage: UsageSummary = {
+      ...usage,
+      byPeriod: { ...usage.byPeriod, "period:morning": 2_700 }
+    };
+    const decision: PageDecision = {
+      targetId: target.id,
+      section: null,
+      blocked: false,
+      reason: "flow-extension",
+      activePeriodId: "period:morning",
+      flowContinuationKind: "minutes",
+      flowExpiresAt: nowMs + 5 * 60_000,
+      canRequestTemporaryAccess: false,
+      temporaryAccessUsesRemaining: 0
+    };
+
+    expect(resolveToolbarBadgeText(settings, exhaustedUsage, decision, { nowMs })).toBe("5");
+    expect(
+      resolveToolbarBadgeText(
+        settings,
+        exhaustedUsage,
+        { ...decision, flowContinuationKind: "video-end", flowExpiresAt: undefined },
+        { nowMs }
+      )
+    ).toBe("");
+  });
+
+  it("uses the tighter plan or focus deadline for the toolbar badge", () => {
+    const settings = createDefaultSettings();
+    settings.planMode.independentAccessTiming = false;
+    settings.targets[target.id] = target;
+    const nowMs = new Date("2026-08-13T09:00:00+08:00").getTime();
+    const focusDecision: PageDecision = {
+      targetId: target.id,
+      section: null,
+      blocked: false,
+      reason: "outside-schedule",
+      activePeriodId: "period:morning",
+      canRequestTemporaryAccess: false,
+      temporaryAccessUsesRemaining: 0
+    };
+    const planDecision: PlanNavigationDecision = {
+      planModeEnabled: true,
+      allowed: true,
+      reason: "authorized",
+      expiresAt: nowMs + 7 * 60_000
+    };
+
+    expect(resolveToolbarBadgeText(settings, usage, focusDecision, { nowMs, planDecision })).toBe(
+      "7"
+    );
+    settings.planMode.independentAccessTiming = true;
+    expect(
+      resolveToolbarBadgeText(settings, usage, focusDecision, {
+        nowMs,
+        planDecision: { ...planDecision, expiresAt: nowMs + 50 * 60_000 }
+      })
+    ).toBe("50");
   });
 });

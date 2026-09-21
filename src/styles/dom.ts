@@ -12,6 +12,7 @@ export type IconName =
   | "external"
   | "eye"
   | "focus"
+  | "help"
   | "home"
   | "info"
   | "leaf"
@@ -107,6 +108,11 @@ export function icon(name: IconName, label?: string): SVGSVGElement {
         d: "M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"
       }),
       svgPart("circle", { cx: "12", cy: "12", r: "3" })
+    ],
+    help: [
+      svgPart("circle", { cx: "12", cy: "12", r: "9" }),
+      svgPart("path", { d: "M9.7 9a2.5 2.5 0 1 1 4.6 1.4c-.8 1.2-2.3 1.4-2.3 3.1" }),
+      svgPart("path", { d: "M12 17h.01" })
     ],
     home: [svgPart("path", { d: "m3 11 9-8 9 8v9a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z" })],
     info: [

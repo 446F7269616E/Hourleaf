@@ -5,6 +5,7 @@ import {
   type LocalModuleCapability,
   type LocalModuleDefinition,
   type LocalModuleDomainPolicy,
+  type LocalModuleFilterGroup,
   type LocalModuleInstallation,
   type LocalModuleStore
 } from "./types";
@@ -18,6 +19,10 @@ const LIMITS = Object.freeze({
   matches: 32,
   selectors: 128,
   selector: 300,
+  filterGroups: 24,
+  filterGroupId: 64,
+  filterGroupName: 80,
+  filterGroupDescription: 240,
   css: 100_000,
   script: 150_000,
   dnrRules: 0
@@ -80,6 +85,10 @@ export function normalizeLocalModuleDefinition(
     : "timed";
   const hideSelectors = normalizeSelectors(value.hideSelectors);
   if (hideSelectors === null) return null;
+  const filterGroups = normalizeFilterGroups(value.filterGroups);
+  if (filterGroups === null) return null;
+  const shadowRoots = normalizeShadowRoots(value.shadowRoots);
+  if (shadowRoots === null) return null;
   let css = "";
   if (value.css !== undefined) {
     if (
@@ -105,7 +114,13 @@ export function normalizeLocalModuleDefinition(
   }
   const dnrRules = normalizeDnrRules(value.dnrRules);
   if (dnrRules === null) return null;
-  const inferred = inferCapabilities({ domainPolicy, hideSelectors, css, userScript });
+  const inferred = inferCapabilities({
+    domainPolicy,
+    hideSelectors,
+    filterGroups,
+    css,
+    userScript
+  });
   const declared = Array.isArray(value.capabilities)
     ? value.capabilities.filter(
         (item): item is LocalModuleCapability => typeof item === "string" && CAPABILITIES.has(item)
@@ -123,11 +138,34 @@ export function normalizeLocalModuleDefinition(
     matches,
     domainPolicy,
     hideSelectors,
+    filterGroups,
     css,
     dnrRules,
     userScript,
-    capabilities
+    capabilities,
+    shadowRoots
   };
+}
+
+function normalizeShadowRoots(value: unknown): LocalModuleDefinition["shadowRoots"] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 8) return null;
+  const roots: NonNullable<LocalModuleDefinition["shadowRoots"]> = [];
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.hostSelector !== "string") return null;
+    const selectors = normalizeSelectors([item.hostSelector]);
+    if (!selectors || !item.hostSelector.trim()) return null;
+    if (
+      item.mountEvent !== undefined &&
+      (typeof item.mountEvent !== "string" || !/^[a-zA-Z][\w:-]{0,63}$/u.test(item.mountEvent))
+    )
+      return null;
+    roots.push({
+      hostSelector: item.hostSelector,
+      ...(typeof item.mountEvent === "string" ? { mountEvent: item.mountEvent } : {})
+    });
+  }
+  return roots;
 }
 
 export function normalizeLocalModuleStore(value: unknown): LocalModuleStore {
@@ -148,6 +186,21 @@ export function normalizeLocalModuleStore(value: unknown): LocalModuleStore {
       definition,
       source: "local-file",
       enabled: raw.enabled === true,
+      disabledFilterGroupIds: normalizeDisabledFilterGroupIds(
+        raw.disabledFilterGroupIds,
+        definition.filterGroups
+      ),
+      ...(isRecord(raw.planPreferences)
+        ? {
+            planPreferences: {
+              enabled: raw.planPreferences.enabled !== false,
+              disabledFilterGroupIds: normalizeDisabledFilterGroupIds(
+                raw.planPreferences.disabledFilterGroupIds,
+                definition.filterGroups
+              )
+            }
+          }
+        : {}),
       importedAt,
       updatedAt
     };
@@ -239,6 +292,55 @@ function normalizeSelectors(value: unknown): string[] | null {
   return [...new Set(selectors)];
 }
 
+function normalizeFilterGroups(value: unknown): LocalModuleFilterGroup[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > LIMITS.filterGroups) return null;
+  const groups: LocalModuleFilterGroup[] = [];
+  const ids = new Set<string>();
+  let selectorCount = 0;
+  for (const item of value) {
+    if (
+      !isRecord(item) ||
+      typeof item.id !== "string" ||
+      item.id.length > LIMITS.filterGroupId ||
+      !/^[a-z0-9][a-z0-9-]*$/u.test(item.id) ||
+      ids.has(item.id) ||
+      !isText(item.name, LIMITS.filterGroupName)
+    ) {
+      return null;
+    }
+    const selectors = normalizeSelectors(item.selectors);
+    if (!selectors || selectors.length === 0) return null;
+    selectorCount += selectors.length;
+    if (selectorCount > LIMITS.selectors) return null;
+    const description =
+      typeof item.description === "string"
+        ? cleanText(item.description, LIMITS.filterGroupDescription)
+        : "";
+    ids.add(item.id);
+    groups.push({
+      id: item.id,
+      name: cleanText(item.name, LIMITS.filterGroupName),
+      description,
+      selectors
+    });
+  }
+  return groups;
+}
+
+function normalizeDisabledFilterGroupIds(
+  value: unknown,
+  groups: readonly LocalModuleFilterGroup[]
+): string[] {
+  if (!Array.isArray(value)) return [];
+  const validIds = new Set(groups.map((group) => group.id));
+  return [
+    ...new Set(
+      value.filter((item): item is string => typeof item === "string" && validIds.has(item))
+    )
+  ];
+}
+
 function normalizeDnrRules(value: unknown): LocalModuleDefinition["dnrRules"] | null {
   if (value === undefined) return [];
   return Array.isArray(value) && value.length === LIMITS.dnrRules ? [] : null;
@@ -247,12 +349,15 @@ function normalizeDnrRules(value: unknown): LocalModuleDefinition["dnrRules"] | 
 function inferCapabilities(input: {
   domainPolicy: LocalModuleDomainPolicy;
   hideSelectors: string[];
+  filterGroups: LocalModuleFilterGroup[];
   css: string;
   userScript: string;
 }): LocalModuleCapability[] {
   const capabilities: LocalModuleCapability[] = [];
   if (input.domainPolicy !== "timed") capabilities.push("domain-policy");
-  if (input.hideSelectors.length > 0) capabilities.push("hide-elements");
+  if (input.hideSelectors.length > 0 || input.filterGroups.length > 0) {
+    capabilities.push("hide-elements");
+  }
   if (input.css.trim()) capabilities.push("css");
   if (input.userScript.trim()) capabilities.push("user-script");
   return capabilities;

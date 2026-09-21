@@ -39,12 +39,14 @@ export class UsageTracker {
   private readonly sessionByTab = new Map<number, string>();
   private readonly visibleByTab = new Map<number, boolean>();
   private readonly targetByTab = new Map<number, TargetId>();
+  private readonly isolatedPlanUsageByTab = new Map<number, boolean>();
   private currentTab: ExtensionTab | null = null;
   private focusedWindowId: number | null = null;
   private windowFocused = true;
   private idleState: TrackingStatus["idleState"] = "unsupported";
   private lastTickAt: number;
   private intervalId: ReturnType<typeof setInterval> | null = null;
+  private sessionUpdateQueue: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly analytics = new AnalyticsService(),
@@ -87,7 +89,15 @@ export class UsageTracker {
     ).catch(() => null);
     const pageVisible =
       this.currentTab?.id !== undefined && this.visibleByTab.get(this.currentTab.id) === true;
-    const candidate = target !== null && pageVisible && this.windowFocused && this.isUserActive();
+    const isolatedPlanUsage =
+      this.currentTab?.id !== undefined &&
+      this.isolatedPlanUsageByTab.get(this.currentTab.id) === true;
+    const candidate =
+      target !== null &&
+      pageVisible &&
+      this.windowFocused &&
+      this.isUserActive() &&
+      !isolatedPlanUsage;
     const isTracking = candidate
       ? await Promise.resolve(this.isUsageAllowed(url, this.now(), target?.targetId)).catch(
           () => false
@@ -119,9 +129,14 @@ export class UsageTracker {
     const start = Math.max(rawStart, end - MAX_RECORDABLE_GAP_MS);
     const requestedTargetId =
       this.currentTab?.id === undefined ? undefined : this.targetByTab.get(this.currentTab.id);
+    const isolatedPlanUsage =
+      this.currentTab?.id !== undefined &&
+      this.isolatedPlanUsageByTab.get(this.currentTab.id) === true;
     return Promise.all([
       Promise.resolve(this.resolveTarget(url, requestedTargetId)),
-      Promise.resolve(this.isUsageAllowed(url, end, requestedTargetId))
+      isolatedPlanUsage
+        ? Promise.resolve(false)
+        : Promise.resolve(this.isUsageAllowed(url, end, requestedTargetId))
     ])
       .then(([target, allowed]) =>
         target && allowed
@@ -137,8 +152,47 @@ export class UsageTracker {
     sessionId: string,
     url: string,
     visibility: "visible" | "hidden",
-    targetId?: TargetId
-  ): boolean {
+    targetId?: TargetId,
+    isolateConfiguredUsage = false
+  ): Promise<boolean> {
+    const result = this.sessionUpdateQueue.then(() =>
+      this.applySessionUpdate(
+        tab,
+        event,
+        sessionId,
+        url,
+        visibility,
+        targetId,
+        isolateConfiguredUsage
+      )
+    );
+    this.sessionUpdateQueue = result.catch(() => undefined);
+    return result;
+  }
+
+  /** Ends all in-memory tracking identities at a configuration replacement boundary. */
+  resetSessions(at = this.now()): Promise<void> {
+    const result = this.sessionUpdateQueue.then(async () => {
+      await this.flush(at);
+      this.sessionByTab.clear();
+      this.visibleByTab.clear();
+      this.targetByTab.clear();
+      this.isolatedPlanUsageByTab.clear();
+      this.lastTickAt = Math.max(at, this.lastTickAt);
+    });
+    this.sessionUpdateQueue = result.catch(() => undefined);
+    return result;
+  }
+
+  private async applySessionUpdate(
+    tab: ExtensionTab | undefined,
+    event: SessionEvent,
+    sessionId: string,
+    url: string,
+    visibility: "visible" | "hidden",
+    targetId?: TargetId,
+    isolateConfiguredUsage = false
+  ): Promise<boolean> {
     const tabId = tab?.id;
     if (tabId === undefined) return false;
     const existingSession = this.sessionByTab.get(tabId);
@@ -152,17 +206,23 @@ export class UsageTracker {
       this.sessionByTab.set(tabId, sessionId);
     }
 
-    void this.flush();
+    // Persist the interval that ended with this event before acknowledging it.
+    // The content script evaluates the rule immediately after the response, so
+    // a fire-and-forget flush would make enforcement perpetually one heartbeat
+    // behind the displayed usage.
+    await this.flush();
     if (event === "stop") {
       this.visibleByTab.set(tabId, false);
       this.sessionByTab.delete(tabId);
       this.targetByTab.delete(tabId);
+      this.isolatedPlanUsageByTab.delete(tabId);
       return true;
     }
 
     this.sessionByTab.set(tabId, sessionId);
     this.visibleByTab.set(tabId, visibility === "visible");
     if (targetId) this.targetByTab.set(tabId, targetId);
+    this.isolatedPlanUsageByTab.set(tabId, isolateConfiguredUsage);
     const updatedTab = { ...tab, id: tabId, url };
     if (tab?.windowId !== undefined) this.activeTabByWindow.set(tab.windowId, updatedTab);
     if (this.currentTab?.id === tabId || tab?.active) this.currentTab = updatedTab;
@@ -198,6 +258,7 @@ export class UsageTracker {
       this.sessionByTab.delete(tabId);
       this.visibleByTab.delete(tabId);
       this.targetByTab.delete(tabId);
+      this.isolatedPlanUsageByTab.delete(tabId);
       if (this.currentTab?.id !== tabId) return;
       void this.flush();
       this.currentTab = null;

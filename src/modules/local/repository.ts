@@ -1,3 +1,4 @@
+import { modulePreferences } from "./profiles";
 import {
   getLocalStorageArea,
   storageGet,
@@ -5,7 +6,7 @@ import {
   type StorageAreaLike
 } from "../../shared/browser";
 import { STORAGE_KEYS } from "../../shared/storage-keys";
-import type { LocalModuleDefinition, LocalModuleStore } from "./types";
+import type { LocalModuleDefinition, LocalModuleStore, LocalModuleProfile } from "./types";
 import { normalizeLocalModuleDefinition, normalizeLocalModuleStore } from "./validation";
 
 export class LocalModuleRepository {
@@ -30,17 +31,56 @@ export class LocalModuleRepository {
         definition: normalized,
         source: "local-file",
         enabled: previous?.enabled ?? false,
+        disabledFilterGroupIds: previous
+          ? previous.disabledFilterGroupIds.filter((groupId) =>
+              normalized.filterGroups.some((group) => group.id === groupId)
+            )
+          : [],
+        ...(previous?.planPreferences ? { planPreferences: previous.planPreferences } : {}),
         importedAt: previous?.importedAt ?? now,
         updatedAt: now
       };
     });
   }
 
-  async setEnabled(id: string, enabled: boolean, now = Date.now()): Promise<LocalModuleStore> {
+  async setEnabled(
+    id: string,
+    enabled: boolean,
+    now = Date.now(),
+    profile: LocalModuleProfile = "normal"
+  ): Promise<LocalModuleStore> {
     return this.update((store) => {
       const installation = store.installations[id];
       if (!installation) throw new Error("本地模块不存在");
-      installation.enabled = enabled;
+      if (profile === "plan")
+        installation.planPreferences = { ...modulePreferences(installation, profile), enabled };
+      else installation.enabled = enabled;
+      installation.updatedAt = now;
+    });
+  }
+
+  async setFilterGroupEnabled(
+    id: string,
+    groupId: string,
+    enabled: boolean,
+    now = Date.now(),
+    profile: LocalModuleProfile = "normal"
+  ): Promise<LocalModuleStore> {
+    return this.update((store) => {
+      const installation = store.installations[id];
+      if (!installation) throw new Error("本地模块不存在");
+      if (!installation.definition.filterGroups.some((group) => group.id === groupId)) {
+        throw new Error("模块屏蔽分组不存在");
+      }
+      const disabled = new Set(modulePreferences(installation, profile).disabledFilterGroupIds);
+      if (enabled) disabled.delete(groupId);
+      else disabled.add(groupId);
+      if (profile === "plan")
+        installation.planPreferences = {
+          ...modulePreferences(installation, profile),
+          disabledFilterGroupIds: [...disabled]
+        };
+      else installation.disabledFilterGroupIds = [...disabled];
       installation.updatedAt = now;
     });
   }

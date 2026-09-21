@@ -16,17 +16,55 @@ describe("settings schema", () => {
     expect(Object.keys(first.sectionRules)).toEqual([...SECTION_IDS]);
     expect(first.enabled).toBe(true);
     expect(first.showRemainingMinutesOnIcon).toBe(true);
-    expect(first.schemaVersion).toBe(4);
+    expect(first.schemaVersion).toBe(5);
     expect(first.sites).toEqual({});
     expect(first.targets).toEqual({});
     expect(first.locale).toBe("system");
     expect(first.endPage).toMatchObject({ view: "dashboard", motivationalMessage: "" });
     expect(first.planMode).toEqual({
       enabled: false,
+      independentAccessTiming: true,
+      enableAllBlocking: true,
       watchDurationMinutes: 45,
       defaultCompletionMode: "flow",
       autoCompleteOnStart: false
     });
+  });
+
+  it("normalizes bounded named custom time-period presets", () => {
+    const normalized = normalizeSettings({
+      customTimePeriodPresets: [
+        {
+          id: "preset:focus-breaks",
+          name: "  专注间歇  ",
+          periods: [
+            {
+              name: " 上午 ",
+              startTime: "09:00",
+              endTime: "10:00",
+              limitMinutes: 30,
+              groupCount: 2
+            },
+            { name: "bad", startTime: "25:00", endTime: "10:00", limitMinutes: 30, groupCount: 1 }
+          ]
+        }
+      ]
+    });
+    expect(normalized.customTimePeriodPresets).toEqual([
+      {
+        id: "preset:focus-breaks",
+        name: "专注间歇",
+        periods: [
+          {
+            name: "上午",
+            startTime: "09:00",
+            endTime: "10:00",
+            limitMinutes: 30,
+            groupCount: 2
+          }
+        ]
+      }
+    ]);
   });
 
   it("migrates block-only schedules and keeps explicit access effects", () => {
@@ -57,7 +95,7 @@ describe("settings schema", () => {
       }
     });
 
-    expect(normalized.schemaVersion).toBe(4);
+    expect(normalized.schemaVersion).toBe(5);
     expect(normalized.sectionRules.home.schedules.map((rule) => rule.effect)).toEqual([
       "block",
       "allow"
@@ -202,13 +240,14 @@ describe("settings schema", () => {
         "site:test": {
           origin: "https://example.com",
           targetIds: [],
-          visitConfirmation: { enabled: true, waitSeconds: 999 }
+          visitConfirmation: { enabled: true, waitSeconds: 999, prompt: "  开始前先确认任务  " }
         }
       }
     });
     expect(normalized.sites["site:test"]?.visitConfirmation).toEqual({
       enabled: true,
-      waitSeconds: 60
+      waitSeconds: 60,
+      prompt: "开始前先确认任务"
     });
     expect(normalized.endPage.groupUnlock.waitMinutes).toBe(5);
 
@@ -217,7 +256,8 @@ describe("settings schema", () => {
     });
     expect(updated.sites["site:test"]?.visitConfirmation).toEqual({
       enabled: true,
-      waitSeconds: 7
+      waitSeconds: 7,
+      prompt: "开始前先确认任务"
     });
   });
 
@@ -254,6 +294,8 @@ describe("settings schema", () => {
     expect(normalized.temporaryAccess.maxUsesPerDay).toBe(50);
     expect(normalized.planMode).toEqual({
       enabled: false,
+      independentAccessTiming: true,
+      enableAllBlocking: true,
       watchDurationMinutes: 45,
       defaultCompletionMode: "flow",
       autoCompleteOnStart: false
@@ -272,6 +314,8 @@ describe("settings schema", () => {
   it("migrates optional plan mode settings from old data and bounds new values", () => {
     expect(normalizeSettings({ enabled: true }).planMode).toEqual({
       enabled: false,
+      independentAccessTiming: true,
+      enableAllBlocking: true,
       watchDurationMinutes: 45,
       defaultCompletionMode: "flow",
       autoCompleteOnStart: false
@@ -280,6 +324,8 @@ describe("settings schema", () => {
       normalizeSettings({ planMode: { enabled: true, watchDurationMinutes: 99_999 } }).planMode
     ).toEqual({
       enabled: true,
+      independentAccessTiming: true,
+      enableAllBlocking: true,
       watchDurationMinutes: 360,
       defaultCompletionMode: "flow",
       autoCompleteOnStart: false
@@ -298,9 +344,23 @@ describe("settings schema", () => {
       mergeSettings(next, { planMode: { enabled: true, watchDurationMinutes: 25 } }).planMode
     ).toEqual({
       enabled: true,
+      independentAccessTiming: true,
+      enableAllBlocking: true,
       watchDurationMinutes: 25,
       defaultCompletionMode: "flow",
       autoCompleteOnStart: false
     });
+  });
+
+  it("defaults plan access isolation on and preserves an explicit opt-out", () => {
+    expect(normalizeSettings({}).planMode.independentAccessTiming).toBe(true);
+    expect(
+      normalizeSettings({ planMode: { independentAccessTiming: false } }).planMode
+        .independentAccessTiming
+    ).toBe(false);
+    expect(
+      normalizeSettings({ planMode: { independentAccessTiming: "yes" } }).planMode
+        .independentAccessTiming
+    ).toBe(true);
   });
 });

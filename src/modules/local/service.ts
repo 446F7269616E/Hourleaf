@@ -1,15 +1,19 @@
+import { projectModuleStore } from "./profiles";
 import {
   declarativeNetRequestGetDynamicRules,
   declarativeNetRequestUpdateDynamicRules,
   hasDeclarativeNetRequestApi,
   hasUserScriptsApi,
+  permissionsContains,
   userScriptsGetRegistered,
   userScriptsRegister,
   userScriptsUnregister
 } from "../../shared/browser";
 import { LocalModuleRepository } from "./repository";
 import type {
+  LocalModuleProfile,
   LocalModuleDefinition,
+  LocalModuleInstallation,
   LocalModuleDomainPolicy,
   LocalModulePlatform,
   LocalModuleRuntimeStatus,
@@ -23,10 +27,20 @@ import { getLocalModuleContentSafetyIssue, localModuleMatches } from "./validati
 const USER_SCRIPT_PREFIX = "hourleaf-local-";
 const DNR_RULE_ID_START = 2_000_000;
 const DNR_RULE_ID_END = 2_999_999;
+
+function enabledSelectors(installation: LocalModuleInstallation): string[] {
+  return [
+    ...installation.definition.hideSelectors,
+    ...installation.definition.filterGroups
+      .filter((group) => !installation.disabledFilterGroupIds.includes(group.id))
+      .flatMap((group) => group.selectors)
+  ];
+}
 declare const __HOURLEAF_BROWSER_TARGET__: Exclude<LocalModulePlatform, "unknown">;
 
 export class LocalModuleService {
   private writeQueue: Promise<unknown> = Promise.resolve();
+  private runtimeProfile: LocalModuleProfile = "normal";
   private lastWarnings: LocalModuleWarningCode[] = [];
 
   constructor(
@@ -34,12 +48,24 @@ export class LocalModuleService {
     private readonly platform: LocalModulePlatform = resolveLocalModulePlatform()
   ) {}
 
-  async initialize(): Promise<LocalModuleSnapshot> {
-    return this.reconcile(await this.repository.get());
+  async setRuntimeProfile(profile: LocalModuleProfile): Promise<void> {
+    await this.enqueue(async () => {
+      if (this.runtimeProfile === profile) return;
+      this.runtimeProfile = profile;
+      await this.reconcile(await this.repository.get());
+    });
   }
 
-  async getSnapshot(): Promise<LocalModuleSnapshot> {
-    return { store: await this.repository.get(), runtime: this.runtimeStatus() };
+  async initialize(): Promise<LocalModuleSnapshot> {
+    return this.enqueue(async () => this.reconcile(await this.repository.get()));
+  }
+
+  async getSnapshot(profile: LocalModuleProfile = "normal"): Promise<LocalModuleSnapshot> {
+    return {
+      profile,
+      store: projectModuleStore(await this.repository.get(), profile),
+      runtime: this.runtimeStatus()
+    };
   }
 
   async import(definition: LocalModuleDefinition): Promise<LocalModuleSnapshot> {
@@ -49,19 +75,47 @@ export class LocalModuleService {
     return this.enqueue(async () => this.reconcile(await this.repository.import(definition)));
   }
 
-  async setEnabled(id: string, enabled: boolean): Promise<LocalModuleSnapshot> {
-    return this.enqueue(async () => this.reconcile(await this.repository.setEnabled(id, enabled)));
+  async setEnabled(
+    id: string,
+    enabled: boolean,
+    profile: LocalModuleProfile = "normal"
+  ): Promise<LocalModuleSnapshot> {
+    return this.enqueue(async () => {
+      const store = await this.repository.setEnabled(id, enabled, Date.now(), profile);
+      await this.reconcile(store);
+      return this.getSnapshot(profile);
+    });
+  }
+
+  async setFilterGroupEnabled(
+    id: string,
+    groupId: string,
+    enabled: boolean,
+    profile: LocalModuleProfile = "normal"
+  ): Promise<LocalModuleSnapshot> {
+    return this.enqueue(async () => {
+      await this.repository.setFilterGroupEnabled(id, groupId, enabled, Date.now(), profile);
+      return this.getSnapshot(profile);
+    });
   }
 
   async remove(id: string): Promise<LocalModuleSnapshot> {
     return this.enqueue(async () => this.reconcile(await this.repository.remove(id)));
   }
 
-  async getPageRules(url: string): Promise<LocalPageRules> {
-    const definitions = await this.enabledDefinitionsFor(url);
+  async getPageRules(url: string, profile: LocalModuleProfile = "normal"): Promise<LocalPageRules> {
+    const installations = await this.enabledInstallationsFor(url, profile);
+    const definitions = installations.map((installation) => installation.definition);
     return {
       moduleIds: definitions.map((definition) => definition.id),
-      hideSelectors: [...new Set(definitions.flatMap((definition) => definition.hideSelectors))],
+      shadowRules: installations.flatMap((installation) =>
+        (installation.definition.shadowRoots ?? []).map((root) => ({
+          ...root,
+          css: installation.definition.css,
+          hideSelectors: enabledSelectors(installation)
+        }))
+      ),
+      hideSelectors: [...new Set(installations.flatMap(enabledSelectors))],
       css: definitions
         .filter((definition) => definition.css.trim())
         .map((definition) => `/* Hourleaf local module: ${definition.id} */\n${definition.css}`)
@@ -79,16 +133,19 @@ export class LocalModuleService {
   }
 
   private async enabledDefinitionsFor(url: string): Promise<LocalModuleDefinition[]> {
-    const store = await this.repository.get();
+    return (await this.enabledInstallationsFor(url)).map((installation) => installation.definition);
+  }
+
+  private async enabledInstallationsFor(url: string, profile: LocalModuleProfile = "normal") {
+    const store = projectModuleStore(await this.repository.get(), profile);
     return Object.values(store.installations)
       .filter((installation) => installation.enabled)
-      .map((installation) => installation.definition)
-      .filter((definition) => localModuleMatches(definition, url));
+      .filter((installation) => localModuleMatches(installation.definition, url));
   }
 
   private async reconcile(store: LocalModuleStore): Promise<LocalModuleSnapshot> {
     const warnings: LocalModuleWarningCode[] = [];
-    await this.reconcileUserScripts(store, warnings);
+    await this.reconcileUserScripts(projectModuleStore(store, this.runtimeProfile), warnings);
     await this.reconcileDnr(warnings);
     this.lastWarnings = warnings;
     return { store, runtime: this.runtimeStatus() };
@@ -101,7 +158,7 @@ export class LocalModuleService {
     const scriptInstallations = Object.values(store.installations).filter(
       (installation) => installation.enabled && installation.definition.userScript.trim()
     );
-    const enabledScripts = scriptInstallations.filter(
+    let enabledScripts = scriptInstallations.filter(
       (installation) =>
         getLocalModuleContentSafetyIssue("", installation.definition.userScript) === null
     );
@@ -121,6 +178,23 @@ export class LocalModuleService {
       return;
     }
     try {
+      if (this.runtimeProfile === "plan") {
+        const permitted = await Promise.all(
+          enabledScripts.map(async (installation) => {
+            const matches = (
+              await Promise.all(
+                installation.definition.matches.map(async (match) =>
+                  (await permissionsContains([match])) ? match : null
+                )
+              )
+            ).filter((match): match is string => match !== null);
+            return { ...installation, definition: { ...installation.definition, matches } };
+          })
+        );
+        enabledScripts = permitted.filter(
+          (installation) => installation.definition.matches.length > 0
+        );
+      }
       const registered = await userScriptsGetRegistered();
       const ownedIds = registered
         .map((script) => script.id)

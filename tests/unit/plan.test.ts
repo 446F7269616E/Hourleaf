@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PlanService } from "../../src/background/plan";
 import type { ExtensionApi, StorageAreaLike } from "../../src/shared/browser";
 import { createDefaultSettings } from "../../src/shared/config";
-import { normalizePlanItemInput } from "../../src/shared/plan";
+import {
+  isIndependentPlanAccess,
+  normalizePlanItemInput,
+  shouldRecordConfiguredUsage
+} from "../../src/shared/plan";
 import {
   PlanAccessRepository,
   PlanQueueRepository,
@@ -63,12 +67,14 @@ describe("generic plan", () => {
         url: "https://example.com/read?id=1#private",
         title: " Read ",
         scheduledDurationMinutes: 25,
-        completionMode: "flow"
+        completionMode: "flow",
+        pauseOnVideoEnd: true
       })
     ).toMatchObject({
       url: "https://example.com/read?id=1",
       origin: "https://example.com",
-      title: "Read"
+      title: "Read",
+      pauseOnVideoEnd: true
     });
     expect(
       normalizePlanItemInput({
@@ -77,7 +83,11 @@ describe("generic plan", () => {
         scheduledDurationMinutes: 25,
         completionMode: "flow"
       })
-    ).toMatchObject({ scheduledDurationMinutes: 25, completionMode: "flow" });
+    ).toMatchObject({
+      scheduledDurationMinutes: 25,
+      completionMode: "flow",
+      pauseOnVideoEnd: false
+    });
     expect(
       normalizePlanItemInput({
         url: "file:///private/data",
@@ -132,6 +142,77 @@ describe("generic plan", () => {
     state = await service.setCompleted(item?.id ?? "missing", true);
     expect(state.activeGrant).toBeUndefined();
     expect(state.settings.enabled).toBe(false);
+  });
+
+  it("recognizes only an exact authorized grant as independent plan access", () => {
+    const settings = { independentAccessTiming: true };
+    expect(
+      isIndependentPlanAccess(settings, {
+        planModeEnabled: true,
+        allowed: true,
+        reason: "authorized"
+      })
+    ).toBe(true);
+    expect(
+      isIndependentPlanAccess(
+        { independentAccessTiming: false },
+        {
+          planModeEnabled: true,
+          allowed: true,
+          reason: "authorized"
+        }
+      )
+    ).toBe(false);
+    expect(
+      isIndependentPlanAccess(settings, {
+        planModeEnabled: true,
+        allowed: false,
+        reason: "not-authorized"
+      })
+    ).toBe(false);
+    expect(
+      shouldRecordConfiguredUsage(
+        settings,
+        { planModeEnabled: true, allowed: true, reason: "authorized" },
+        false
+      )
+    ).toBe(false);
+    expect(
+      shouldRecordConfiguredUsage(
+        { independentAccessTiming: false },
+        { planModeEnabled: true, allowed: true, reason: "authorized" },
+        false
+      )
+    ).toBe(true);
+    expect(
+      shouldRecordConfiguredUsage(
+        { independentAccessTiming: false },
+        { planModeEnabled: true, allowed: true, reason: "authorized" },
+        true
+      )
+    ).toBe(false);
+  });
+
+  it("revokes an opted-in plan grant when its video ends", async () => {
+    const state = await service.add({
+      url: "https://example.com/video",
+      scheduledDurationMinutes: 30,
+      completionMode: "strict",
+      pauseOnVideoEnd: true
+    });
+    const itemId = state.queue.items[0]?.id ?? "missing";
+    await service.start(itemId);
+    await expect(service.decideNavigation("https://example.com/video")).resolves.toMatchObject({
+      reason: "authorized",
+      pauseOnVideoEnd: true
+    });
+    await expect(service.pauseAtVideoEnd(itemId, "https://example.com/other")).rejects.toThrow(
+      /no longer waiting/u
+    );
+    await expect(
+      service.pauseAtVideoEnd(itemId, "https://example.com/video")
+    ).resolves.not.toHaveProperty("activeGrant");
+    await expect(service.getState()).resolves.toMatchObject({ settings: { enabled: false } });
   });
 
   it("revokes the active authorization when its URL, duration, mode, or item changes", async () => {

@@ -65,4 +65,19 @@ describe("usage analytics", () => {
     expect(summary.byDay).toHaveLength(7);
     expect(summary.totalSeconds).toBe(60);
   });
+
+  it("summarizes the full calendar year for the dashboard year view", async () => {
+    const analytics = new AnalyticsService(new RawUsageRepository(storage));
+    await analytics.recordInterval(
+      "home",
+      new Date(2026, 7, 5, 12, 0, 0).getTime(),
+      new Date(2026, 7, 5, 12, 2, 0).getTime()
+    );
+
+    const summary = await analytics.summarize("year", new Date(2026, 7, 5));
+    expect(summary.startDate).toBe("2026-01-01");
+    expect(summary.endDate).toBe("2026-12-31");
+    expect(summary.byDay).toHaveLength(365);
+    expect(summary.totalSeconds).toBe(120);
+  });
 });

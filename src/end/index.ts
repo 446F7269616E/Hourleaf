@@ -1,7 +1,10 @@
+import { tabsGetCurrent } from "../shared/browser";
 import { configureLocale, t } from "../shared/i18n";
 import { sendRequest } from "../shared/messages";
 import type { FocusSettings, PeriodRuntimeStatus, UsageSummary } from "../shared/types";
-import { assertAppRoot, element, formatDuration, icon } from "../styles/dom";
+import { assertAppRoot, element, formatDuration } from "../styles/dom";
+import { createBrandMark } from "../ui/brand-mark";
+import { siteMatchesUrl } from "../shared/site-scope";
 
 interface EndPageSettingsView {
   view?: "dashboard" | "message" | "minimal";
@@ -46,10 +49,7 @@ async function render(): Promise<void> {
     app.replaceChildren(
       element("section", {
         className: "end-card end-card--minimal",
-        children: [
-          element("div", { className: "end-mark", children: [icon("leaf")] }),
-          element("h1", { text: t("end.title") })
-        ]
+        children: [createBrandMark(true), element("h1", { text: t("end.title") })]
       })
     );
   }
@@ -59,9 +59,7 @@ function createVisitConfirmation(settings: FocusSettings): HTMLElement {
   const site = context.siteId ? settings.sites[context.siteId] : undefined;
   const returnUrl = normalizeHttpUrl(context.returnUrl);
   const policy = site?.visitConfirmation;
-  const valid = Boolean(
-    site && returnUrl && new URL(returnUrl).origin === site.origin && policy?.enabled
-  );
+  const valid = Boolean(site && returnUrl && siteMatchesUrl(site, returnUrl) && policy?.enabled);
   const status = element("p", {
     className: "end-unlock__feedback",
     attrs: { role: "status", "aria-live": "polite" }
@@ -99,8 +97,11 @@ function createVisitConfirmation(settings: FocusSettings): HTMLElement {
         confirm.disabled = true;
         status.textContent = t("end.openingVisit");
         try {
+          const currentTab = await tabsGetCurrent();
+          if (currentTab?.id === undefined) throw new Error("Confirmation tab unavailable");
           const result = await sendRequest({
             type: "GRANT_VISIT_CONFIRMATION",
+            tabId: currentTab.id,
             url: returnUrl as string,
             siteId: site?.id as string
           });
@@ -118,7 +119,7 @@ function createVisitConfirmation(settings: FocusSettings): HTMLElement {
     className: "end-card end-card--confirmation",
     attrs: { "aria-labelledby": "visit-confirmation-title" },
     children: [
-      element("div", { className: "end-mark", children: [icon("leaf")] }),
+      createBrandMark(true),
       element("p", { className: "end-eyebrow", text: "Hourleaf" }),
       element("h1", {
         text: t("end.visitConfirmationTitle"),
@@ -128,6 +129,14 @@ function createVisitConfirmation(settings: FocusSettings): HTMLElement {
         className: "end-message",
         text: t("end.visitConfirmationMessage", { site: siteLabel })
       }),
+      ...(policy?.prompt
+        ? [
+            element("p", {
+              className: "end-visit-prompt",
+              text: policy.prompt
+            })
+          ]
+        : []),
       element("div", { className: "end-actions", children: [cancel, confirm] }),
       status
     ]
@@ -149,8 +158,15 @@ function createEndView(
   const targetSeconds = context.targetId
     ? (usage.byTarget[context.targetId] ?? 0)
     : usage.totalSeconds;
+  const groupCount = context.groupCount ?? runtime?.groupCount;
+  const groupIndex = context.groupIndex ?? runtime?.usedGroups ?? runtime?.unlockedGroups;
   const message =
-    context.reason === "blocked" || context.reason === "domain-block"
+    context.reason === "group-boundary" && groupCount && groupIndex
+      ? t("end.groupBoundaryMessage", {
+          current: groupIndex,
+          next: Math.min(groupCount, groupIndex + 1)
+        })
+      : context.reason === "blocked" || context.reason === "domain-block"
       ? t("end.blockedMessage", { site: siteLabel })
       : t("end.limitMessage", { site: siteLabel });
 
@@ -158,7 +174,7 @@ function createEndView(
     className: `end-card end-card--${view}`,
     attrs: { "aria-labelledby": "end-page-title" },
     children: [
-      element("div", { className: "end-mark", children: [icon("leaf")] }),
+      createBrandMark(true),
       element("p", { className: "end-eyebrow", text: "Hourleaf" }),
       element("h1", { text: t("end.title"), attrs: { id: "end-page-title" } }),
       element("p", { className: "end-message", text: message })
@@ -185,18 +201,48 @@ function createEndView(
       })
     );
   }
-  if (runtime?.canUnlock) card.append(createGroupUnlock(runtime));
-  const closeAction =
-    context.source === "plan"
-      ? element("a", { className: "btn", attrs: { href: "plan.html" }, text: t("common.close") })
-      : element("button", { className: "btn", attrs: { type: "button" }, text: t("end.back") });
-  if (closeAction instanceof HTMLButtonElement)
-    closeAction.addEventListener("click", () => {
-      if (history.length > 1) history.back();
-      else window.close();
-    });
-  card.append(element("div", { className: "end-actions", children: [closeAction] }));
+  if (groupCount && groupCount > 1 && groupIndex) {
+    card.append(
+      element("p", {
+        className: "end-group-progress",
+        text: t("end.groupProgress", { used: groupIndex, total: groupCount })
+      })
+    );
+  }
+  if (runtime?.canUnlock) card.append(createGroupUnlock(runtime, settings));
+  const closeAction = element("button", {
+    className: runtime?.canUnlock ? "btn" : "btn btn--primary",
+    attrs: { type: "button" },
+    text: t("end.closeRelatedTabs")
+  });
+  const closeStatus = element("p", {
+    className: "end-unlock__feedback",
+    attrs: { role: "status", "aria-live": "polite" }
+  });
+  closeAction.addEventListener("click", () => {
+    void closeRelatedTabs(closeAction, closeStatus);
+  });
+  card.append(element("div", { className: "end-actions", children: [closeAction] }), closeStatus);
   return element("div", { className: "end-backdrop", children: [card] });
+}
+
+async function closeRelatedTabs(button: HTMLButtonElement, status: HTMLElement): Promise<void> {
+  button.disabled = true;
+  status.textContent = t("end.closingRelatedTabs");
+  try {
+    if (context.source === "focus" && context.siteId) {
+      await sendRequest({ type: "CLOSE_RELATED_TABS", source: "focus", siteId: context.siteId });
+      return;
+    }
+    if (context.source === "plan" && context.itemId) {
+      await sendRequest({ type: "CLOSE_RELATED_TABS", source: "plan", itemId: context.itemId });
+      return;
+    }
+    window.close();
+  } catch {
+    status.textContent = t("common.actionFailed");
+    button.disabled = false;
+  }
 }
 
 async function loadPeriodRuntime(
@@ -216,21 +262,40 @@ async function loadPeriodRuntime(
     periodId: context.periodId
   });
   if (status.canUnlock && status.method === "wait" && !status.waitStartedAt) {
-    status = await sendRequest({
-      type: "START_PERIOD_GROUP_WAIT",
-      targetId: context.targetId,
-      periodId: context.periodId
-    });
+    try {
+      status = await sendRequest({
+        type: "START_PERIOD_GROUP_WAIT",
+        targetId: context.targetId,
+        periodId: context.periodId
+      });
+    } catch {
+      // Another page may have resolved the transition while this end page was
+      // loading. Render the current authoritative state instead of replacing
+      // the whole page with a generic failure view.
+      status = await sendRequest({
+        type: "GET_PERIOD_RUNTIME",
+        targetId: context.targetId,
+        periodId: context.periodId
+      });
+    }
   }
   return status;
 }
 
-function createGroupUnlock(status: PeriodRuntimeStatus): HTMLElement {
+function createGroupUnlock(status: PeriodRuntimeStatus, settings: FocusSettings): HTMLElement {
   const panel = element("section", {
     className: "end-unlock",
     attrs: { "aria-labelledby": "end-unlock-title" }
   });
   panel.append(element("h2", { text: t("end.openNextGroup"), attrs: { id: "end-unlock-title" } }));
+  panel.append(
+    element("p", {
+      className: "end-unlock__description",
+      text: t("end.openNextGroupDescription", {
+        next: Math.min(status.groupCount, status.unlockedGroups + 1)
+      })
+    })
+  );
   const feedback = element("p", {
     className: "end-unlock__feedback",
     attrs: { role: "status", "aria-live": "polite" }
@@ -273,7 +338,7 @@ function createGroupUnlock(status: PeriodRuntimeStatus): HTMLElement {
   const unlock = element("button", {
     className: "btn btn--primary",
     attrs: { type: "button" },
-    text: t("end.unlock")
+    text: t("end.openNextGroup")
   });
   if (status.method === "password" && !status.passwordConfigured) {
     unlock.disabled = true;
@@ -286,7 +351,7 @@ function createGroupUnlock(status: PeriodRuntimeStatus): HTMLElement {
       unlock.textContent =
         remainingMs > 0
           ? t("end.waitRemaining", { minutes: Math.max(1, Math.ceil(remainingMs / 60_000)) })
-          : t("end.unlock");
+          : t("end.openNextGroup");
       if (remainingMs <= 0) clearInterval(interval);
     };
     const interval = setInterval(updateWait, 1_000);
@@ -307,8 +372,8 @@ function createGroupUnlock(status: PeriodRuntimeStatus): HTMLElement {
           periodId: status.periodId,
           ...(proof ? { proof } : {})
         });
-        if (history.length > 1) history.back();
-        else window.close();
+        feedback.textContent = t("end.returningToSite");
+        returnToUnlockedGroup(settings);
       } catch {
         feedback.textContent =
           status.method === "password"
@@ -323,6 +388,27 @@ function createGroupUnlock(status: PeriodRuntimeStatus): HTMLElement {
   });
   panel.append(unlock, feedback);
   return panel;
+}
+
+function returnToUnlockedGroup(settings: FocusSettings): void {
+  const returnUrl = normalizeHttpUrl(context.returnUrl);
+  const target = context.targetId ? settings.targets[context.targetId] : undefined;
+  const site = context.siteId
+    ? settings.sites[context.siteId]
+    : (target ? settings.sites[target.siteId] : undefined);
+
+  // The hash is navigable user input. Only resume the exact configured website
+  // scope; otherwise retain the legacy back-navigation fallback for end pages
+  // opened by an older extension build that did not include a return URL.
+  if (returnUrl && site && siteMatchesUrl(site, returnUrl)) {
+    window.location.replace(returnUrl);
+    return;
+  }
+  if (history.length > 1) {
+    history.back();
+    return;
+  }
+  window.location.replace("dashboard.html");
 }
 
 async function sha256(value: string): Promise<string> {

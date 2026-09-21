@@ -3,7 +3,9 @@ import {
   PLAN_ITEM_SOURCES,
   type PlanCompletionMode,
   type PlanItemInput,
-  type PlanItemSource
+  type PlanItemSource,
+  type PlanModeSettings,
+  type PlanNavigationDecision
 } from "./types";
 
 export const MAX_PLAN_ITEMS = 500;
@@ -25,6 +27,7 @@ export interface NormalizedPlanItemInput {
   source: PlanItemSource;
   scheduledDurationMinutes: number;
   completionMode: PlanCompletionMode;
+  pauseOnVideoEnd: boolean;
 }
 
 /**
@@ -53,6 +56,8 @@ export function normalizePlanItemInput(
   if (!isPlanItemSource(source)) return null;
   if (!isPlanDurationMinutes(input.scheduledDurationMinutes)) return null;
   if (!isPlanCompletionMode(input.completionMode)) return null;
+  if (input.pauseOnVideoEnd !== undefined && typeof input.pauseOnVideoEnd !== "boolean")
+    return null;
   return {
     url: url.href,
     origin: url.origin,
@@ -61,8 +66,30 @@ export function normalizePlanItemInput(
     title: title || url.hostname,
     source,
     scheduledDurationMinutes: input.scheduledDurationMinutes,
-    completionMode: input.completionMode
+    completionMode: input.completionMode,
+    pauseOnVideoEnd: input.pauseOnVideoEnd === true
   };
+}
+
+/** True only for the exact live plan identity allowed to use its own access timer. */
+export function isIndependentPlanAccess(
+  settings: Pick<PlanModeSettings, "independentAccessTiming">,
+  decision: PlanNavigationDecision | null | undefined
+): boolean {
+  return (
+    settings.independentAccessTiming &&
+    decision?.allowed === true &&
+    decision.reason === "authorized"
+  );
+}
+
+/** Configured usage is never charged while an isolated plan timer owns the exact page. */
+export function shouldRecordConfiguredUsage(
+  settings: Pick<PlanModeSettings, "independentAccessTiming">,
+  decision: PlanNavigationDecision,
+  focusBlocked: boolean
+): boolean {
+  return !focusBlocked && decision.allowed && !isIndependentPlanAccess(settings, decision);
 }
 
 export function normalizePlanUrl(value: unknown): URL | null {

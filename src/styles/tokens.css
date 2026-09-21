@@ -45,6 +45,38 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+:root[data-theme="ocean"] {
+  --color-brand: #277a9b;
+  --color-brand-strong: #185b76;
+  --color-brand-soft: #e8f5fa;
+  --color-accent: #4569d8;
+  --color-accent-soft: #edf0ff;
+}
+
+:root[data-theme="violet"] {
+  --color-brand: #7654b8;
+  --color-brand-strong: #57358f;
+  --color-brand-soft: #f2ecfb;
+  --color-accent: #b05089;
+  --color-accent-soft: #fbedf5;
+}
+
+:root[data-theme="amber"] {
+  --color-brand: #a26417;
+  --color-brand-strong: #77480e;
+  --color-brand-soft: #fff4df;
+  --color-accent: #287f73;
+  --color-accent-soft: #e8f7f3;
+}
+
+:root[data-theme="rose"] {
+  --color-brand: #ae5069;
+  --color-brand-strong: #83354b;
+  --color-brand-soft: #fcedf1;
+  --color-accent: #6964ba;
+  --color-accent-soft: #efeffd;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
@@ -71,6 +103,38 @@
     --shadow-xs: 0 1px 2px rgb(0 0 0 / 22%);
     --shadow-sm: 0 4px 18px rgb(0 0 0 / 22%);
     --shadow-md: 0 18px 48px rgb(0 0 0 / 34%);
+  }
+
+  :root[data-theme="ocean"] {
+    --color-brand: #71c8e8;
+    --color-brand-strong: #a0e1f4;
+    --color-brand-soft: #173843;
+    --color-accent: #9caeff;
+    --color-accent-soft: #242d55;
+  }
+
+  :root[data-theme="violet"] {
+    --color-brand: #c6a2f4;
+    --color-brand-strong: #ddc2ff;
+    --color-brand-soft: #372652;
+    --color-accent: #f1a3c9;
+    --color-accent-soft: #48283b;
+  }
+
+  :root[data-theme="amber"] {
+    --color-brand: #f1be70;
+    --color-brand-strong: #ffd59b;
+    --color-brand-soft: #44331e;
+    --color-accent: #72d1bd;
+    --color-accent-soft: #193b35;
+  }
+
+  :root[data-theme="rose"] {
+    --color-brand: #f29aae;
+    --color-brand-strong: #ffc1ce;
+    --color-brand-soft: #4a2933;
+    --color-accent: #b8b3ff;
+    --color-accent-soft: #312f59;
   }
 }
 

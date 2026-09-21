@@ -34,7 +34,15 @@ Hourleaf 的商店包只包含通用专注核心和本地模块导入器。扩�
   "description": "可选说明",
   "matches": ["https://example.com/*"],
   "domainPolicy": "timed",
-  "hideSelectors": [".recommendations"],
+  "hideSelectors": [],
+  "filterGroups": [
+    {
+      "id": "home-recommendations",
+      "name": "首页推荐",
+      "description": "隐藏首页中的普通推荐卡片。",
+      "selectors": [".recommendations > .card"]
+    }
+  ],
   "cssFiles": ["focus.css"],
   "userScriptFiles": ["focus.user.js"]
 }
@@ -42,7 +50,9 @@ Hourleaf 的商店包只包含通用专注核心和本地模块导入器。扩�
 
 - `domainPolicy`：`timed`、`always-allow` 或 `always-block`。黑名单优先于白名单；插件总开关关闭时两者都暂停。
 - `format`：必须为 `hourleaf.local-module`；`author` 必须是 1–100 个字符的非空文本。
-- `hideSelectors`：只生成 `display: none !important` 规则。
+- `hideSelectors`：只生成 `display: none !important` 规则；这些选择器在模块启用期间始终生效，适合少量不可配置的基础规则。
+- `filterGroups`：可选的用户级屏蔽分组，最多 24 组且总选择器数仍受 128 条上限约束。`id` 必须是稳定的小写 kebab-case；`name`、`description` 用于屏蔽页显示，`selectors` 非空。分组默认开启，用户关闭的组 ID 随安装记录保存；模块更新新增组时默认开启，删除的组会从设置中清理。
+- `shadowRoots`：可选数组，最多 8 项，格式为 `{ "hostSelector": "#bewly", "mountEvent": "bewlyMounted" }`。宿主选择器遵循普通选择器的 300 字符限制；可选事件名只接受字母开头、最多 64 字符的字母/数字/下划线/冒号/连字符。核心仅将该模块自身的 CSS 和已启用分组规则同步到声明宿主的开放 Shadow DOM，不混入其他模块规则，不穿透关闭的根或 iframe。挂载事件只触发本地根发现，不读取事件数据或执行代码；未声明时仅处理宿主插入及已有页面状态刷新。旧清单默认不进入任何 Shadow DOM。
 - `css` / `cssFiles`：内联 CSS 或同一次文件选择中按名称引用的本地 CSS；`@import` 和所有 `url()` 外部资源都会被拒绝。
 - `dnrRules`：为兼容 schema 可省略或保留空数组；任何非空规则都会被拒绝。浏览器 DNR 的 `initiatorDomains` 只能表达域名并会覆盖子域，无法兑现 Hourleaf 的精确协议、主机和端口来源契约。
 - `userScript` / `userScriptFiles`：仅通过 User Scripts API 注册。
@@ -98,3 +108,7 @@ Hourleaf 的商店包只包含通用专注核心和本地模块导入器。扩�
 ## 迁移影响
 
 作者、格式标识和空 DNR 是 schema v1 的安全收紧。升级后，本地存储中缺少 `author`、缺少 `format: "hourleaf.local-module"` 或包含非空 DNR 的旧安装不再进入运行时；初始化会清理 Hourleaf 旧版本注册的本地模块 DNR ID 区间。作者需要先更新原始文件，用户再手动重新导入；Hourleaf 不会猜测作者或自动将旧文件标记为已信任。
+
+## 计划期间的屏蔽偏好
+
+设置项 `planMode.enableAllBlocking` 默认开启。有效计划期间，已安装模块的 `planPreferences` 默认 `{ enabled: true, disabledFilterGroupIds: [] }`；屏蔽页现有开关只修改当前普通或计划偏好，不额外添加配置入口。停止/完成/到期及关闭此设置后恢复普通偏好；再次开始计划保留之前的计划调整。导入新版模块保留两组偏好，只清理已经删除的分组 ID。配置备份包含两组纯数据偏好，不包含脚本源码。内容屏蔽受已有网站权限约束；不自动安装模块、申请权限或覆盖普通域名策略。

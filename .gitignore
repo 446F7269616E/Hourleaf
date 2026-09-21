@@ -1,5 +1,7 @@
 node_modules/
 dist/
+.local-debug/
+debug-build/
 coverage/
 playwright-report/
 test-results/

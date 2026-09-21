@@ -46,6 +46,9 @@ export class PeriodRuntimeService {
     const unlockedGroups = Math.min(groupCount, Math.max(1, entry.unlockedGroups));
     const usedSeconds = usage.byPeriod[period.id] ?? 0;
     const groupSeconds = period.limitMinutes ? (period.limitMinutes * 60) / groupCount : Infinity;
+    const usedGroups = Number.isFinite(groupSeconds)
+      ? Math.min(groupCount, Math.ceil(Math.max(0, usedSeconds) / groupSeconds))
+      : 0;
     const canUnlock =
       period.behavior === "timed" &&
       period.limitMinutes !== null &&
@@ -59,6 +62,8 @@ export class PeriodRuntimeService {
       targetId: target.id,
       periodId: period.id,
       method,
+      usedSeconds: Math.max(0, usedSeconds),
+      usedGroups,
       unlockedGroups,
       groupCount,
       canUnlock,
@@ -76,6 +81,13 @@ export class PeriodRuntimeService {
     requirePeriod(settings, targetId, periodId);
     if (settings.endPage.groupUnlock.method !== "wait") {
       throw new Error("The selected group unlock method does not require waiting");
+    }
+    // Waiting is part of a real group transition, not a pre-authorisation for a
+    // later one. Without this guard, any extension page could start a wait
+    // before the current group had actually been exhausted.
+    const status = await this.getStatus(targetId, periodId);
+    if (!status.canUnlock) {
+      throw new Error("The next usage group is not ready to unlock");
     }
     const now = new Date(this.now());
     const date = formatLocalDate(now);

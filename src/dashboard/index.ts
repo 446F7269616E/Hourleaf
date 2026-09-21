@@ -16,6 +16,8 @@ import {
 } from "../shared/types";
 import { assertAppRoot, describeError, element, formatDuration, icon } from "../styles/dom";
 import { createPageNavigation } from "../ui/page-navigation";
+import { enableRadioButtonGroup } from "../ui/radio-button-group";
+import { applyTheme } from "../ui/theme";
 
 const SECTION_COLORS: Readonly<Record<SectionId, string>> = {
   home: "#e94983",
@@ -29,7 +31,13 @@ const SECTION_COLORS: Readonly<Record<SectionId, string>> = {
 
 function periodLabel(period: UsagePeriod): string {
   return t(
-    period === "day" ? "dashboard.today" : period === "week" ? "dashboard.week" : "dashboard.month"
+    period === "day"
+      ? "dashboard.today"
+      : period === "week"
+        ? "dashboard.week"
+        : period === "month"
+          ? "dashboard.month"
+          : "dashboard.year"
   );
 }
 
@@ -57,7 +65,7 @@ configureLocale("system");
 void loadDashboard(currentPeriod);
 window.setInterval(() => void refreshLiveDashboard(), 5_000);
 
-async function loadDashboard(period: UsagePeriod): Promise<void> {
+async function loadDashboard(period: UsagePeriod, focusPeriodControl = false): Promise<void> {
   currentPeriod = period;
   const sequence = ++loadSequence;
   renderLoading(period);
@@ -71,9 +79,15 @@ async function loadDashboard(period: UsagePeriod): Promise<void> {
     ]);
     if (sequence !== loadSequence) return;
     configureLocale((settings as FocusSettings & { locale?: string }).locale);
+    applyTheme(settings.theme);
     localizeDocumentTitle("dashboard");
     currentUsage = usage;
     renderDashboard(usage, tracking, settings, planState, moduleStore);
+    if (focusPeriodControl) {
+      document
+        .querySelector<HTMLButtonElement>(`[data-testid='dashboard-range-${period}']`)
+        ?.focus();
+    }
   } catch (error) {
     if (sequence !== loadSequence) return;
     renderError(period, describeError(error));
@@ -183,16 +197,16 @@ function renderDashboard(
       createFooter()
     ]
   });
-  app.replaceChildren(createShell(usage.period, content));
+  app.replaceChildren(createShell(usage.period, content, usage));
 }
 
-function createShell(period: UsagePeriod, content: HTMLElement): HTMLElement {
+function createShell(period: UsagePeriod, content: HTMLElement, usage?: UsageSummary): HTMLElement {
   return element("div", {
     className: "dashboard-shell app-shell",
     children: [
       createPageNavigation({ currentPage: "dashboard" }),
       element("section", {
-        className: "dashboard-heading",
+        className: "dashboard-heading page-heading",
         children: [
           element("div", {
             children: [element("h1", { className: "page-title", text: t("nav.dashboard") })]
@@ -200,31 +214,54 @@ function createShell(period: UsagePeriod, content: HTMLElement): HTMLElement {
           createPeriodControl(period)
         ]
       }),
+      ...(usage ? [createCurrentRange(usage)] : []),
       content
     ]
   });
 }
 
 function createPeriodControl(selected: UsagePeriod): HTMLElement {
-  const buttons = (["day", "week", "month"] satisfies UsagePeriod[]).map((period) => {
+  const buttons = (["day", "week", "month", "year"] satisfies UsagePeriod[]).map((period) => {
     const button = element("button", {
       className: "segmented__item",
       text: periodLabel(period),
       attrs: {
         type: "button",
-        "aria-pressed": period === selected,
+        role: "radio",
+        "aria-checked": String(period === selected),
         "data-testid": `dashboard-range-${period}`
       }
     });
     button.addEventListener("click", () => {
-      if (period !== currentPeriod) void loadDashboard(period);
+      if (period !== currentPeriod) void loadDashboard(period, true);
     });
     return button;
   });
+  enableRadioButtonGroup(buttons);
   return element("div", {
-    className: "period-control segmented",
-    attrs: { role: "group", "aria-label": t("dashboard.rangeLabel") },
-    children: buttons
+    className: "period-control view-control",
+    children: [
+      element("span", { className: "view-control__label", text: t("common.view") }),
+      element("div", {
+        className: "segmented",
+        attrs: { role: "radiogroup", "aria-label": t("dashboard.rangeLabel") },
+        children: buttons
+      })
+    ]
+  });
+}
+
+function createCurrentRange(usage: UsageSummary): HTMLElement {
+  return element("section", {
+    className: "dashboard-current-range",
+    attrs: {
+      "aria-label": t("dashboard.currentRange"),
+      "data-testid": "dashboard-current-range"
+    },
+    children: [
+      element("span", { text: t("dashboard.currentRange") }),
+      element("strong", { text: formatDateRange(usage) })
+    ]
   });
 }
 
@@ -246,7 +283,6 @@ function createOverview(
         element("span", {
           className: "metric-card__note-row",
           children: [
-            element("span", { text: formatDateRange(usage) }),
             element("span", {
               className: "metric-card__live",
               text: liveTrackingLabel(tracking),
@@ -321,9 +357,10 @@ function createMetricCard(
 }
 
 function createTrendCard(usage: UsageSummary): HTMLElement {
-  const maximum = Math.max(1, ...usage.byDay.map(totalForDay));
-  const columns = usage.byDay.map((day, index) => {
-    const total = totalForDay(day);
+  const buckets = buildTrendBuckets(usage);
+  const maximum = Math.max(1, ...buckets.map((bucket) => bucket.seconds));
+  const columns = buckets.map((bucket) => {
+    const total = bucket.seconds;
     const height = total > 0 ? Math.max(2, (total / maximum) * 100) : 1.2;
     const column = element("div", {
       className: "chart-column",
@@ -331,7 +368,7 @@ function createTrendCard(usage: UsageSummary): HTMLElement {
         tabindex: "0",
         role: "img",
         "aria-label": t("dashboard.usageAria", {
-          label: formatFullDate(day.date),
+          label: bucket.ariaLabel,
           duration: formatDuration(total, true)
         })
       },
@@ -347,11 +384,11 @@ function createTrendCard(usage: UsageSummary): HTMLElement {
         }),
         element("span", {
           className: "chart-column__label",
-          text: chartLabel(day.date, usage.period, index)
+          text: bucket.label
         }),
         element("span", {
           className: "chart-tooltip",
-          text: `${formatShortDate(day.date)} · ${formatDuration(total, true)}`,
+          text: `${bucket.tooltipLabel} · ${formatDuration(total, true)}`,
           attrs: { "aria-hidden": "true" }
         })
       ]
@@ -371,10 +408,6 @@ function createTrendCard(usage: UsageSummary): HTMLElement {
               element("h2", { text: t("dashboard.trend"), attrs: { id: "trend-title" } }),
               element("p", { text: t("dashboard.trendDescription") })
             ]
-          }),
-          element("span", {
-            className: "badge",
-            children: [icon("calendar"), formatDateRange(usage)]
           })
         ]
       }),
@@ -686,7 +719,8 @@ function parseDate(value: string): Date {
 function formatDateRange(usage: UsageSummary): string {
   if (usage.startDate === usage.endDate) return formatFullDate(usage.startDate);
   const formatter = new Intl.DateTimeFormat(getResolvedLocale(), {
-    month: "short",
+    year: "numeric",
+    month: "long",
     day: "numeric"
   });
   return `${formatter.format(parseDate(usage.startDate))} – ${formatter.format(parseDate(usage.endDate))}`;
@@ -707,12 +741,53 @@ function formatShortDate(value: string): string {
   );
 }
 
-function chartLabel(value: string, period: UsagePeriod, index: number): string {
-  const date = parseDate(value);
-  if (period === "week") {
-    return new Intl.DateTimeFormat(getResolvedLocale(), { weekday: "narrow" }).format(date);
+interface TrendBucket {
+  label: string;
+  ariaLabel: string;
+  tooltipLabel: string;
+  seconds: number;
+}
+
+function buildTrendBuckets(usage: UsageSummary): TrendBucket[] {
+  if (usage.period === "year") {
+    const byMonth = new Map<string, number>();
+    for (const day of usage.byDay) {
+      const month = day.date.slice(0, 7);
+      byMonth.set(month, (byMonth.get(month) ?? 0) + totalForDay(day));
+    }
+    const monthFormatter = new Intl.DateTimeFormat(getResolvedLocale(), { month: "short" });
+    const fullMonthFormatter = new Intl.DateTimeFormat(getResolvedLocale(), {
+      year: "numeric",
+      month: "long"
+    });
+    return [...byMonth.entries()].map(([month, seconds]) => {
+      const date = parseDate(`${month}-01`);
+      const fullMonth = fullMonthFormatter.format(date);
+      return {
+        label: monthFormatter.format(date),
+        ariaLabel: fullMonth,
+        tooltipLabel: fullMonth,
+        seconds
+      };
+    });
   }
-  if (period === "month")
-    return index % 5 === 0 || index === date.getDate() - 1 ? String(date.getDate()) : "";
-  return `${date.getMonth() + 1}/${date.getDate()}`;
+
+  return usage.byDay.map((day, index) => {
+    const date = parseDate(day.date);
+    const fullDate = formatFullDate(day.date);
+    const label =
+      usage.period === "week"
+        ? new Intl.DateTimeFormat(getResolvedLocale(), { weekday: "narrow" }).format(date)
+        : usage.period === "month"
+          ? index % 5 === 0 || index === usage.byDay.length - 1
+            ? String(date.getDate())
+            : ""
+          : formatShortDate(day.date);
+    return {
+      label,
+      ariaLabel: fullDate,
+      tooltipLabel: formatShortDate(day.date),
+      seconds: totalForDay(day)
+    };
+  });
 }

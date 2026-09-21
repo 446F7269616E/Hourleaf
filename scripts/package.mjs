@@ -48,7 +48,7 @@ for (const target of ["chromium", "firefox", "safari"]) {
 /** @param {string} target @param {string} sourceDir */
 async function assertStoreCandidate(target, sourceDir) {
   const entries = new Set(await readdir(sourceDir));
-  for (const forbidden of ["modules", "optional-modules"]) {
+  for (const forbidden of ["modules", "optional-modules", "debug-build.json"]) {
     if (entries.has(forbidden)) {
       throw new Error(`${target} store candidate contains forbidden directory: ${forbidden}`);
     }
@@ -61,6 +61,13 @@ async function assertStoreCandidate(target, sourceDir) {
   const manifest = /** @type {Record<string, unknown>} */ (rawManifest);
   if (manifest.version !== version) {
     throw new Error(`${target} manifest version does not match package.json`);
+  }
+  if (
+    (typeof manifest.name === "string" && /debug/iu.test(manifest.name)) ||
+    manifest.version_name !== undefined ||
+    toStringSet(manifest.host_permissions).size > 0
+  ) {
+    throw new Error(`${target} store candidate contains local debug metadata or host access`);
   }
   const permissions = toStringSet(manifest.permissions);
   const optionalPermissions = toStringSet(manifest.optional_permissions);

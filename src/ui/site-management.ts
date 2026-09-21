@@ -1,5 +1,6 @@
 import { sendRequest } from "../shared/messages";
 import { t } from "../shared/i18n";
+import { resolveSiteScope, type KnownSiteFamily } from "../shared/site-scope";
 
 export async function addManagedSite(url: string): Promise<void> {
   const result = await sendRequest({ type: "ADD_MANAGED_SITE", url });
@@ -12,7 +13,8 @@ export async function removeManagedSite(siteId: string): Promise<void> {
 
 export function normalizeWebsiteInput(value: string): {
   origin: string;
-  permissionPattern: string;
+  permissionPatterns: string[];
+  family?: KnownSiteFamily;
 } {
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > 2_048) throw new Error(t("options.invalidWebsite"));
@@ -30,11 +32,17 @@ export function normalizeWebsiteInput(value: string): {
   ) {
     throw new Error(t("options.httpOnly"));
   }
-  return { origin: url.origin, permissionPattern: `${url.origin}/*` };
+  const scope = resolveSiteScope(url);
+  if (!scope) throw new Error(t("options.invalidWebsite"));
+  return {
+    origin: scope.canonicalOrigin,
+    permissionPatterns: scope.matchPatterns,
+    ...(scope.family ? { family: scope.family } : {})
+  };
 }
 
-export async function requestWebsitePermission(pattern: string): Promise<boolean> {
-  return requestWebsitePermissions([pattern]);
+export async function requestWebsitePermission(patterns: string | string[]): Promise<boolean> {
+  return requestWebsitePermissions(typeof patterns === "string" ? [patterns] : patterns);
 }
 
 async function requestWebsitePermissions(patterns: string[]): Promise<boolean> {

@@ -1,11 +1,19 @@
 import {
   permissionsContains,
   permissionsRemove,
+  scriptingExecuteScript,
   scriptingGetRegisteredContentScripts,
   scriptingRegisterContentScript,
-  scriptingUnregisterContentScripts
+  scriptingUnregisterContentScripts,
+  tabsQuery
 } from "../shared/browser";
 import { createDefaultTimePeriod, isStableId } from "../shared/config";
+import {
+  resolveSiteScope,
+  siteMatchPatterns,
+  siteMatchesUrl,
+  siteScopeKey
+} from "../shared/site-scope";
 import { SettingsRepository } from "../shared/storage";
 import type {
   FocusSettings,
@@ -49,17 +57,19 @@ export class ManagedSiteService {
   async addAuthorized(url: string, label?: string, now = Date.now()): Promise<AddSiteResult> {
     const parsed = parseHttpUrl(url);
     if (!parsed) throw new Error("Only HTTP and HTTPS websites can be added");
-    const matchPattern = originMatchPattern(parsed.origin);
-    const granted = await permissionsContains([matchPattern]).catch(() => false);
-    if (!granted) return { granted: false, origin: parsed.origin };
+    const scope = resolveSiteScope(parsed);
+    if (!scope) throw new Error("Only HTTP and HTTPS websites can be added");
+    const granted = await permissionsContains(scope.matchPatterns).catch(() => false);
+    if (!granted) return { granted: false, origin: scope.canonicalOrigin };
 
     const siteId = createOpaqueId("site");
     const targetId = createOpaqueId("target");
-    const cleanLabel = normalizeLabel(label, parsed.hostname);
+    const cleanLabel = normalizeLabel(label, scope.displayHostname);
     const site: ManagedSite = {
       id: siteId,
-      origin: parsed.origin,
-      hostname: parsed.hostname,
+      origin: scope.canonicalOrigin,
+      ...(scope.family ? { matchPatterns: [...scope.matchPatterns] } : {}),
+      hostname: new URL(scope.canonicalOrigin).hostname,
       label: cleanLabel,
       enabled: true,
       restrictionMode: "strict",
@@ -80,21 +90,30 @@ export class ManagedSiteService {
       temporaryAccess: { enabled: true, durationMinutes: 5, maxUsesPerDay: 3 }
     };
     const updated = await this.settings.mutate((current) => {
-      if (Object.values(current.sites).some((candidate) => candidate.origin === parsed.origin)) {
+      const existing = Object.values(current.sites).find(
+        (candidate) => siteScopeKey(candidate.origin) === siteScopeKey(scope.canonicalOrigin)
+      );
+      if (existing) {
+        if (scope.family) {
+          existing.origin = scope.canonicalOrigin;
+          existing.hostname = new URL(scope.canonicalOrigin).hostname;
+          existing.matchPatterns = [...scope.matchPatterns];
+          existing.updatedAt = now;
+        }
         return;
       }
       current.sites[siteId] = site;
       current.targets[targetId] = target;
     });
     const effectiveSite = Object.values(updated.sites).find(
-      (candidate) => candidate.origin === parsed.origin
+      (candidate) => siteScopeKey(candidate.origin) === siteScopeKey(scope.canonicalOrigin)
     );
     if (!effectiveSite) throw new Error("Website could not be saved");
     const effectiveTarget = updated.targets[effectiveSite.targetIds[0] ?? ""];
     await this.ensureRegistration(effectiveSite);
     return {
       granted: true,
-      origin: parsed.origin,
+      origin: scope.canonicalOrigin,
       site: effectiveSite,
       ...(effectiveTarget ? { target: effectiveTarget } : {})
     };
@@ -240,12 +259,14 @@ export class ManagedSiteService {
     if (!site) throw new Error("Website is not configured");
     const removedSite = site;
     await this.unregisterSiteRegistrations(removedSite);
-    const originStillUsed = Object.values(updated.sites).some(
-      (candidate) => candidate.origin === removedSite.origin
+    const originStillUsed = Object.values(updated.sites).some((candidate) =>
+      siteMatchPatterns(candidate).some((pattern) =>
+        siteMatchPatterns(removedSite).includes(pattern)
+      )
     );
     const permissionRemoved = originStillUsed
       ? false
-      : await permissionsRemove([originMatchPattern(removedSite.origin)]);
+      : await permissionsRemove(siteMatchPatterns(removedSite));
     return { removed: true, permissionRemoved };
   }
 
@@ -257,8 +278,8 @@ export class ManagedSiteService {
     const parsed = parseHttpUrl(url);
     if (!parsed) return null;
     const current = await this.settings.get();
-    const site = Object.values(current.sites).find(
-      (candidate) => candidate.origin === parsed.origin
+    const site = Object.values(current.sites).find((candidate) =>
+      siteMatchesUrl(candidate, parsed)
     );
     if (!site) return null;
     const directTargetId = requestedTargetId ?? site.targetIds[0];
@@ -272,7 +293,7 @@ export class ManagedSiteService {
     if (!target || target.siteId !== site.id || target.moduleEnabled === false) return null;
     if (
       requirePermission &&
-      !(await permissionsContains([originMatchPattern(site.origin)]).catch(() => false))
+      !(await permissionsContains(siteMatchPatterns(site)).catch(() => false))
     ) {
       return null;
     }
@@ -293,9 +314,7 @@ export class ManagedSiteService {
 
     const { sites } = await this.settings.get();
     for (const site of Object.values(sites)) {
-      const granted = await permissionsContains([originMatchPattern(site.origin)]).catch(
-        () => false
-      );
+      const granted = await permissionsContains(siteMatchPatterns(site)).catch(() => false);
       if (!granted) continue;
       await this.ensureRegistration(site);
       for (const module of modules) {
@@ -312,7 +331,20 @@ export class ManagedSiteService {
   private async ensureRegistration(site: ManagedSite): Promise<void> {
     const id = registrationId(site.id);
     await scriptingUnregisterContentScripts([id]).catch(() => undefined);
-    await scriptingRegisterContentScript(id, [originMatchPattern(site.origin)]);
+    const patterns = siteMatchPatterns(site);
+    await scriptingRegisterContentScript(id, patterns);
+    await this.injectIntoOpenTabs(patterns);
+  }
+
+  private async injectIntoOpenTabs(patterns: string[]): Promise<void> {
+    const tabs = await tabsQuery({ url: patterns }).catch(() => []);
+    await Promise.all(
+      tabs.map((tab) =>
+        tab.id === undefined
+          ? Promise.resolve()
+          : scriptingExecuteScript(tab.id).catch(() => undefined)
+      )
+    );
   }
 
   private async ensureModuleRegistration(
@@ -326,14 +358,15 @@ export class ManagedSiteService {
   }
 
   private async unregisterSiteRegistrations(site: ManagedSite): Promise<void> {
-    const matchPattern = originMatchPattern(site.origin);
+    const matchPatterns = siteMatchPatterns(site);
     const existing = await scriptingGetRegisteredContentScripts().catch(() => []);
     const ids = existing
       .filter(
         (script) =>
           (script.id.startsWith(REGISTRATION_PREFIX) ||
             script.id.startsWith(MODULE_REGISTRATION_PREFIX)) &&
-          (script.id === registrationId(site.id) || script.matches?.includes(matchPattern))
+          (script.id === registrationId(site.id) ||
+            script.matches?.some((pattern) => matchPatterns.includes(pattern)))
       )
       .map((script) => script.id);
     if (ids.length > 0) await scriptingUnregisterContentScripts(ids);

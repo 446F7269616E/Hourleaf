@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "format": "hourleaf.local-module",
+  "id": "hourleaf.local.baidu-tieba-focus",
+  "name": "百度贴吧专注模块",
+  "author": "Hourleaf contributors",
+  "version": "1.0.0",
+  "description": "非官方本地模块：提供百度贴吧网页版首页推荐流的可选过滤。",
+  "matches": ["https://tieba.baidu.com/*"],
+  "domainPolicy": "timed",
+  "hideSelectors": [],
+  "filterGroups": [
+    {
+      "id": "home-recommendations",
+      "name": "首页推荐",
+      "description": "隐藏贴吧首页中的普通推荐帖子。",
+      "selectors": [
+        "#new_list > .j_feed_li:not(.home-place-item):not([data-key^='ad_']):not(:has([data-key^='ad_'], [class*='ad-'], [class*='_ad']))"
+      ]
+    }
+  ],
+  "cssFiles": [],
+  "userScriptFiles": []
+}

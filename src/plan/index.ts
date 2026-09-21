@@ -22,6 +22,8 @@ import type {
 } from "../shared/types";
 import { assertAppRoot, describeError, element, icon, setButtonBusy, toast } from "../styles/dom";
 import { createPageNavigation } from "../ui/page-navigation";
+import { enableRadioButtonGroup } from "../ui/radio-button-group";
+import { applyTheme } from "../ui/theme";
 import {
   fitMindmapTransform,
   getMindmapConnectorMetrics,
@@ -73,6 +75,7 @@ async function loadPlan(): Promise<void> {
       sendRequest({ type: "GET_SETTINGS" })
     ]);
     configureLocale(settings.locale);
+    applyTheme(settings.theme);
     localizeDocumentTitle("plan");
     state = planState;
     renderPlan();
@@ -159,7 +162,7 @@ function createShell(content: HTMLElement): HTMLElement {
     children: [
       createPageNavigation({ currentPage: "plan" }),
       element("header", {
-        className: "plan-heading",
+        className: "plan-heading page-heading",
         children: [
           element("div", {
             children: [element("h1", { className: "page-title", text: t("plan.title") })]
@@ -177,27 +180,37 @@ function createViewControl(): HTMLElement {
     { id: "list", label: t("plan.list") },
     { id: "mindmap", label: t("plan.mindmap") }
   ];
+  const buttons = views.map(({ id, label }) => {
+    const button = element("button", {
+      className: "segmented__item plan-view-control__button",
+      text: label,
+      attrs: {
+        type: "button",
+        role: "radio",
+        "aria-checked": String(id === planView),
+        "data-plan-view": id
+      }
+    });
+    button.addEventListener("click", () => {
+      if (planView === id) return;
+      planView = id;
+      writePlanView(id);
+      renderPlan();
+      document.querySelector<HTMLButtonElement>(`[data-plan-view='${id}']`)?.focus();
+    });
+    return button;
+  });
+  enableRadioButtonGroup(buttons);
   return element("div", {
-    className: "plan-view-control segmented",
-    attrs: { role: "group", "aria-label": t("plan.viewLabel") },
-    children: views.map(({ id, label }) => {
-      const button = element("button", {
-        className: "segmented__item plan-view-control__button",
-        text: label,
-        attrs: {
-          type: "button",
-          "aria-pressed": id === planView,
-          "data-plan-view": id
-        }
-      });
-      button.addEventListener("click", () => {
-        if (planView === id) return;
-        planView = id;
-        writePlanView(id);
-        renderPlan();
-      });
-      return button;
-    })
+    className: "plan-view-control view-control",
+    children: [
+      element("span", { className: "view-control__label", text: t("common.view") }),
+      element("div", {
+        className: "segmented",
+        attrs: { role: "radiogroup", "aria-label": t("plan.viewLabel") },
+        children: buttons
+      })
+    ]
   });
 }
 
@@ -647,10 +660,14 @@ function createEmpty(completed: boolean): HTMLElement {
       element("div", {
         className: "plan-empty__inner",
         children: [
-          element("span", {
-            className: "plan-state__icon",
-            children: [icon(completed ? "check" : "plus")]
-          }),
+          ...(completed
+            ? [
+                element("span", {
+                  className: "plan-state__icon",
+                  children: [icon("check")]
+                })
+              ]
+            : []),
           element("h3", { text: completed ? t("plan.noCompleted") : t("plan.noPending") })
         ]
       })
@@ -854,6 +871,10 @@ function createEditForm(item: PlanItem): HTMLElement {
     `plan-completion-mode-${item.id}`,
     item.completionMode
   );
+  const pauseOnVideoEnd = createPauseOnVideoEndControl(
+    `plan-pause-video-${item.id}`,
+    item.pauseOnVideoEnd
+  );
   const url = element("input", {
     className: "plan-input",
     attrs: { type: "url", value: item.url, maxlength: "500", required: true, inputmode: "url" }
@@ -894,6 +915,7 @@ function createEditForm(item: PlanItem): HTMLElement {
           completionMode.description
         ]
       }),
+      pauseOnVideoEnd.label,
       element("label", {
         className: "plan-field",
         children: [element("span", { text: t("plan.urlField") }), url]
@@ -921,6 +943,7 @@ function createEditForm(item: PlanItem): HTMLElement {
       url.value,
       duration.value,
       completionMode.select.value as PlanCompletionMode,
+      pauseOnVideoEnd.input.checked,
       save
     );
   });
@@ -1072,6 +1095,7 @@ async function updateItem(
   urlValue: string,
   durationValue: string,
   completionMode: PlanCompletionMode,
+  pauseOnVideoEnd: boolean,
   button: HTMLButtonElement
 ): Promise<void> {
   const title = titleValue.trim();
@@ -1096,7 +1120,7 @@ async function updateItem(
     state = await sendRequest({
       type: "UPDATE_PLAN_ITEM",
       id: item.id,
-      patch: { title, url, scheduledDurationMinutes, completionMode }
+      patch: { title, url, scheduledDurationMinutes, completionMode, pauseOnVideoEnd }
     });
     editingItemId = null;
     toast(t("plan.saved"));
@@ -1163,6 +1187,7 @@ function openAddDialog(): void {
     "plan-completion-mode",
     state?.settings.defaultCompletionMode ?? "flow"
   );
+  const pauseOnVideoEnd = createPauseOnVideoEndControl("plan-pause-video", false);
   const error = element("p", {
     className: "plan-field__error",
     attrs: { id: "plan-url-error", role: "alert", hidden: true }
@@ -1236,7 +1261,8 @@ function openAddDialog(): void {
               completionMode.select,
               completionMode.description
             ]
-          })
+          }),
+          pauseOnVideoEnd.label
         ]
       }),
       element("footer", { className: "plan-dialog__footer", children: [cancel, submit] })
@@ -1251,7 +1277,16 @@ function openAddDialog(): void {
     event.preventDefault();
     error.hidden = true;
     url.removeAttribute("aria-invalid");
-    void addItem(url, title, duration, completionMode.select, error, submit, dialog);
+    void addItem(
+      url,
+      title,
+      duration,
+      completionMode.select,
+      pauseOnVideoEnd.input,
+      error,
+      submit,
+      dialog
+    );
   });
   const closeDialog = () => dialog.close();
   cancel.addEventListener("click", closeDialog);
@@ -1270,6 +1305,7 @@ async function addItem(
   titleInput: HTMLInputElement,
   durationInput: HTMLInputElement,
   completionModeInput: HTMLSelectElement,
+  pauseOnVideoEndInput: HTMLInputElement,
   error: HTMLElement,
   submit: HTMLButtonElement,
   dialog: HTMLDialogElement
@@ -1300,6 +1336,7 @@ async function addItem(
       url,
       scheduledDurationMinutes,
       completionMode: completionModeInput.value as PlanCompletionMode,
+      pauseOnVideoEnd: pauseOnVideoEndInput.checked,
       ...(title ? { title } : {})
     });
     const addedItem = state.queue.items.find((item) => !previousIds.has(item.id));
@@ -1330,6 +1367,7 @@ function openBulkImportDialog(): void {
     "plan-bulk-completion-mode",
     state?.settings.defaultCompletionMode ?? "flow"
   );
+  const bulkPauseOnVideoEnd = createPauseOnVideoEndControl("plan-bulk-pause-video", false);
   const textarea = element("textarea", {
     className: "plan-input plan-bulk-textarea",
     attrs: {
@@ -1420,6 +1458,7 @@ function openBulkImportDialog(): void {
                   bulkCompletionMode.description
                 ]
               }),
+              bulkPauseOnVideoEnd.label,
               element("div", {
                 className: "plan-form__actions plan-bulk-parse",
                 children: [parse]
@@ -1450,7 +1489,8 @@ function openBulkImportDialog(): void {
     const result = parsePlanImport(
       textarea.value,
       scheduledDurationMinutes,
-      bulkCompletionMode.select.value as PlanCompletionMode
+      bulkCompletionMode.select.value as PlanCompletionMode,
+      bulkPauseOnVideoEnd.input.checked
     );
     parsedItems = result.items;
     renderImportPreview(
@@ -1629,7 +1669,8 @@ async function importItems(
 function parsePlanImport(
   value: string,
   scheduledDurationMinutes: number,
-  completionMode: PlanCompletionMode
+  completionMode: PlanCompletionMode,
+  pauseOnVideoEnd = false
 ): {
   items: PlanItemInput[];
   rejected: string[];
@@ -1647,7 +1688,12 @@ function parsePlanImport(
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) continue;
-    const parsed = parsePlanImportLine(line, scheduledDurationMinutes, completionMode);
+    const parsed = parsePlanImportLine(
+      line,
+      scheduledDurationMinutes,
+      completionMode,
+      pauseOnVideoEnd
+    );
     if (!parsed) {
       rejected.push(line);
       continue;
@@ -1669,7 +1715,8 @@ function parsePlanImport(
 function parsePlanImportLine(
   line: string,
   scheduledDurationMinutes: number,
-  completionMode: PlanCompletionMode
+  completionMode: PlanCompletionMode,
+  pauseOnVideoEnd = false
 ): (PlanItemInput & { url: string; source: "manual" }) | null {
   const markdown = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/iu.exec(line);
   let title = markdown?.[1]?.trim() ?? "";
@@ -1697,7 +1744,8 @@ function parsePlanImportLine(
       title: normalizedTitle,
       source: "manual",
       scheduledDurationMinutes,
-      completionMode
+      completionMode,
+      pauseOnVideoEnd
     };
   } catch {
     return null;
@@ -1787,6 +1835,32 @@ function createCompletionModeControl(
     );
   });
   return { select, description };
+}
+
+function createPauseOnVideoEndControl(
+  id: string,
+  checked: boolean
+): { input: HTMLInputElement; label: HTMLLabelElement } {
+  const input = element("input", {
+    attrs: { id, type: "checkbox", checked }
+  });
+  const label = element("label", {
+    className: "plan-field plan-checkbox-field",
+    attrs: { for: id },
+    children: [
+      input,
+      element("span", {
+        children: [
+          element("strong", { text: t("plan.pauseOnVideoEnd") }),
+          element("small", {
+            className: "plan-field__hint",
+            text: t("plan.pauseOnVideoEndDescription")
+          })
+        ]
+      })
+    ]
+  });
+  return { input, label };
 }
 
 function readDurationMinutes(value: string): number | null {
