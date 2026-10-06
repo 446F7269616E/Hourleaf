@@ -48,6 +48,12 @@ export async function initializeDebugBuild(
   if (typeof __HOURLEAF_BUILD_FLAVOR__ === "undefined" || __HOURLEAF_BUILD_FLAVOR__ !== "debug") {
     return;
   }
+  if (
+    (await storageGet(getLocalStorageArea(), "hourleaf.debug-seed-disabled"))[
+      "hourleaf.debug-seed-disabled"
+    ]
+  )
+    return;
   await localModulesReady;
   await applyDebugBuildPreset(
     {

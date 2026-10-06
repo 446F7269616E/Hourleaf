@@ -4,6 +4,23 @@ All notable changes to Hourleaf will be documented in this file. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- Local-module content filters can select saved Configuration time periods and apply only during matching daily clock ranges, with separate normal/plan preferences and configuration-backup support.
+
+### Fixed
+
+- Content filter schedules now read only the selected start/end times as daily blacklist windows; configured weekdays, period enablement, access modes, and allowance no longer prevent matching or boundary refresh.
+- Bilibili 1.2.4 hides dynamic-update and message-notification dot/count badges with the dynamic-feed filter in native and Bewly navigation.
+- Bilibili 1.2.3 disables native related-video autoplay while its related-video filter is active, including selected time periods and plan preferences; existing visible toggles are restored when suppression ends.
+- Bilibili 1.2.2 applies the related-video filter to player end-screen recommendations and the dynamic-feed filter to native/Bewly navigation popovers and the dynamic page's hot-search ranking.
+
+### Changed
+
+- Content filter cards align switches and time-period controls, and offer only periods from the corresponding website; unrelated stored references remain inactive and removable.
+- Plan mindmaps show pending items only; completed items use the same collapsible list at the bottom in both views.
+- Optional module names now use only the website name: Bilibili, 小红书, X, YouTube, and 百度贴吧; module IDs and filter preferences remain stable.
+
 ## [0.6.0] - 2026-08-11
 
 ### Added

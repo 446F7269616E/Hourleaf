@@ -26,12 +26,15 @@ export type UsageEligibility = (
 export interface TrackingTarget {
   targetId: TargetId;
   activePeriodId?: string;
+  /** An explicit domain allow records actual usage without consuming grouped quota. */
+  quotaExempt?: boolean;
   siteId?: SiteId;
   legacySection?: SectionId;
 }
 export type TrackingTargetResolver = (
   url: string,
-  requestedTargetId?: TargetId
+  requestedTargetId?: TargetId,
+  at?: number
 ) => TrackingTarget | null | Promise<TrackingTarget | null>;
 
 export class UsageTracker {
@@ -47,13 +50,20 @@ export class UsageTracker {
   private lastTickAt: number;
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private sessionUpdateQueue: Promise<unknown> = Promise.resolve();
+  private flushQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly analytics = new AnalyticsService(),
     private readonly now: () => number = Date.now,
     private readonly api: ExtensionApi | null = getExtensionApi(),
     private readonly isUsageAllowed: UsageEligibility = () => true,
-    private readonly resolveTarget: TrackingTargetResolver = () => null
+    private readonly resolveTarget: TrackingTargetResolver = () => null,
+    private readonly recordUsage: (
+      target: TrackingTarget,
+      start: number,
+      end: number
+    ) => Promise<void> = (target, start, end) =>
+      this.analytics.recordInterval(target.targetId, start, end, target.activePeriodId)
   ) {
     this.lastTickAt = this.now();
   }
@@ -123,7 +133,7 @@ export class UsageTracker {
     const pageVisible =
       this.currentTab?.id !== undefined && this.visibleByTab.get(this.currentTab.id) === true;
     const eligible = pageVisible && this.windowFocused && this.isUserActive();
-    if (!eligible || end <= rawStart) return Promise.resolve();
+    if (!eligible || end <= rawStart) return this.flushQueue;
 
     // Browser background contexts can be suspended. Never count a long sleep as active usage.
     const start = Math.max(rawStart, end - MAX_RECORDABLE_GAP_MS);
@@ -132,18 +142,20 @@ export class UsageTracker {
     const isolatedPlanUsage =
       this.currentTab?.id !== undefined &&
       this.isolatedPlanUsageByTab.get(this.currentTab.id) === true;
-    return Promise.all([
-      Promise.resolve(this.resolveTarget(url, requestedTargetId)),
-      isolatedPlanUsage
-        ? Promise.resolve(false)
-        : Promise.resolve(this.isUsageAllowed(url, end, requestedTargetId))
-    ])
-      .then(([target, allowed]) =>
-        target && allowed
-          ? this.analytics.recordInterval(target.targetId, start, end, target.activePeriodId)
-          : undefined
-      )
-      .catch(() => undefined);
+    const write = this.flushQueue.then(() =>
+      Promise.all([
+        Promise.resolve(this.resolveTarget(url, requestedTargetId, start)),
+        isolatedPlanUsage
+          ? Promise.resolve(false)
+          : Promise.resolve(this.isUsageAllowed(url, start, requestedTargetId))
+      ])
+        .then(([target, allowed]) =>
+          target && allowed ? this.recordUsage(target, start, end) : undefined
+        )
+        .catch(() => undefined)
+    );
+    this.flushQueue = write;
+    return write;
   }
 
   handleSessionUpdate(
@@ -170,18 +182,24 @@ export class UsageTracker {
     return result;
   }
 
-  /** Ends all in-memory tracking identities at a configuration replacement boundary. */
-  resetSessions(at = this.now()): Promise<void> {
+  /** Flush old policy usage and hold session events until the new state is ready. */
+  withSessionBoundary<T>(change: () => Promise<T>, at = this.now()): Promise<T> {
     const result = this.sessionUpdateQueue.then(async () => {
       await this.flush(at);
+      await this.flushQueue;
       this.sessionByTab.clear();
       this.visibleByTab.clear();
       this.targetByTab.clear();
       this.isolatedPlanUsageByTab.clear();
       this.lastTickAt = Math.max(at, this.lastTickAt);
+      return change();
     });
     this.sessionUpdateQueue = result.catch(() => undefined);
     return result;
+  }
+
+  resetSessions(at = this.now()): Promise<void> {
+    return this.withSessionBoundary(async () => undefined, at);
   }
 
   private async applySessionUpdate(

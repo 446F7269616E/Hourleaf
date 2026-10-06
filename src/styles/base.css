@@ -243,7 +243,7 @@ svg {
 }
 
 .btn--primary {
-  color: #fff;
+  color: var(--color-on-brand);
   background: var(--color-brand);
   border-color: transparent;
   box-shadow: 0 6px 16px color-mix(in srgb, var(--color-brand) 24%, transparent);

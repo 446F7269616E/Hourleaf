@@ -6,7 +6,12 @@ import {
   type StorageAreaLike
 } from "../../shared/browser";
 import { STORAGE_KEYS } from "../../shared/storage-keys";
-import type { LocalModuleDefinition, LocalModuleStore, LocalModuleProfile } from "./types";
+import type {
+  LocalModuleDefinition,
+  LocalModuleStore,
+  LocalModuleProfile,
+  LocalModuleTimePeriodReference
+} from "./types";
 import { normalizeLocalModuleDefinition, normalizeLocalModuleStore } from "./validation";
 
 export class LocalModuleRepository {
@@ -36,6 +41,9 @@ export class LocalModuleRepository {
               normalized.filterGroups.some((group) => group.id === groupId)
             )
           : [],
+        ...(previous?.filterGroupSchedules
+          ? { filterGroupSchedules: previous.filterGroupSchedules }
+          : {}),
         ...(previous?.planPreferences ? { planPreferences: previous.planPreferences } : {}),
         importedAt: previous?.importedAt ?? now,
         updatedAt: now
@@ -89,6 +97,29 @@ export class LocalModuleRepository {
     return this.update((store) => {
       if (!store.installations[id]) throw new Error("本地模块不存在");
       delete store.installations[id];
+    });
+  }
+
+  async setFilterGroupSchedule(
+    id: string,
+    groupId: string,
+    periods: LocalModuleTimePeriodReference[] | null,
+    now = Date.now(),
+    profile: LocalModuleProfile = "normal"
+  ): Promise<LocalModuleStore> {
+    return this.update((store) => {
+      const installation = store.installations[id];
+      if (!installation) throw new Error("本地模块不存在");
+      if (!installation.definition.filterGroups.some((group) => group.id === groupId))
+        throw new Error("模块屏蔽分组不存在");
+      const preferences = modulePreferences(installation, profile);
+      const filterGroupSchedules = { ...preferences.filterGroupSchedules };
+      if (periods === null) delete filterGroupSchedules[groupId];
+      else filterGroupSchedules[groupId] = periods;
+      if (profile === "plan")
+        installation.planPreferences = { ...preferences, filterGroupSchedules };
+      else installation.filterGroupSchedules = filterGroupSchedules;
+      installation.updatedAt = now;
     });
   }
 

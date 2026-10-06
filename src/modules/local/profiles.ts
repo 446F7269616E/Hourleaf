@@ -32,7 +32,11 @@ export function projectModuleStore(
     installations: Object.fromEntries(
       Object.entries(store.installations).map(([id, installation]) => [
         id,
-        { ...installation, ...modulePreferences(installation, profile) }
+        {
+          ...installation,
+          ...modulePreferences(installation, profile),
+          filterGroupSchedules: modulePreferences(installation, profile).filterGroupSchedules
+        }
       ])
     )
   };

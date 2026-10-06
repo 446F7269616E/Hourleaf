@@ -4,6 +4,7 @@ import { siteMatchPatterns } from "./site-scope";
 import type { FocusSettings, PlanQueueStore } from "./types";
 import type { LocalModuleStore, LocalModulePreferences } from "../modules/local/types";
 import { normalizeLocalModuleStore } from "../modules/local/validation";
+import { normalizeFilterSchedules } from "../modules/local/schedules";
 
 export const CONFIGURATION_BACKUP_FORMAT = "hourleaf.configuration-backup" as const;
 export const CONFIGURATION_BACKUP_SCHEMA_VERSION = 1 as const;
@@ -11,7 +12,7 @@ export const CONFIGURATION_BACKUP_SCHEMA_VERSION = 1 as const;
 // while still bounding untrusted file parsing and runtime messages.
 export const MAX_CONFIGURATION_BACKUP_BYTES = 16 * 1024 * 1024;
 
-export interface LocalModulePreferenceBackup {
+export interface LocalModulePreferenceBackup extends LocalModulePreferences {
   moduleId: string;
   moduleVersion: string;
   enabled: boolean;
@@ -80,13 +81,15 @@ export function createConfigurationBackup(
             moduleVersion: installation.definition.version,
             enabled: installation.enabled,
             disabledFilterGroupIds: [...installation.disabledFilterGroupIds].sort(),
+            ...schedulePreferenceField(installation.filterGroupSchedules),
             ...(installation.planPreferences
               ? {
                   planPreferences: {
                     enabled: installation.planPreferences.enabled,
                     disabledFilterGroupIds: [
                       ...installation.planPreferences.disabledFilterGroupIds
-                    ].sort()
+                    ].sort(),
+                    ...schedulePreferenceField(installation.planPreferences.filterGroupSchedules)
                   }
                 }
               : {})
@@ -115,7 +118,7 @@ export function parseConfigurationBackup(value: unknown): ConfigurationBackupDoc
     throw new Error("Unsupported Hourleaf configuration backup");
   }
 
-  const rawSettings = upgradeBlockingPreferenceDefault(value.data.settings);
+  const rawSettings = upgradePauseDefaults(upgradeBlockingPreferenceDefault(value.data.settings));
   const settings = normalizeSettings(rawSettings);
   if (!structurallyEqual(settings, rawSettings)) {
     throw new Error("The settings section is invalid or not canonical");
@@ -178,12 +181,16 @@ export function restoreLocalModulePreferences(
     installation.disabledFilterGroupIds = preference.disabledFilterGroupIds.filter((id) =>
       groupIds.has(id)
     );
+    if (preference.filterGroupSchedules)
+      installation.filterGroupSchedules = preference.filterGroupSchedules;
+    else delete installation.filterGroupSchedules;
     if (preference.planPreferences)
       installation.planPreferences = {
         enabled: preference.planPreferences.enabled,
         disabledFilterGroupIds: preference.planPreferences.disabledFilterGroupIds.filter((id) =>
           groupIds.has(id)
-        )
+        ),
+        ...schedulePreferenceField(preference.planPreferences.filterGroupSchedules)
       };
     else delete installation.planPreferences;
     installation.updatedAt = now;
@@ -214,6 +221,7 @@ function parseLocalModulePreferences(
         "moduleVersion",
         "enabled",
         "disabledFilterGroupIds",
+        ...(raw.filterGroupSchedules !== undefined ? ["filterGroupSchedules"] : []),
         ...(raw.planPreferences !== undefined ? ["planPreferences"] : [])
       ]) ||
       !isStableId(raw.moduleId) ||
@@ -225,6 +233,7 @@ function parseLocalModulePreferences(
       raw.disabledFilterGroupIds.length > 24 ||
       !raw.disabledFilterGroupIds.every(isFilterGroupId) ||
       new Set(raw.disabledFilterGroupIds).size !== raw.disabledFilterGroupIds.length ||
+      normalizeFilterSchedules(raw.filterGroupSchedules) === null ||
       (raw.planPreferences !== undefined && !validModulePreferences(raw.planPreferences))
     ) {
       throw new Error("A local module preference is invalid");
@@ -235,11 +244,13 @@ function parseLocalModulePreferences(
       moduleVersion: raw.moduleVersion,
       enabled: raw.enabled,
       disabledFilterGroupIds: [...raw.disabledFilterGroupIds].sort(),
+      ...schedulePreferenceField(raw.filterGroupSchedules),
       ...(validModulePreferences(raw.planPreferences)
         ? {
             planPreferences: {
               enabled: raw.planPreferences.enabled,
-              disabledFilterGroupIds: [...raw.planPreferences.disabledFilterGroupIds].sort()
+              disabledFilterGroupIds: [...raw.planPreferences.disabledFilterGroupIds].sort(),
+              ...schedulePreferenceField(raw.planPreferences.filterGroupSchedules)
             }
           }
         : {})
@@ -318,13 +329,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function validModulePreferences(value: unknown): value is LocalModulePreferences {
   return (
     isRecord(value) &&
-    hasExactKeys(value, ["enabled", "disabledFilterGroupIds"]) &&
+    hasExactKeys(value, [
+      "enabled",
+      "disabledFilterGroupIds",
+      ...(value.filterGroupSchedules !== undefined ? ["filterGroupSchedules"] : [])
+    ]) &&
     typeof value.enabled === "boolean" &&
     Array.isArray(value.disabledFilterGroupIds) &&
     value.disabledFilterGroupIds.length <= 24 &&
     value.disabledFilterGroupIds.every(isFilterGroupId) &&
-    new Set(value.disabledFilterGroupIds).size === value.disabledFilterGroupIds.length
+    new Set(value.disabledFilterGroupIds).size === value.disabledFilterGroupIds.length &&
+    normalizeFilterSchedules(value.filterGroupSchedules) !== null
   );
+}
+
+function schedulePreferenceField(
+  value: unknown
+): Pick<LocalModulePreferences, "filterGroupSchedules"> {
+  if (value === undefined) return {};
+  const filterGroupSchedules = normalizeFilterSchedules(value);
+  if (!filterGroupSchedules) throw new Error("The filter time periods are invalid");
+  return { filterGroupSchedules };
 }
 
 function upgradeBlockingPreferenceDefault(value: unknown): unknown {
@@ -338,4 +363,25 @@ function upgradeBlockingPreferenceDefault(value: unknown): unknown {
   if (isRecord(copy.legacyCapsules) && isRecord(copy.legacyCapsules.bilibili))
     addDefault(copy.legacyCapsules.bilibili.planMode);
   return copy;
+}
+
+function upgradePauseDefaults(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const settings = clone(value);
+  const normalized = normalizeSettings(settings);
+  settings.disableProtection ??= normalized.disableProtection;
+  if (isRecord(settings.endPage)) {
+    settings.endPage.flowConsumesNextGroup ??= false;
+    settings.endPage.repeatConfirmationInNewTabs ??= false;
+    if (isRecord(settings.endPage.groupUnlock)) {
+      settings.endPage.groupUnlock.waitSeconds ??= normalized.endPage.groupUnlock.waitSeconds;
+      settings.endPage.groupUnlock.mathDifficulty ??= "equation";
+      settings.endPage.groupUnlock.waitMinutes = normalized.endPage.groupUnlock.waitMinutes;
+    }
+  }
+  if (isRecord(settings.sites))
+    for (const site of Object.values(settings.sites)) {
+      if (isRecord(site) && isRecord(site.visitConfirmation)) site.visitConfirmation.enabled = true;
+    }
+  return settings;
 }

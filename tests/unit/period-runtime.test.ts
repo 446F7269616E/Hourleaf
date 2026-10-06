@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AnalyticsService } from "../../src/shared/analytics";
 import type { ExtensionApi, StorageAreaLike } from "../../src/shared/browser";
 import { createDefaultSettings } from "../../src/shared/config";
+import { createMathChallenge } from "../../src/shared/unlock-challenge";
 import { PeriodRuntimeService } from "../../src/shared/period-runtime";
 import {
   PeriodRuntimeRepository,
@@ -46,7 +47,15 @@ beforeEach(async () => {
     endPage: {
       view: "dashboard",
       motivationalMessage: "",
-      groupUnlock: { method: "math", waitMinutes: 5, passwordVerifier: "" }
+      flowConsumesNextGroup: false,
+      repeatConfirmationInNewTabs: false,
+      groupUnlock: {
+        method: "math",
+        waitMinutes: 5,
+        waitSeconds: 300,
+        mathDifficulty: "equation",
+        passwordVerifier: ""
+      }
     },
     sites: {
       [siteId]: {
@@ -106,17 +115,23 @@ describe("period runtime", () => {
     expect(status.mathChallenge).toBeDefined();
     await expect(runtime.unlock(targetId, periodId, "0")).rejects.toThrow();
 
-    const challenge = status.mathChallenge as { left: number; right: number };
+    const challenge = createMathChallenge(
+      (await runtime.getEntry(targetId, periodId)).mathSeed ?? 0,
+      "equation"
+    );
     await expect(
-      runtime.unlock(targetId, periodId, String(challenge.left + challenge.right))
+      runtime.unlock(targetId, periodId, String(challenge.answer))
     ).resolves.toMatchObject({ unlockedGroups: 2, canUnlock: false });
   });
 
   it("rejects a concurrent unlock based on a stale group", async () => {
     await analytics.recordInterval(targetId, now - 60_000, now, periodId);
-    const status = await runtime.getStatus(targetId, periodId);
-    const challenge = status.mathChallenge as { left: number; right: number };
-    const proof = String(challenge.left + challenge.right);
+    await runtime.getStatus(targetId, periodId);
+    const challenge = createMathChallenge(
+      (await runtime.getEntry(targetId, periodId)).mathSeed ?? 0,
+      "equation"
+    );
+    const proof = String(challenge.answer);
 
     const results = await Promise.allSettled([
       runtime.unlock(targetId, periodId, proof),

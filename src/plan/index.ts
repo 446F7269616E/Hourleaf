@@ -253,19 +253,17 @@ function createQueueCard(planState: PlanState): HTMLElement {
           element("div", { className: "plan-workspace__actions", children: [bulk, add] })
         ]
       }),
-      planView === "list" ? createListView(pending, completed) : createMindmap(pending, completed)
+      planView === "list" ? createListView(pending) : createMindmap(pending),
+      createItemSection(t("plan.completed"), completed, true, "list")
     ]
   });
 }
 
-function createListView(pending: PlanItem[], completed: PlanItem[]): HTMLElement {
+function createListView(pending: PlanItem[]): HTMLElement {
   return element("div", {
     className: "plan-list-view",
     attrs: { "aria-label": t("plan.list") },
-    children: [
-      createItemSection(t("plan.pending"), pending, false, "list"),
-      createItemSection(t("plan.completed"), completed, true, "list")
-    ]
+    children: [createItemSection(t("plan.pending"), pending, false, "list")]
   });
 }
 
@@ -348,8 +346,8 @@ function createItemSection(
   return section;
 }
 
-function createMindmap(pending: PlanItem[], completed: PlanItem[]): HTMLElement {
-  const nextContentSignature = [...pending, ...completed]
+function createMindmap(pending: PlanItem[]): HTMLElement {
+  const nextContentSignature = pending
     .map((item) => `${item.id}\u0000${item.status}\u0000${item.title}\u0000${item.url}`)
     .sort()
     .join("\u0001");
@@ -359,10 +357,7 @@ function createMindmap(pending: PlanItem[], completed: PlanItem[]): HTMLElement 
   mindmapContentSignature = nextContentSignature;
   const branches = element("div", {
     className: "plan-mindmap__branches",
-    children: [
-      createMindmapBranch(t("plan.pending"), pending, false),
-      createMindmapBranch(t("plan.completed"), completed, true)
-    ]
+    children: [createMindmapBranch(pending)]
   });
   const scene = element("div", {
     className: "plan-mindmap__canvas",
@@ -418,36 +413,29 @@ function createMindmap(pending: PlanItem[], completed: PlanItem[]): HTMLElement 
   return mindmap;
 }
 
-function createMindmapBranch(title: string, items: PlanItem[], completed: boolean): HTMLElement {
-  const titleId = `plan-mindmap-${completed ? "completed" : "pending"}-title`;
-  const branchTitle = element(completed ? "summary" : "h2", {
+function createMindmapBranch(items: PlanItem[]): HTMLElement {
+  const titleId = "plan-mindmap-pending-title";
+  const branchTitle = element("h2", {
     className: "plan-mindmap__branch-title",
-    text: `${title} ${items.length}`,
+    text: `${t("plan.pending")} ${items.length}`,
     attrs: { id: titleId }
   });
   const branchContent =
     items.length > 0
       ? element("ol", {
           className: "plan-mindmap__track",
-          attrs: { "aria-label": completed ? t("plan.completed") : t("plan.pending") },
+          attrs: { "aria-label": t("plan.pending") },
           children: items.map((item, index) => createPlanItem(item, index, items.length, "mindmap"))
         })
       : element("div", {
           className: "plan-mindmap__empty",
-          text: completed ? t("plan.noCompleted") : t("plan.noPending")
+          text: t("plan.noPending")
         });
-  const branch = element(completed ? "details" : "section", {
-    className: `plan-mindmap__branch${completed ? " plan-mindmap__branch--complete" : ""}`,
+  return element("section", {
+    className: "plan-mindmap__branch",
     attrs: { "aria-labelledby": titleId },
     children: [branchTitle, branchContent]
   });
-  if (completed && branch instanceof HTMLDetailsElement) {
-    branch.open = completedExpanded;
-    branch.addEventListener("toggle", () => {
-      completedExpanded = branch.open;
-    });
-  }
-  return branch;
 }
 
 function createMindmapControl(text: string, label: string): HTMLButtonElement {
@@ -867,6 +855,16 @@ function createEditForm(item: PlanItem): HTMLElement {
       required: true
     }
   });
+  const goal = element("textarea", {
+    className: "plan-input",
+    text: item.goal ?? "",
+    attrs: {
+      maxlength: 500,
+      rows: 2,
+      "aria-label": t("pause.goal"),
+      placeholder: t("pause.goalHint")
+    }
+  });
   const completionMode = createCompletionModeControl(
     `plan-completion-mode-${item.id}`,
     item.completionMode
@@ -905,7 +903,12 @@ function createEditForm(item: PlanItem): HTMLElement {
     children: [
       element("label", {
         className: "plan-field",
-        children: [element("span", { text: t("plan.titleField") }), title]
+        children: [
+          element("span", { text: t("plan.titleField") }),
+          title,
+          element("span", { text: t("pause.goal") }),
+          goal
+        ]
       }),
       element("label", {
         className: "plan-field",
@@ -940,6 +943,7 @@ function createEditForm(item: PlanItem): HTMLElement {
     void updateItem(
       item,
       title.value,
+      goal.value,
       url.value,
       duration.value,
       completionMode.select.value as PlanCompletionMode,
@@ -956,9 +960,9 @@ async function startWatching(item: PlanItem, button: HTMLButtonElement): Promise
     const granted = await permissionsRequest([`${item.origin}/*`]);
     if (!granted) throw new Error(t("plan.permissionDenied"));
     setButtonBusy(button, true, t("plan.started"));
-    const result = await sendRequest({ type: "START_PLAN_ITEM", id: item.id });
-    state = result.state;
-    window.location.assign(result.url);
+    window.location.assign(
+      `end.html#${new URLSearchParams({ source: "plan", itemId: item.id, reason: "plan-start" })}`
+    );
   } catch (error) {
     setButtonBusy(button, false);
     toast(describeError(error), "error");
@@ -1092,6 +1096,7 @@ async function reorderPlanItems(
 async function updateItem(
   item: PlanItem,
   titleValue: string,
+  goalValue: string,
   urlValue: string,
   durationValue: string,
   completionMode: PlanCompletionMode,
@@ -1120,7 +1125,14 @@ async function updateItem(
     state = await sendRequest({
       type: "UPDATE_PLAN_ITEM",
       id: item.id,
-      patch: { title, url, scheduledDurationMinutes, completionMode, pauseOnVideoEnd }
+      patch: {
+        title,
+        goal: goalValue.trim(),
+        url,
+        scheduledDurationMinutes,
+        completionMode,
+        pauseOnVideoEnd
+      }
     });
     editingItemId = null;
     toast(t("plan.saved"));
@@ -1178,6 +1190,15 @@ function openAddDialog(): void {
       "data-testid": "plan-add-title"
     }
   });
+  const goal = element("textarea", {
+    className: "plan-input",
+    attrs: {
+      maxlength: 500,
+      rows: 2,
+      "aria-label": t("pause.goal"),
+      placeholder: t("pause.goalHint")
+    }
+  });
   const duration = createDurationInput(
     "plan-scheduled-duration",
     state?.settings.watchDurationMinutes ?? 45,
@@ -1233,7 +1254,9 @@ function openAddDialog(): void {
             className: "plan-field",
             children: [
               element("label", { text: t("plan.titleField"), attrs: { for: "plan-video-title" } }),
-              title
+              title,
+              element("label", { text: t("pause.goal") }),
+              goal
             ]
           }),
           element("div", {
@@ -1280,6 +1303,7 @@ function openAddDialog(): void {
     void addItem(
       url,
       title,
+      goal,
       duration,
       completionMode.select,
       pauseOnVideoEnd.input,
@@ -1303,6 +1327,7 @@ function openAddDialog(): void {
 async function addItem(
   urlInput: HTMLInputElement,
   titleInput: HTMLInputElement,
+  goalInput: HTMLTextAreaElement,
   durationInput: HTMLInputElement,
   completionModeInput: HTMLSelectElement,
   pauseOnVideoEndInput: HTMLInputElement,
@@ -1337,6 +1362,7 @@ async function addItem(
       scheduledDurationMinutes,
       completionMode: completionModeInput.value as PlanCompletionMode,
       pauseOnVideoEnd: pauseOnVideoEndInput.checked,
+      goal: goalInput.value.trim(),
       ...(title ? { title } : {})
     });
     const addedItem = state.queue.items.find((item) => !previousIds.has(item.id));

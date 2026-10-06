@@ -266,24 +266,24 @@
 .home-theme-control__swatch {
   width: 12px;
   height: 12px;
-  background: var(--color-brand);
+  background: var(--palette-verdant);
   border-radius: 50%;
 }
 
 .home-theme-control__option[data-theme="ocean"] .home-theme-control__swatch {
-  background: #277a9b;
+  background: var(--palette-ocean);
 }
 
 .home-theme-control__option[data-theme="violet"] .home-theme-control__swatch {
-  background: #7654b8;
+  background: var(--palette-violet);
 }
 
 .home-theme-control__option[data-theme="amber"] .home-theme-control__swatch {
-  background: #a26417;
+  background: var(--palette-amber);
 }
 
 .home-theme-control__option[data-theme="rose"] .home-theme-control__swatch {
-  background: #ae5069;
+  background: var(--palette-rose);
 }
 
 .home-setting-row strong {
@@ -591,4 +591,15 @@
   .home-settings-group__chevron {
     transition-duration: 0.01ms;
   }
+}
+.home-protection-controls {
+  display: grid;
+  gap: 10px;
+}
+.protected-warning {
+  color: var(--color-danger);
+  padding: 16px;
+  border: 1px solid var(--color-danger);
+  background: var(--color-danger-soft);
+  border-radius: 12px;
 }

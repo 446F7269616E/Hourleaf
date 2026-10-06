@@ -61,7 +61,7 @@ export class PlanContentRegistrationService {
         this.queue.get(),
         this.access.get()
       ]);
-      const grant = access.activeGrant;
+      const grant = access.activeGrant ?? access.endedGrant;
       const item = grant
         ? queue.items.find(
             (candidate) => candidate.id === grant.itemId && candidate.url === grant.url
@@ -71,9 +71,16 @@ export class PlanContentRegistrationService {
         grant &&
         (grant.flowContinuationKind === "video-end" ||
           grant.expiresAt > this.now() ||
-          (grant.completionMode === "flow" && grant.flowContinuationKind === undefined))
+          (grant.completionMode === "flow" && grant.flowContinuationKind === undefined) ||
+          access.endedGrant?.itemId === grant.itemId)
       );
-      if (!settings.planMode.enabled || !grant || !item || !grantCanStillDecide) {
+      if (
+        !settings.enabled ||
+        (!settings.planMode.enabled && !access.endedGrant) ||
+        !grant ||
+        !item ||
+        !grantCanStillDecide
+      ) {
         await this.clearRegistration();
         return;
       }

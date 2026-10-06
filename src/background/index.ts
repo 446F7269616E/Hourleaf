@@ -1,5 +1,6 @@
 import { activeBlockingProfile } from "../modules/local/profiles";
 import type { LocalModuleProfile } from "../modules/local/types";
+import { filterScheduleReferences, referencedTimePeriod } from "../modules/local/schedules";
 import { AnalyticsService, parseLocalDate } from "../shared/analytics";
 import { ManagedSiteService, sameOrigin } from "../core/sites";
 import {
@@ -7,9 +8,14 @@ import {
   actionSetBadgeText,
   actionSetBadgeTextColor,
   getExtensionApi,
+  getLocalStorageArea,
+  storageRemove,
+  storageGet,
+  storageSet,
   runtimeAddMessageListener,
   storageAddChangeListener,
   tabsGet,
+  tabsSendMessage,
   tabsQuery,
   type ExtensionTab,
   type ExtensionMessageSender
@@ -28,6 +34,7 @@ import type {
   UsagePeriod
 } from "../shared/types";
 import { PlanService } from "./plan";
+import { PeriodUsageRecorder } from "./period-accounting";
 import { UsageTracker } from "./tracker";
 import {
   PREINSTALLED_SITE_MODULE_MANIFESTS,
@@ -38,14 +45,23 @@ import type { PageDecision, TargetId } from "../shared/types";
 import { selectActiveTimePeriod } from "../shared/schedule";
 import { PeriodRuntimeService } from "../shared/period-runtime";
 import { PlanContentRegistrationService } from "./plan-registration";
-import { VisitConfirmationService, resolveVisitConfirmationTabId } from "./visit-confirmation";
+import {
+  VisitConfirmationService,
+  resolveVisitConfirmationTabId,
+  createVisitAccessContext
+} from "./visit-confirmation";
 import { resolveToolbarBadgeText } from "../shared/remaining-time";
 import { STORAGE_KEYS } from "../shared/storage-keys";
 import { siteMatchesUrl } from "../shared/site-scope";
 import { RelatedTabService } from "./related-tabs";
 import { isIndependentPlanAccess, shouldRecordConfiguredUsage } from "../shared/plan";
 import { ConfigurationBackupService } from "./configuration-backup";
+import { handleDebugAction } from "../debug/actions";
+import { DEBUG_BUILD } from "../debug/flags";
 import { initializeDebugBuild } from "../debug/bootstrap";
+
+import { ProtectedActions } from "./protected-actions";
+const protectedActions = new ProtectedActions();
 
 const api = getExtensionApi();
 const settings = new SettingsRepository();
@@ -73,6 +89,8 @@ const planRegistration = new PlanContentRegistrationService(settings);
 const visitConfirmations = new VisitConfirmationService();
 const configurationBackups = new ConfigurationBackupService(settings);
 const relatedTabs = new RelatedTabService(settings, plan);
+let dataResetInProgress = false;
+const periodAccounting = new PeriodUsageRecorder(settings, periodRuntime, analytics);
 const tracker = new UsageTracker(
   analytics,
   Date.now,
@@ -84,23 +102,79 @@ const tracker = new UsageTracker(
       settings.get()
     ]);
     await reconcilePlanRegistration();
-    return shouldRecordConfiguredUsage(
-      currentSettings.planMode,
-      planDecision,
-      focusDecision.blocked
+    return (
+      !dataResetInProgress &&
+      currentSettings.enabled &&
+      shouldRecordConfiguredUsage(currentSettings.planMode, planDecision, focusDecision.blocked)
     );
   },
-  async (url, targetId) => {
+  async (url, targetId, at = Date.now()) => {
     const resolved = await managedSites.resolve(url, targetId);
     if (!resolved) return null;
-    const activePeriod = selectActiveTimePeriod(resolved.target, new Date());
+    const activePeriod = selectActiveTimePeriod(resolved.target, new Date(at));
     return {
       siteId: resolved.site.id,
       targetId: resolved.target.id,
+      quotaExempt: (await localModules.getDomainPolicy(url)) === "always-allow",
       ...(activePeriod?.behavior === "timed" ? { activePeriodId: activePeriod.id } : {})
     };
-  }
+  },
+  (target, start, end) => periodAccounting.record(target, start, end)
 );
+
+// State transitions share a queue so simultaneous pause pages cannot consume
+// the same group or overlap a configuration replacement. Failures do not poison it.
+let stateChangeQueue: Promise<unknown> = Promise.resolve();
+const serializedMessages = new Set<AnyRequest["type"]>([
+  "UPDATE_SETTINGS",
+  "UPDATE_SITE_TARGET",
+  "UPDATE_MANAGED_SITE",
+  "REMOVE_MANAGED_SITE",
+  "IMPORT_CONFIGURATION",
+  "COMPLETE_PROTECTED_ACTION",
+  "RESET_SETTINGS",
+  "DEBUG_ACTION",
+  "GET_VISIT_GATE",
+  "GRANT_VISIT_CONFIRMATION",
+  "UNLOCK_PERIOD_GROUP",
+  "START_PERIOD_GROUP_WAIT",
+  "GRANT_PERIOD_FLOW",
+  "STOP_PERIOD_FLOW",
+  "ACKNOWLEDGE_LENIENT",
+  "CLOSE_RELATED_TABS",
+  "GET_PLAN_STATE",
+  "GET_PLAN_NAVIGATION_DECISION",
+  "SET_PLAN_MODE",
+  "ADD_PLAN_ITEM",
+  "UPDATE_PLAN_ITEM",
+  "DELETE_PLAN_ITEM",
+  "MOVE_PLAN_ITEM",
+  "REORDER_PLAN_ITEMS",
+  "SET_PLAN_ITEM_COMPLETED",
+  "START_PLAN_ITEM",
+  "CONTINUE_PLAN_FLOW",
+  "STOP_PLAN_FLOW",
+  "STOP_PLAN_ACCESS",
+  "ACKNOWLEDGE_PLAN_END",
+  "IMPORT_PLAN_ITEMS"
+]);
+
+async function updateConfiguration<T>(change: () => Promise<T>): Promise<T> {
+  return tracker.withSessionBoundary(async () => {
+    const before = await settings.get();
+    const result = await change();
+    const after = await settings.get();
+    await periodRuntime.reconcileSettings(before, after);
+    if (
+      before.enabled !== after.enabled ||
+      before.endPage.repeatConfirmationInNewTabs !== after.endPage.repeatConfirmationInNewTabs ||
+      JSON.stringify(before.endPage.groupUnlock) !== JSON.stringify(after.endPage.groupUnlock)
+    ) {
+      await visitConfirmations.clear();
+    }
+    return result;
+  });
+}
 
 if (api) {
   const extensionRoot = api.runtime.getURL?.("") ?? "";
@@ -144,7 +218,15 @@ if (api) {
     const parsed = parseMessageRequest(rawMessage);
     if (!parsed || !isTrustedSender(sender)) return undefined;
     try {
-      const data = await handleMessage(parsed.request, sender);
+      let data: unknown;
+      if (serializedMessages.has(parsed.request.type)) {
+        const pending = stateChangeQueue.then(() => handleMessage(parsed.request, sender));
+        stateChangeQueue = pending.catch(() => undefined);
+        data = await pending;
+      } else {
+        await stateChangeQueue;
+        data = await handleMessage(parsed.request, sender);
+      }
       return {
         version: 1,
         requestId: parsed.requestId,
@@ -197,6 +279,8 @@ export async function handleMessage(
   message: AnyRequest,
   sender?: ExtensionMessageSender
 ): Promise<unknown> {
+  if (dataResetInProgress && !message.type.startsWith("GET_"))
+    throw new Error("Data reset is in progress");
   switch (message.type) {
     case "GET_SETTINGS":
       return settings.get();
@@ -208,6 +292,14 @@ export async function handleMessage(
     case "IMPORT_CONFIGURATION": {
       assertExtensionPageSender(sender);
       await localModulesReady;
+      const current = await settings.get();
+      if (
+        current.disableProtection.method !== "none" &&
+        (!message.backup.data.settings.enabled ||
+          JSON.stringify(message.backup.data.settings.disableProtection) !==
+            JSON.stringify(current.disableProtection))
+      )
+        throw new Error("Confirm changing shutdown protection before importing this backup");
       const result = await configurationBackups.import(message.backup, Date.now(), () =>
         tracker.resetSessions()
       );
@@ -232,16 +324,76 @@ export async function handleMessage(
         runtimeWarningCount: runtimeResults.filter((entry) => entry.status === "rejected").length
       };
     }
-    case "UPDATE_SETTINGS":
+    case "UPDATE_SETTINGS": {
       assertExtensionPageSender(sender);
       assertSettingsPatch(message.patch);
-      return withPlanRegistrationReconcile(settings.update(message.patch));
+      const current = await settings.get();
+      if (
+        current.disableProtection.method !== "none" &&
+        (message.patch.enabled === false || message.patch.disableProtection)
+      )
+        throw new Error("Use the protected confirmation first");
+      if (message.patch.enabled === false) {
+        await tracker.resetSessions();
+        await plan.setMode({ enabled: false });
+      }
+      return updateConfiguration(() =>
+        withPlanRegistrationReconcile(settings.update(message.patch))
+      );
+    }
+    case "BEGIN_PROTECTED_ACTION":
+      assertExtensionPageSender(sender);
+      return protectedActions.begin(message.action, await settings.get(), sender?.url ?? "");
+    case "COMPLETE_PROTECTED_ACTION": {
+      assertExtensionPageSender(sender);
+      await protectedActions.consume(
+        message.action,
+        message.token,
+        message.proof,
+        await settings.get(),
+        sender?.url ?? ""
+      );
+      if (message.action === "disable") {
+        await tracker.resetSessions();
+        await plan.setMode({ enabled: false });
+        return withPlanRegistrationReconcile(settings.update({ enabled: false }));
+      }
+      if (message.action === "protection") {
+        if (!message.protection) throw new Error("Missing protection policy");
+        return settings.update({ disableProtection: message.protection });
+      }
+      return resetData(message.action === "clear-all");
+    }
     case "RESET_SETTINGS":
       assertExtensionPageSender(sender);
-      for (const siteId of Object.keys((await managedSites.list()).sites)) {
-        await managedSites.remove(siteId);
-      }
-      return withPlanRegistrationReconcile(settings.reset());
+      await protectedActions.consume(
+        "reset",
+        message.token,
+        message.proof,
+        await settings.get(),
+        sender?.url ?? ""
+      );
+      return resetData(false);
+    case "ACKNOWLEDGE_PLAN_END":
+      assertExtensionPageSender(sender);
+      await withPlanRegistrationReconcile(plan.acknowledgeEnd(message.itemId));
+      return { acknowledged: true };
+    case "ACKNOWLEDGE_LENIENT":
+      assertExtensionPageSender(sender);
+      await periodRuntime.acknowledgeLenient(message.targetId, message.periodId);
+      return { acknowledged: true };
+    case "DEBUG_ACTION":
+      assertExtensionPageSender(sender);
+      return handleDebugAction(message, {
+        ready: debugBuildReady,
+        managedSites,
+        settings,
+        tracker,
+        analytics,
+        periodRuntime,
+        refreshBadges: refreshActiveToolbarBadges
+      });
+
     case "GET_USAGE":
       assertExtensionPageSender(sender);
       assertPeriod(message.period);
@@ -249,8 +401,7 @@ export async function handleMessage(
       return analytics.summarize(message.period, parseLocalDate(message.anchorDate) ?? new Date());
     case "CLEAR_USAGE":
       assertExtensionPageSender(sender);
-      await analytics.clear();
-      return { cleared: true as const };
+      throw new Error("Use the protected clear-all confirmation");
     case "GET_PAGE_DECISION": {
       assertUrl(message.url);
       const isWebsiteRequest = Boolean(sender?.tab && !isExtensionPageSender(sender));
@@ -282,6 +433,7 @@ export async function handleMessage(
         return decideEffectiveFocus(message.url, new Date(), message.targetId);
       }
       return focus.grant(message.url, new Date(), message.targetId);
+    case "GET_VISIT_GATE":
     case "GRANT_VISIT_CONFIRMATION": {
       assertExtensionPageSender(sender);
       assertUrl(message.url);
@@ -296,33 +448,97 @@ export async function handleMessage(
       if (resolved.site.id !== message.siteId || !siteMatchesUrl(resolved.site, message.url)) {
         throw new Error("The website confirmation no longer matches this tab");
       }
-      const policy = resolved.site.visitConfirmation ?? { enabled: false, waitSeconds: 3 };
+      const policy = resolved.site.visitConfirmation ?? { enabled: true, waitSeconds: 3 };
       if (!policy.enabled) throw new Error("Visit confirmation is no longer enabled");
+      const currentSettings = await settings.get();
+      const context = await createVisitAccessContext(currentSettings, resolved.site.id);
+      const alreadyGranted = await visitConfirmations.isGranted(
+        tabId,
+        resolved.site.id,
+        new URL(message.url).origin,
+        resolved.site.updatedAt,
+        context
+      );
+      if (message.type === "GET_VISIT_GATE") {
+        if (alreadyGranted)
+          return {
+            alreadyGranted: true,
+            method: "none" as const,
+            waitEndsAt: 0,
+            mathChallenge: { prompt: "" },
+            passwordConfigured: false
+          };
+        await visitConfirmations.requireConfirmation(
+          tabId,
+          resolved.site.id,
+          new URL(message.url).origin,
+          resolved.site.updatedAt,
+          currentSettings.endPage.groupUnlock.waitSeconds,
+          Date.now(),
+          context
+        );
+        return visitConfirmations.getGate(tabId, currentSettings);
+      }
+      if (alreadyGranted) return { granted: true as const, url: message.url };
       await visitConfirmations.grant(
         tabId,
         resolved.site.id,
         new URL(message.url).origin,
         resolved.site.updatedAt,
-        policy.waitSeconds
+        0,
+        Date.now(),
+        currentSettings,
+        message.proof,
+        context
       );
       return { granted: true as const, url: message.url };
     }
+    case "RESUME_PAUSE_FRAME": {
+      assertExtensionPageSender(sender);
+      const page = new URL(sender?.url ?? "about:blank");
+      const context = new URLSearchParams(page.hash.slice(1));
+      const tabId = sender?.tab?.id;
+      if (
+        !page.pathname.endsWith("/end.html") ||
+        tabId === undefined ||
+        context.get("channel") !== message.channel ||
+        context.get("returnUrl") !== message.url
+      )
+        throw new Error("The pause frame no longer matches this tab");
+      const tab = await tabsGet(tabId);
+      if (!tab || (tab.url !== undefined && tab.url !== message.url))
+        throw new Error("The website has navigated away");
+      // Do not serialize this relay: the content script rechecks permissions by
+      // sending a decision request back to the background before acknowledging.
+      const result = await tabsSendMessage<{ resumed?: boolean }>(tabId, {
+        type: "hourleaf:resume-pause",
+        channel: message.channel
+      });
+      if (!result?.resumed) throw new Error("The website could not resume; retry the pause action");
+      return { resumed: true as const };
+    }
     case "GET_PERIOD_RUNTIME":
       assertExtensionPageSender(sender);
+      await tracker.flush();
       return periodRuntime.getStatus(message.targetId, message.periodId);
     case "START_PERIOD_GROUP_WAIT":
       assertExtensionPageSender(sender);
+      await tracker.flush();
       return periodRuntime.startWait(message.targetId, message.periodId);
     case "UNLOCK_PERIOD_GROUP":
       assertExtensionPageSender(sender);
-      return periodRuntime.unlock(message.targetId, message.periodId, message.proof);
+      return tracker.withSessionBoundary(() =>
+        periodRuntime.unlock(message.targetId, message.periodId, message.proof)
+      );
     case "GRANT_PERIOD_FLOW": {
       assertUrl(message.url);
       const resolved = await assertAuthorizedConfiguredUrl(message.url, message.targetId, sender);
       if (!resolved.target.timePeriods.some((period) => period.id === message.periodId)) {
         throw new Error("The configured time period no longer exists");
       }
-      await periodRuntime.grantFlow(resolved.target.id, message.periodId, message.continuation);
+      await tracker.withSessionBoundary(() =>
+        periodRuntime.grantFlow(resolved.target.id, message.periodId, message.continuation)
+      );
       const decision = await decideEffectiveFocus(message.url, new Date(), resolved.target.id);
       refreshSenderToolbarBadge(sender, message.url, { focusDecision: decision });
       return decision;
@@ -333,7 +549,8 @@ export async function handleMessage(
       if (!resolved.target.timePeriods.some((period) => period.id === message.periodId)) {
         throw new Error("The configured time period no longer exists");
       }
-      await periodRuntime.revokeFlow(resolved.target.id, message.periodId);
+      await tracker.flush();
+      await periodRuntime.revokeFlow(resolved.target.id, message.periodId, message.grantId);
       const decision = await decideEffectiveFocus(message.url, new Date(), resolved.target.id);
       refreshSenderToolbarBadge(sender, message.url, { focusDecision: decision });
       return decision;
@@ -365,17 +582,42 @@ export async function handleMessage(
     }
     case "UPDATE_MANAGED_SITE": {
       assertExtensionPageSender(sender);
-      return managedSites.updateSite(message.siteId, message.patch);
+      return updateConfiguration(() => managedSites.updateSite(message.siteId, message.patch));
     }
     case "UPDATE_SITE_TARGET":
       assertExtensionPageSender(sender);
-      return managedSites.updateTarget(message.targetId, message.patch);
+      return updateConfiguration(() => managedSites.updateTarget(message.targetId, message.patch));
     case "REMOVE_MANAGED_SITE":
       assertExtensionPageSender(sender);
-      return managedSites.remove(message.siteId);
+      return updateConfiguration(() => managedSites.remove(message.siteId));
     case "CLOSE_RELATED_TABS": {
       assertExtensionPageSender(sender);
-      return relatedTabs.close(message, requireSenderTabId(sender));
+      let tabId = sender?.tab?.id ?? message.tabId;
+      const page = new URL(sender?.url ?? "about:blank");
+      if (!page.pathname.endsWith("/end.html")) throw new Error("Close requires its own end page");
+      if (
+        tabId === undefined ||
+        (sender?.tab?.id !== undefined &&
+          message.tabId !== undefined &&
+          sender.tab.id !== message.tabId)
+      )
+        throw new Error("End page tab unavailable");
+      const tab = await tabsGet(tabId);
+      if (!tab || (!sender?.tab && tab.url && tab.url !== sender?.url))
+        throw new Error("End page has navigated away");
+      await tracker.resetSessions();
+      if (message.source === "plan")
+        await withPlanRegistrationReconcile(plan.setMode({ enabled: false }));
+      else {
+        const current = await settings.get();
+        for (const targetId of current.sites[message.siteId]?.targetIds ?? []) {
+          for (const period of current.targets[targetId]?.timePeriods ?? []) {
+            const runtime = await periodRuntime.getEntry(targetId, period.id);
+            if (runtime.flowContinuationKind) await periodRuntime.revokeFlow(targetId, period.id);
+          }
+        }
+      }
+      return relatedTabs.close(message, tabId);
     }
     case "GET_SITE_MODULES":
       assertExtensionPageSender(sender);
@@ -438,6 +680,33 @@ export async function handleMessage(
         message.enabled,
         await assertBlockingProfile(message.profile)
       );
+    case "SET_LOCAL_MODULE_FILTER_SCHEDULE": {
+      assertExtensionPageSender(sender);
+      await localModulesReady;
+      const profile = await assertBlockingProfile(message.profile);
+      const currentSettings = await settings.get();
+      const snapshot = await localModules.getSnapshot(profile);
+      const installation = snapshot.store.installations[message.moduleId];
+      if (!installation) throw new Error("屏蔽插件已移除，请刷新后重新选择");
+      const previous =
+        filterScheduleReferences(installation.filterGroupSchedules, message.groupId) ?? [];
+      if (
+        message.periods?.some(
+          (reference) =>
+            !referencedTimePeriod(reference, currentSettings, installation.definition) &&
+            !previous.some(
+              (item) => item.targetId === reference.targetId && item.periodId === reference.periodId
+            )
+        )
+      )
+        throw new Error("时间段已变更，请刷新后重新选择");
+      return localModules.setFilterGroupSchedule(
+        message.moduleId,
+        message.groupId,
+        message.periods,
+        profile
+      );
+    }
     case "REMOVE_LOCAL_MODULE":
       assertExtensionPageSender(sender);
       await localModulesReady;
@@ -448,7 +717,11 @@ export async function handleMessage(
       if (sender?.tab && !isExtensionPageSender(sender))
         await planRegistration.assertAuthorizedWebsiteUrl(message.url, sender);
       else await assertAuthorizedConfiguredUrl(message.url, undefined, sender);
-      return localModules.getPageRules(message.url, await currentBlockingProfile());
+      return localModules.getPageRules(
+        message.url,
+        await currentBlockingProfile(),
+        await settings.get()
+      );
     case "GET_TRACKING_STATUS":
       await tracker.flush();
       return tracker.getStatus();
@@ -573,7 +846,8 @@ export async function handleMessage(
           sender.tab.id,
           resolved.site.id,
           new URL(message.url).origin,
-          resolved.site.updatedAt
+          resolved.site.updatedAt,
+          await createVisitAccessContext(currentSettings, resolved.site.id)
         ))
       ) {
         return { accepted: false };
@@ -600,7 +874,7 @@ async function currentBlockingProfile(): Promise<LocalModuleProfile> {
   // (and thereby erase) an in-flight start while merely selecting a filter profile.
   const state = await plan.getState({ reconcile: false });
   const profile = activeBlockingProfile(state.settings, Boolean(state.activeGrant));
-  await localModules.setRuntimeProfile(profile);
+  await localModules.setRuntimeProfile(profile, (await settings.get()).enabled);
   return profile;
 }
 
@@ -621,6 +895,7 @@ async function applyVisitConfirmation(
   const tabId = sender?.tab?.id;
   if (
     decision.blocked ||
+    decision.reason === "focus-disabled" ||
     !policy?.enabled ||
     tabId === undefined ||
     (sender !== undefined && isExtensionPageSender(sender))
@@ -628,7 +903,9 @@ async function applyVisitConfirmation(
     return decision;
   }
   const currentOrigin = new URL(sender?.url ?? sender?.tab?.url ?? site.origin).origin;
-  if (await visitConfirmations.isGranted(tabId, site.id, currentOrigin, site.updatedAt)) {
+  const currentSettings = await settings.get();
+  const context = await createVisitAccessContext(currentSettings, site.id);
+  if (await visitConfirmations.isGranted(tabId, site.id, currentOrigin, site.updatedAt, context)) {
     return decision;
   }
   const waitSeconds = await visitConfirmations.requireConfirmation(
@@ -636,7 +913,9 @@ async function applyVisitConfirmation(
     site.id,
     currentOrigin,
     site.updatedAt,
-    policy.waitSeconds
+    currentSettings.endPage.groupUnlock.waitSeconds,
+    Date.now(),
+    context
   );
   return {
     ...decision,
@@ -646,13 +925,6 @@ async function applyVisitConfirmation(
     visitConfirmationWaitSeconds: waitSeconds,
     canRequestTemporaryAccess: false
   };
-}
-
-function requireSenderTabId(sender?: ExtensionMessageSender): number {
-  const tabId = sender?.tab?.id;
-  if (!Number.isInteger(tabId) || (tabId as number) < 0)
-    throw new Error("This action requires a browser tab");
-  return tabId as number;
 }
 
 async function decideEffectiveFocus(
@@ -764,7 +1036,16 @@ async function refreshToolbarBadgeForTab(
       planDecision
     });
     await Promise.all([
-      actionSetBadgeBackgroundColor("#2f8065", tab.id),
+      actionSetBadgeBackgroundColor(
+        {
+          verdant: "#2f8065",
+          ocean: "#277a9b",
+          violet: "#7654b8",
+          amber: "#a26417",
+          rose: "#ae5069"
+        }[currentSettings.theme],
+        tab.id
+      ),
       actionSetBadgeTextColor("#ffffff", tab.id)
     ]);
     await actionSetBadgeText(text, tab.id);
@@ -858,4 +1139,40 @@ async function reconcilePlanRegistration(): Promise<void> {
 
 function assertNever(value: never): never {
   throw new Error(`Unsupported request: ${String(value)}`);
+}
+
+async function resetData(clearAll: boolean): Promise<FocusSettings> {
+  try {
+    await debugBuildReady;
+    await tracker.resetSessions();
+    dataResetInProgress = true;
+    for (const siteId of Object.keys((await managedSites.list()).sites))
+      await managedSites.remove(siteId);
+    if (clearAll) {
+      for (const id of Object.keys((await localModules.getSnapshot()).store.installations))
+        await localModules.remove(id);
+      await analytics.clear();
+    }
+    await storageRemove(getLocalStorageArea(), [
+      STORAGE_KEYS.periodRuntime,
+      STORAGE_KEYS.temporaryAccess,
+      STORAGE_KEYS.planAccess,
+      ...(clearAll ? [STORAGE_KEYS.planQueue, STORAGE_KEYS.modules, "hourleaf.plan.view"] : [])
+    ]);
+    await visitConfirmations.clear();
+    if (clearAll)
+      await storageRemove(
+        getLocalStorageArea(),
+        Object.keys(await storageGet(getLocalStorageArea(), null))
+      );
+    if (DEBUG_BUILD)
+      await storageSet(getLocalStorageArea(), { "hourleaf.debug-seed-disabled": true });
+    const result = await settings.reset();
+    await reconcilePlanRegistration();
+    await localModules.initialize();
+    await refreshActiveToolbarBadges();
+    return result;
+  } finally {
+    dataResetInProgress = false;
+  }
 }

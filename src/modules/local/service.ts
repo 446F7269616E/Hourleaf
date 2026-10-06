@@ -1,5 +1,11 @@
 import { projectModuleStore } from "./profiles";
 import {
+  filterScheduleReferences,
+  isFilterScheduleActive,
+  nextFilterScheduleCheck
+} from "./schedules";
+import type { FocusSettings } from "../../shared/types";
+import {
   declarativeNetRequestGetDynamicRules,
   declarativeNetRequestUpdateDynamicRules,
   hasDeclarativeNetRequestApi,
@@ -20,7 +26,8 @@ import type {
   LocalModuleSnapshot,
   LocalModuleStore,
   LocalModuleWarningCode,
-  LocalPageRules
+  LocalPageRules,
+  LocalModuleTimePeriodReference
 } from "./types";
 import { getLocalModuleContentSafetyIssue, localModuleMatches } from "./validation";
 
@@ -28,11 +35,23 @@ const USER_SCRIPT_PREFIX = "hourleaf-local-";
 const DNR_RULE_ID_START = 2_000_000;
 const DNR_RULE_ID_END = 2_999_999;
 
-function enabledSelectors(installation: LocalModuleInstallation): string[] {
+function enabledSelectors(
+  installation: LocalModuleInstallation,
+  settings?: FocusSettings,
+  now = new Date()
+): string[] {
   return [
     ...installation.definition.hideSelectors,
     ...installation.definition.filterGroups
       .filter((group) => !installation.disabledFilterGroupIds.includes(group.id))
+      .filter((group) =>
+        isFilterScheduleActive(
+          filterScheduleReferences(installation.filterGroupSchedules, group.id),
+          settings,
+          installation.definition,
+          now
+        )
+      )
       .flatMap((group) => group.selectors)
   ];
 }
@@ -41,6 +60,7 @@ declare const __HOURLEAF_BROWSER_TARGET__: Exclude<LocalModulePlatform, "unknown
 export class LocalModuleService {
   private writeQueue: Promise<unknown> = Promise.resolve();
   private runtimeProfile: LocalModuleProfile = "normal";
+  private coreEnabled = true;
   private lastWarnings: LocalModuleWarningCode[] = [];
 
   constructor(
@@ -48,10 +68,11 @@ export class LocalModuleService {
     private readonly platform: LocalModulePlatform = resolveLocalModulePlatform()
   ) {}
 
-  async setRuntimeProfile(profile: LocalModuleProfile): Promise<void> {
+  async setRuntimeProfile(profile: LocalModuleProfile, coreEnabled = true): Promise<void> {
     await this.enqueue(async () => {
-      if (this.runtimeProfile === profile) return;
+      if (this.runtimeProfile === profile && this.coreEnabled === coreEnabled) return;
       this.runtimeProfile = profile;
+      this.coreEnabled = coreEnabled;
       await this.reconcile(await this.repository.get());
     });
   }
@@ -103,19 +124,45 @@ export class LocalModuleService {
     return this.enqueue(async () => this.reconcile(await this.repository.remove(id)));
   }
 
-  async getPageRules(url: string, profile: LocalModuleProfile = "normal"): Promise<LocalPageRules> {
+  async setFilterGroupSchedule(
+    id: string,
+    groupId: string,
+    periods: LocalModuleTimePeriodReference[] | null,
+    profile: LocalModuleProfile = "normal"
+  ): Promise<LocalModuleSnapshot> {
+    return this.enqueue(async () => {
+      await this.repository.setFilterGroupSchedule(id, groupId, periods, Date.now(), profile);
+      return this.getSnapshot(profile);
+    });
+  }
+
+  async getPageRules(
+    url: string,
+    profile: LocalModuleProfile = "normal",
+    settings?: FocusSettings,
+    now = new Date()
+  ): Promise<LocalPageRules> {
     const installations = await this.enabledInstallationsFor(url, profile);
     const definitions = installations.map((installation) => installation.definition);
     return {
       moduleIds: definitions.map((definition) => definition.id),
+      ...(settings
+        ? {
+            nextScheduleCheckAt: nextFilterScheduleCheck(installations, settings, now)
+          }
+        : {}),
       shadowRules: installations.flatMap((installation) =>
         (installation.definition.shadowRoots ?? []).map((root) => ({
           ...root,
           css: installation.definition.css,
-          hideSelectors: enabledSelectors(installation)
+          hideSelectors: enabledSelectors(installation, settings, now)
         }))
       ),
-      hideSelectors: [...new Set(installations.flatMap(enabledSelectors))],
+      hideSelectors: [
+        ...new Set(
+          installations.flatMap((installation) => enabledSelectors(installation, settings, now))
+        )
+      ],
       css: definitions
         .filter((definition) => definition.css.trim())
         .map((definition) => `/* Hourleaf local module: ${definition.id} */\n${definition.css}`)
@@ -156,7 +203,8 @@ export class LocalModuleService {
     warnings: LocalModuleWarningCode[]
   ): Promise<void> {
     const scriptInstallations = Object.values(store.installations).filter(
-      (installation) => installation.enabled && installation.definition.userScript.trim()
+      (installation) =>
+        this.coreEnabled && installation.enabled && installation.definition.userScript.trim()
     );
     let enabledScripts = scriptInstallations.filter(
       (installation) =>

@@ -59,10 +59,19 @@ export const DEFAULT_SETTINGS: Readonly<FocusSettings> = Object.freeze({
   showRemainingMinutesOnIcon: true,
   locale: "system",
   theme: "verdant",
+  disableProtection: Object.freeze({ method: "none", waitMinutes: 1, passwordVerifier: "" }),
   endPage: Object.freeze({
     view: "dashboard",
     motivationalMessage: "",
-    groupUnlock: Object.freeze({ method: "none", waitMinutes: 5, passwordVerifier: "" })
+    flowConsumesNextGroup: false,
+    repeatConfirmationInNewTabs: false,
+    groupUnlock: Object.freeze({
+      method: "wait",
+      waitMinutes: 0.5,
+      waitSeconds: 30,
+      mathDifficulty: "equation",
+      passwordVerifier: ""
+    })
   }),
   sites: Object.freeze({}),
   targets: Object.freeze({}),
@@ -133,6 +142,7 @@ export function mergeSettings(
     showRemainingMinutesOnIcon: patch.showRemainingMinutesOnIcon ?? base.showRemainingMinutesOnIcon,
     locale: patch.locale ?? base.locale,
     theme: patch.theme ?? base.theme,
+    disableProtection: { ...base.disableProtection, ...patch.disableProtection },
     endPage: {
       ...base.endPage,
       ...(patch.endPage ?? {}),
@@ -180,7 +190,7 @@ export function mergeSettings(
         ...(visitConfirmation
           ? {
               visitConfirmation: {
-                ...(current.visitConfirmation ?? { enabled: false, waitSeconds: 3 }),
+                ...(current.visitConfirmation ?? { enabled: true, waitSeconds: 3 }),
                 ...visitConfirmation
               }
             }
@@ -316,14 +326,38 @@ export function normalizeSettings(value: unknown): FocusSettings {
       typeof rawEndPage.motivationalMessage === "string"
         ? rawEndPage.motivationalMessage.trim().slice(0, 500)
         : "",
+    flowConsumesNextGroup: rawEndPage.flowConsumesNextGroup === true,
+    repeatConfirmationInNewTabs: rawEndPage.repeatConfirmationInNewTabs === true,
     groupUnlock: {
       method:
         rawGroupUnlock.method === "wait" ||
         rawGroupUnlock.method === "math" ||
         rawGroupUnlock.method === "password"
           ? rawGroupUnlock.method
-          : ("none" as const),
-      waitMinutes: clampInteger(rawGroupUnlock.waitMinutes, 1, 180, 5),
+          : rawGroupUnlock.method === "none"
+            ? "none"
+            : "wait",
+      waitMinutes:
+        Math.max(
+          1,
+          Math.min(
+            10800,
+            Number(
+              rawGroupUnlock.waitSeconds ??
+                (typeof rawGroupUnlock.waitMinutes === "number"
+                  ? rawGroupUnlock.waitMinutes * 60
+                  : 30)
+            ) || 30
+          )
+        ) / 60,
+      waitSeconds: clampInteger(
+        rawGroupUnlock.waitSeconds ??
+          (typeof rawGroupUnlock.waitMinutes === "number" ? rawGroupUnlock.waitMinutes * 60 : 30),
+        1,
+        10800,
+        30
+      ),
+      mathDifficulty: rawGroupUnlock.mathDifficulty === "calculus" ? "calculus" : "equation",
       passwordVerifier:
         typeof rawGroupUnlock.passwordVerifier === "string" &&
         /^[a-f0-9]{64}$/u.test(rawGroupUnlock.passwordVerifier)
@@ -349,6 +383,7 @@ export function normalizeSettings(value: unknown): FocusSettings {
     locale: value.locale === "zh-CN" || value.locale === "en" ? value.locale : ("system" as const),
     theme: isUiTheme(value.theme) ? value.theme : defaults.theme,
     endPage,
+    disableProtection: normalizeDisableProtection(value.disableProtection),
     sites,
     targets,
     customTimePeriodPresets,
@@ -683,6 +718,7 @@ function cloneSettings(settings: Readonly<FocusSettings>): FocusSettings {
     showRemainingMinutesOnIcon: settings.showRemainingMinutesOnIcon,
     locale: settings.locale,
     theme: settings.theme,
+    disableProtection: { ...settings.disableProtection },
     endPage: {
       ...settings.endPage,
       groupUnlock: { ...settings.endPage.groupUnlock }
@@ -747,13 +783,22 @@ function createUnsafeDefaultSettings(): FocusSettings {
   return {
     schemaVersion: SETTINGS_SCHEMA_VERSION,
     enabled: true,
+    disableProtection: { method: "none", waitMinutes: 1, passwordVerifier: "" },
     showRemainingMinutesOnIcon: true,
     locale: "system",
     theme: "verdant",
     endPage: {
       view: "dashboard",
       motivationalMessage: "",
-      groupUnlock: { method: "none", waitMinutes: 5, passwordVerifier: "" }
+      flowConsumesNextGroup: false,
+      repeatConfirmationInNewTabs: false,
+      groupUnlock: {
+        method: "wait",
+        waitMinutes: 0.5,
+        waitSeconds: 30,
+        mathDifficulty: "equation",
+        passwordVerifier: ""
+      }
     },
     sites: {},
     targets: {},
@@ -818,7 +863,7 @@ function normalizeVisitConfirmation(value: unknown): {
       ? raw.prompt.trim().slice(0, MAX_VISIT_CONFIRMATION_PROMPT_LENGTH)
       : "";
   return {
-    enabled: raw.enabled === true,
+    enabled: true,
     waitSeconds: clampInteger(raw.waitSeconds, 0, 60, 3),
     ...(prompt ? { prompt } : {})
   };
@@ -863,4 +908,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isDefined<T>(value: T | undefined): value is T {
   return value !== undefined;
+}
+
+function normalizeDisableProtection(value: unknown): FocusSettings["disableProtection"] {
+  const raw = isRecord(value) ? value : {};
+  return {
+    method: raw.method === "wait" || raw.method === "password" ? raw.method : "none",
+    waitMinutes: [1, 3, 5, 10].includes(Number(raw.waitMinutes)) ? Number(raw.waitMinutes) : 1,
+    passwordVerifier:
+      typeof raw.passwordVerifier === "string" && /^[a-f0-9]{64}$/.test(raw.passwordVerifier)
+        ? raw.passwordVerifier
+        : ""
+  };
 }

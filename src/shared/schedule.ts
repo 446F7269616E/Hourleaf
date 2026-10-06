@@ -1,3 +1,4 @@
+import { resolveGroupQuota } from "./group-quota";
 import type {
   FocusSettings,
   SectionId,
@@ -76,6 +77,19 @@ export function timeToMinutes(time: string): number | null {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
+/** Daily clock-only blacklist window, independent of website availability settings. */
+export function isDailyTimeRangeActive(
+  range: Pick<TimePeriodSettings, "startTime" | "endTime">,
+  now = new Date()
+): boolean {
+  const start = timeToMinutes(range.startTime);
+  const end = timeToMinutes(range.endTime);
+  if (start === null || end === null) return false;
+  const minute = now.getHours() * 60 + now.getMinutes();
+  if (start === end) return true;
+  return start < end ? minute >= start && minute < end : minute >= start || minute < end;
+}
+
 /**
  * Checks a schedule in the user's local timezone. For an overnight interval, the
  * selected weekday is the day on which the interval starts. Equal start/end
@@ -146,10 +160,9 @@ export function evaluateTimePeriods(
   if (timed.limitMinutes === null) {
     return { blocked: false, reason: "outside-schedule", activePeriod: timed };
   }
-  const usedSeconds = Math.max(0, usageByPeriod[timed.id] ?? 0);
-  const groupCount = Math.max(1, timed.groupCount);
-  const totalSeconds = timed.limitMinutes * 60;
-  if (usedSeconds >= totalSeconds) {
+  const quota = resolveGroupQuota(timed, usageByPeriod[timed.id] ?? 0, unlockedGroups);
+  const { groupCount, currentGroup: reachedGroup, availableGroups } = quota;
+  if (quota.exhausted) {
     return {
       blocked: true,
       reason: "period-limit",
@@ -158,10 +171,7 @@ export function evaluateTimePeriods(
       groupCount
     };
   }
-  const groupSeconds = totalSeconds / groupCount;
-  const reachedGroup = Math.min(groupCount, Math.floor(usedSeconds / groupSeconds) + 1);
-  const availableGroups = Math.min(groupCount, Math.max(1, unlockedGroups));
-  if (groupUnlockRequired && reachedGroup > availableGroups) {
+  if (groupUnlockRequired && quota.atGroupBoundary) {
     return {
       blocked: true,
       reason: "group-boundary",

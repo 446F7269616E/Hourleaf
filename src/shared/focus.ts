@@ -166,6 +166,8 @@ export class FocusDecisionService {
       | "needsReminder"
       | "flowContinuationKind"
       | "flowExpiresAt"
+      | "flowGrantId"
+      | "flowConsumesQuota"
     >;
   }> {
     const target = resolved.target;
@@ -189,12 +191,24 @@ export class FocusDecisionService {
       (runtimeEntry?.flowContinuationKind === "minutes" &&
         runtimeEntry.flowExpiresAt !== undefined &&
         runtimeEntry.flowExpiresAt > now.getTime());
-    if (runtimeEntry && activeFlow) {
+    if (
+      runtimeEntry &&
+      activeFlow &&
+      restrictionMode === "flow" &&
+      preliminaryDecision.activePeriod?.behavior === "timed"
+    ) {
       return {
         blocked: false,
         reason: "flow-extension",
         details: {
           activePeriodId: runtimeEntry.periodId,
+          groupIndex: Math.min(
+            preliminaryDecision.activePeriod.groupCount,
+            runtimeEntry.unlockedGroups
+          ),
+          groupCount: preliminaryDecision.activePeriod.groupCount,
+          flowGrantId:
+            runtimeEntry.flowGrantId ?? `${runtimeEntry.date}-${runtimeEntry.unlockedGroups}`,
           restrictionMode,
           flowContinuationKind: runtimeEntry.flowContinuationKind,
           ...(runtimeEntry.flowExpiresAt !== undefined
@@ -226,6 +240,8 @@ export class FocusDecisionService {
       | "needsReminder"
       | "flowContinuationKind"
       | "flowExpiresAt"
+      | "flowGrantId"
+      | "flowConsumesQuota"
     > = {
       ...(periodDecision.activePeriod ? { activePeriodId: periodDecision.activePeriod.id } : {}),
       restrictionMode,
@@ -234,7 +250,7 @@ export class FocusDecisionService {
       ...(periodDecision.groupBoundary ? { groupBoundary: true } : {})
     };
     if (periodDecision.reason === "period-limit") {
-      if (restrictionMode === "lenient") {
+      if (restrictionMode === "lenient" && runtimeEntry?.lenientAcknowledged) {
         return {
           blocked: false,
           reason: "period-limit",
@@ -252,6 +268,12 @@ export class FocusDecisionService {
         }
       };
     }
+    if (
+      periodDecision.reason === "group-boundary" &&
+      restrictionMode === "flow" &&
+      !runtimeEntry?.flowUsed
+    )
+      details.needsFlowChoice = true;
     return { blocked: periodDecision.blocked, reason: periodDecision.reason, details };
   }
 

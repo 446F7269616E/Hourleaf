@@ -187,6 +187,16 @@ function renderDashboard(
             ]
           }),
           createOverview(usage, tracking, siteGroups, planState),
+          element("p", {
+            className: "dashboard-extra-time",
+            text: t("pause.extraTime", {
+              time: formatDuration(
+                Object.entries(usage.byPeriod)
+                  .filter(([key]) => key.startsWith("extra:") && !/:g\d+$/.test(key))
+                  .reduce((sum, [, seconds]) => sum + seconds, 0)
+              )
+            })
+          }),
           element("div", {
             className: "dashboard-grid",
             children: [createTrendCard(usage), createWebsiteBreakdown(siteGroups)]

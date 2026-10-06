@@ -5,6 +5,7 @@ import {
   type NormalizedPlanItemInput
 } from "../shared/plan";
 import { PlanAccessRepository, PlanQueueRepository, SettingsRepository } from "../shared/storage";
+import { matchesPlanNavigation } from "../shared/plan-navigation";
 import type {
   PlanItem,
   PlanItemInput,
@@ -47,7 +48,15 @@ export class PlanService {
       await Promise.all([
         shouldClearGrant
           ? this.accessRepository.update((store) => {
-              delete store.activeGrant;
+              if (store.activeGrant?.itemId === access.activeGrant?.itemId) {
+                if (
+                  store.activeGrant &&
+                  store.activeGrant.expiresAt <= this.now() &&
+                  queue.items.some((item) => item.id === store.activeGrant?.itemId)
+                )
+                  store.endedGrant = store.activeGrant;
+                delete store.activeGrant;
+              }
             })
           : Promise.resolve(access),
         shouldDisableMode
@@ -63,10 +72,17 @@ export class PlanService {
     };
   }
 
+  async acknowledgeEnd(itemId: string): Promise<void> {
+    await this.accessRepository.update((store) => {
+      if (store.endedGrant?.itemId === itemId) delete store.endedGrant;
+    });
+  }
+
   async setMode(patch: Partial<PlanModeSettings>): Promise<PlanState> {
     await this.settingsRepository.update({ planMode: patch });
     if (patch.enabled === false) {
       await this.accessRepository.update((store) => {
+        delete store.endedGrant;
         delete store.activeGrant;
       });
     }
@@ -94,6 +110,7 @@ export class PlanService {
         ...(patch.bvid !== undefined ? { bvid: patch.bvid } : item.bvid ? { bvid: item.bvid } : {}),
         ...(patch.url !== undefined ? { url: patch.url } : {}),
         title: patch.title ?? item.title,
+        goal: patch.goal ?? item.goal,
         source: patch.source ?? item.source,
         scheduledDurationMinutes: patch.scheduledDurationMinutes ?? item.scheduledDurationMinutes,
         completionMode: patch.completionMode ?? item.completionMode,
@@ -178,6 +195,7 @@ export class PlanService {
       pauseOnVideoEnd: item.pauseOnVideoEnd
     };
     await this.accessRepository.update((store) => {
+      delete store.endedGrant;
       store.activeGrant = grant;
     });
     try {
@@ -204,17 +222,36 @@ export class PlanService {
   async decideNavigation(url?: string, legacyIdentity?: string): Promise<PlanNavigationDecision> {
     const navigationUrl = normalizePlanUrl(url)?.href;
     const settings = await this.settingsRepository.get();
-    if (!settings.planMode.enabled) {
+    if (!settings.enabled) return { planModeEnabled: false, allowed: true, reason: "disabled" };
+    const access = await this.accessRepository.get();
+    if (!settings.planMode.enabled || !access.activeGrant) {
+      const ended = access.endedGrant;
+      if (
+        ended &&
+        matchesPlanNavigation(ended.url, navigationUrl) &&
+        (await this.queueRepository.get()).items.some(
+          (item) => item.id === ended.itemId && item.url === ended.url
+        )
+      ) {
+        return {
+          planModeEnabled: false,
+          allowed: ended.completionMode === "lenient",
+          reason: "expired",
+          itemId: ended.itemId,
+          completionMode: ended.completionMode,
+          expiredAt: ended.expiresAt,
+          flowDecisionRequired: false
+        };
+      }
+      if (settings.planMode.enabled)
+        await this.settingsRepository.update({ planMode: { enabled: false } });
       return { planModeEnabled: false, allowed: true, reason: "disabled" };
     }
     if (!navigationUrl && !legacyIdentity) {
       return { planModeEnabled: true, allowed: false, reason: "not-video" };
     }
 
-    const [queue, access] = await Promise.all([
-      this.queueRepository.get(),
-      this.accessRepository.get()
-    ]);
+    const queue = await this.queueRepository.get();
     const grant = access.activeGrant;
     if (!grant) {
       await this.settingsRepository.update({ planMode: { enabled: false } });
@@ -222,6 +259,30 @@ export class PlanService {
         planModeEnabled: false,
         allowed: true,
         reason: "disabled",
+        ...(navigationUrl ? { url: navigationUrl } : {}),
+        ...(legacyIdentity ? { bvid: legacyIdentity } : {})
+      };
+    }
+    const item = queue.items.find(
+      (candidate) => candidate.id === grant.itemId && candidate.url === grant.url
+    );
+    const identityMatches = navigationUrl
+      ? matchesPlanNavigation(grant.url, navigationUrl)
+      : Boolean(legacyIdentity && grant.bvid === legacyIdentity);
+    if (!item || !identityMatches) {
+      if (!item) {
+        await Promise.all([
+          this.accessRepository.update((store) => {
+            delete store.activeGrant;
+          }),
+          this.settingsRepository.update({ planMode: { enabled: false } })
+        ]);
+      }
+      return {
+        planModeEnabled: true,
+        allowed: false,
+        reason: "not-authorized",
+        completionMode: grant.completionMode,
         ...(navigationUrl ? { url: navigationUrl } : {}),
         ...(legacyIdentity ? { bvid: legacyIdentity } : {})
       };
@@ -242,7 +303,10 @@ export class PlanService {
       }
       await Promise.all([
         this.accessRepository.update((store) => {
-          delete store.activeGrant;
+          if (store.activeGrant?.itemId === grant.itemId) {
+            store.endedGrant = store.activeGrant;
+            delete store.activeGrant;
+          }
         }),
         this.settingsRepository.update({ planMode: { enabled: false } })
       ]);
@@ -254,30 +318,6 @@ export class PlanService {
         completionMode: grant.completionMode,
         expiredAt: grant.expiresAt,
         ...(grant.completionMode === "flow" ? { flowDecisionRequired: false } : {}),
-        ...(navigationUrl ? { url: navigationUrl } : {}),
-        ...(legacyIdentity ? { bvid: legacyIdentity } : {})
-      };
-    }
-    const item = queue.items.find(
-      (candidate) => candidate.id === grant.itemId && candidate.url === grant.url
-    );
-    const identityMatches = navigationUrl
-      ? grant.url === navigationUrl
-      : Boolean(legacyIdentity && grant.bvid === legacyIdentity);
-    if (!item || !identityMatches) {
-      if (!item) {
-        await Promise.all([
-          this.accessRepository.update((store) => {
-            delete store.activeGrant;
-          }),
-          this.settingsRepository.update({ planMode: { enabled: false } })
-        ]);
-      }
-      return {
-        planModeEnabled: true,
-        allowed: false,
-        reason: "not-authorized",
-        completionMode: grant.completionMode,
         ...(navigationUrl ? { url: navigationUrl } : {}),
         ...(legacyIdentity ? { bvid: legacyIdentity } : {})
       };
@@ -313,7 +353,6 @@ export class PlanService {
     ]);
     const item = requireItem(queue.items, itemId);
     const grant = access.activeGrant;
-    const normalizedExpectedUrl = expectedUrl ? normalizePlanUrl(expectedUrl)?.href : undefined;
     if (
       !grant ||
       grant.itemId !== item.id ||
@@ -321,7 +360,7 @@ export class PlanService {
       grant.completionMode !== "flow" ||
       grant.flowContinuationKind !== undefined ||
       grant.expiresAt > this.now() ||
-      (expectedUrl !== undefined && normalizedExpectedUrl !== grant.url)
+      (expectedUrl !== undefined && !matchesPlanNavigation(grant.url, expectedUrl))
     ) {
       throw new Error("This plan item is not waiting for a flow decision");
     }
@@ -371,17 +410,17 @@ export class PlanService {
   }
 
   async revokeFlow(itemId: string, expectedUrl?: string): Promise<PlanState> {
-    const normalizedExpectedUrl = expectedUrl ? normalizePlanUrl(expectedUrl)?.href : undefined;
     await this.accessRepository.update((store) => {
       const grant = store.activeGrant;
       if (
         !grant ||
         grant.itemId !== itemId ||
         grant.completionMode !== "flow" ||
-        (expectedUrl !== undefined && normalizedExpectedUrl !== grant.url)
+        (expectedUrl !== undefined && !matchesPlanNavigation(grant.url, expectedUrl))
       ) {
         throw new Error("This flow continuation is no longer active");
       }
+      store.endedGrant = grant;
       delete store.activeGrant;
     });
     await this.settingsRepository.update({ planMode: { enabled: false } });
@@ -389,7 +428,6 @@ export class PlanService {
   }
 
   async pauseAtVideoEnd(itemId: string, expectedUrl?: string): Promise<PlanState> {
-    const normalizedExpectedUrl = expectedUrl ? normalizePlanUrl(expectedUrl)?.href : undefined;
     await this.accessRepository.update((store) => {
       const grant = store.activeGrant;
       if (
@@ -397,10 +435,11 @@ export class PlanService {
         grant.itemId !== itemId ||
         !grant.pauseOnVideoEnd ||
         grant.flowContinuationKind !== undefined ||
-        (expectedUrl !== undefined && normalizedExpectedUrl !== grant.url)
+        (expectedUrl !== undefined && !matchesPlanNavigation(grant.url, expectedUrl))
       ) {
         throw new Error("This plan item is no longer waiting for the video to end");
       }
+      store.endedGrant = grant;
       delete store.activeGrant;
     });
     await this.settingsRepository.update({ planMode: { enabled: false } });
@@ -491,6 +530,7 @@ function persistedPlanInput(
   | "url"
   | "origin"
   | "title"
+  | "goal"
   | "source"
   | "bvid"
   | "scheduledDurationMinutes"
@@ -501,6 +541,7 @@ function persistedPlanInput(
     url: input.url,
     origin: input.origin,
     title: input.title,
+    ...(input.goal !== undefined ? { goal: input.goal } : {}),
     source: input.source,
     scheduledDurationMinutes: input.scheduledDurationMinutes,
     completionMode: input.completionMode,

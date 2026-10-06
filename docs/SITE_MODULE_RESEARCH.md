@@ -71,3 +71,39 @@
 回归入口：`tests/e2e/local-rules-ui-contract.spec.ts` 基于上述源码结构在 Chromium / Firefox 检验实际计算样式，覆盖三种网格、原生首页、商业/未知节点保留、晚挂载、根替换、分页、开关恢复和其他根隔离。此测试是源码结构复现，不能替代用户实际安装版本、账号状态与线上 A/B 页面联调。
 
 本次验证结果：168 项单元测试、类型检查、lint、三平台构建及 Chromium 5 项浏览器回归通过；已生成 Bilibili 1.2.1 模块 ZIP 并更新本机 Debug 构建。Firefox 自动化在浏览器启动阶段受本机进程沙箱/GPU helper 错误阻断，尚未完成 Firefox 浏览器验证；未声称已在用户实际账号页面完成端到端联调。
+
+## 播放结束推荐、动态悬停弹窗与热搜榜（2026-10-01）
+
+维护入口仍为 `optional-modules/bilibili/hourleaf-module.json`，版本 1.2.2；无需改动核心或用户脚本，新增选择器放入原有 `related-videos` / `dynamic-feed` 分组，普通与计划开关通过已有规则生成层生效。
+
+- [哔哩哔哩屏蔽增强器源码](https://greasyfork.org/zh-CN/scripts/461382/code)（Apache-2.0）：交叉核对 `.bpx-player-ending-related` 下 `.bpx-player-ending-related-item` 的结束推荐语义；只借鉴 DOM 名称，不使用其事件、轮询、网络或删除逻辑。旧版兼容使用 `.bilibili-player-ending-panel-box-videos` 下的 `.bilibili-player-ending-panel-box-recommend`。只隐藏推荐卡片，保留结束面板的其他操作。
+- [B站美化显示效果源码](https://greasyfork.org/en/scripts/504579-b%E7%AB%99%E7%BE%8E%E5%8C%96%E6%98%BE%E7%A4%BA%E6%95%88%E6%9E%9C/code)（MIT）：核对原生 `.dynamic-panel-popover` 名称，不使用其按导航位置隐藏或整站布局修改方式。
+- 修改前只读检查本机已打开的 `https://t.bilibili.com/` 与 Bilibili 视频页 DOM：动态页热搜榜为 `.bili-dyn-search-trendings`，独立于右侧横幅；Bewly 开放根中的动态弹窗为 `.right-side-item` 内指向 `https://t.bilibili.com` 的入口后方 `.bew-popover`。按动态入口链接定位，避免误隐藏收藏、历史和通知弹窗，不依赖 Vue 哈希属性或中文文本。
+- 新增规则保留商业标记排除；结束推荐另排除付费课程链接。样式随现有分组启停，后插入的弹窗与卡片自然受 CSS 控制，不增加扫描、监听或权限。
+
+仓库模块显示名统一使用网站名；清单、CSS/脚本元数据同步改名和版本，模块 ID、分组 ID 与已有开关保持稳定。按本次开发要求，编码后仅进行编译/构建检查：`npm run typecheck`、`npm run build`（Chromium / Firefox / Safari）及 `npm run build:debug` 均通过，本机 Debug 输出已更新。未运行单元或浏览器回归；实际账号、悬停、播放结束和跨浏览器行为交由人工验收，清单见 `MANUAL_ACCEPTANCE.md`。
+
+
+## 片尾隐藏后仍自动续播（2026-10-04）
+
+维护入口为 Bilibili 1.2.3 的 `focus.user.js` 和 `related-videos` 分组。CSS 隐藏片尾卡片不会取消网站的连播状态，故不能仅靠继续增加隐藏选择器解决。
+
+- 编码前只读核对现有视频页原生 DOM：“接下来播放”使用 `.next-play`，开关为 `.continuous-btn`，开启状态由子节点 `.switch-btn.on` 表达。
+- 阅读该页面加载的[官方视频页脚本](https://s1.hdslb.com/bfs/static/jinkela/video/video.05af4e80b6081ba56c1b5b943d4c8e621df3f875.js)及[官方播放器脚本](https://s1.hdslb.com/bfs/static/player/main/core.ba67b466.js)：原生 `continuousPlay` watcher 同步更新 `relatedAutoplay` 并调用 `setHandoff(Abort)`。只借鉴公开控件与状态语义，不复制上游代码、不在模块中调用内部播放器对象或修改网站存储。
+- 用户脚本创建无内容、零尺寸的 `#hourleaf-bilibili-related-playback-guard` 标记，仅将其选择器加入相关视频分组。标记被核心隐藏时才临时关闭原生自动连播，因此普通/计划偏好、组开关、全局关闭及配置时段沿用现有 CSS 规则，不另建时间逻辑。
+- 局部 MutationObserver 处理控件晚挂载、相关推荐替换及开关状态变化，样式新增/修改/移除触发状态同步；合并微任务，不轮询，不阻止手动播放或调用视频的播放 API。只在标准 `/video/` 页面且存在普通视频卡片、没有已知商业/课程标记时操作；未知结构安全降级。
+- 当前页面内，屏蔽失效时仅恢复脚本曾关闭的现存控件；`pagehide` 断开观察并恢复，后退缓存 `pageshow` 重新绑定。网页整页卸载后的原生持久化状态仍受网站自己的事件队列影响，不承诺浏览器强制关闭后的恢复。
+- 此修复需要 Chromium/Firefox 的 User Scripts API；缺少能力时只执行原有视觉过滤，Safari Release 仍不执行用户脚本。
+
+按项目要求仅进行脚本语法、TypeScript 编译及正式/Debug 构建检查，未执行单元或浏览器回归；真实片尾倒计时、已进入倒计时后切换、启用时段及跨浏览器效果留给人工验收。
+
+
+## 动态更新及消息提醒标识（2026-10-04）
+
+Bilibili 1.2.4 的新增选择器仍加入 `dynamic-feed`，不增加脚本或来源权限。编码前只读核对现有视频页导航结构，并阅读其[官方导航脚本](https://s1.hdslb.com/bfs/seed/laputa-header/bili-header.umd.js)和已记录版本的 [Ave Mujica TopBar.vue](https://github.com/VentusUta/BewlyBewly-AveMujica/blob/3271070c551485b9fe45a84dea659d02c1e9f833/src/components/TopBar/TopBar.vue)。
+
+- 原生动态与消息入口分别为 `.dynamic-entry`、`.message-entry`，红点和数量由入口链接中的 `.red-point`、`.red-num` 表达。只选择这些标识，不隐藏入口、图标、会员提示或其他导航角标。
+- Bewly 使用 `.right-side-item` 的直接子节点 `.unread-dot` / `.unread-num-dot`。动态按直接入口的 `t.bilibili.com` 链接定位；通知按消息链接或入口内部的 `i-tabler:bell` 图标属性定位，覆盖通知以 `#` 打开抽屉的情况。避免依赖中文文本、节点位置、Vue 哈希属性或隐藏整个弹窗。
+- 新的更新标识由现有 CSS 自动命中，无需轮询、读取消息或修改已读状态；分组启停、每日黑名单时段及普通/计划偏好统一控制 Document 和已声明开放根。
+
+同时修正内容屏蔽时段为独立每日黑名单，只读取引用时段的起止时间；配置页的星期、启停、额度、访问方式不参与匹配。人工验收需检查 12:00–18:00 的两端、已停用源时段、跨午夜、切回后台标签及标识恢复。按要求仅做语法、编译、构建及打包检查，不执行浏览器或单元测试。

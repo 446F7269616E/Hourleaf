@@ -33,7 +33,8 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build",
-    "package": "node scripts/package.mjs"
+    "package": "node scripts/package.mjs",
+    "debug:site": "node scripts/debug-site.mjs"
   },
   "engines": {
     "node": ">=22"

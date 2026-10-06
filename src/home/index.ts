@@ -1,14 +1,11 @@
 import { configureLocale, localizeDocumentTitle, t, type MessageKey } from "../shared/i18n";
 import { sendRequest } from "../shared/messages";
-import {
-  UI_THEMES,
-  type DeepPartial,
-  type FocusSettings,
-  type UiTheme
-} from "../shared/types";
-import { assertAppRoot, describeError, element, setButtonBusy, toast } from "../styles/dom";
+import { UI_THEMES, type DeepPartial, type FocusSettings, type UiTheme } from "../shared/types";
+import { assertAppRoot, describeError, element, toast } from "../styles/dom";
 import { createConfigurationBackupControls } from "../ui/configuration-backup";
 import { createPageNavigation } from "../ui/page-navigation";
+import { openProtectedAction } from "../ui/protected-action-dialog";
+import { sha256 } from "../shared/unlock-challenge";
 import { applyTheme } from "../ui/theme";
 const app = assertAppRoot();
 let settings: FocusSettings | null = null;
@@ -92,7 +89,12 @@ function createPluginSettingsPanel(): HTMLElement {
     "settings-focus-toggle"
   );
   focusToggle.input.addEventListener("change", () => {
-    void updateSettings({ enabled: focusToggle.input.checked }, focusToggle.input);
+    if (!focusToggle.input.checked && settings?.disableProtection.method !== "none") {
+      focusToggle.input.checked = true;
+      void settleSettingsWrites()
+        .then(() => openProtectedAction("disable", acceptSettings))
+        .catch((error) => toast(describeError(error), "error"));
+    } else void updateSettings({ enabled: focusToggle.input.checked }, focusToggle.input);
   });
   const locale = element("select", {
     className: "select",
@@ -154,24 +156,6 @@ function createPluginSettingsPanel(): HTMLElement {
       iconMinutes.input
     );
   });
-  const endView = element("select", {
-    className: "select",
-    attrs: { value: settings.endPage.view, "aria-label": t("settings.endPageView") },
-    children: [
-      element("option", {
-        attrs: { value: "dashboard" },
-        text: t("settings.endView.dashboard")
-      }),
-      element("option", { attrs: { value: "message" }, text: t("settings.endView.message") }),
-      element("option", { attrs: { value: "minimal" }, text: t("settings.endView.minimal") })
-    ]
-  });
-  endView.addEventListener("change", () => {
-    void updateSettings(
-      { endPage: { view: endView.value as FocusSettings["endPage"]["view"] } },
-      endView
-    );
-  });
   const motivation = element("textarea", {
     className: "input home-end-message",
     attrs: {
@@ -223,17 +207,17 @@ function createPluginSettingsPanel(): HTMLElement {
     attrs: {
       type: "number",
       min: "1",
-      max: "120",
+      max: "10800",
       step: "1",
-      value: settings.endPage.groupUnlock.waitMinutes,
-      "aria-label": t("settings.waitMinutes")
+      value: settings.endPage.groupUnlock.waitSeconds,
+      "aria-label": t("pause.waitDuration")
     }
   });
   waitMinutes.addEventListener("change", () => {
     void updateSettings(
       {
         endPage: {
-          groupUnlock: { waitMinutes: clampNumberInput(waitMinutes, 1, 120) }
+          groupUnlock: { waitSeconds: clampNumberInput(waitMinutes, 1, 10800) }
         }
       },
       waitMinutes
@@ -259,39 +243,58 @@ function createPluginSettingsPanel(): HTMLElement {
   });
   const clearUsage = element("button", {
     className: "btn btn--danger",
-    text: t("settings.clearUsage"),
+    text: t("pause.clearAll"),
     attrs: { type: "button" }
   });
-  clearUsage.addEventListener("click", () => {
-    openConfirmation({
-      title: t("settings.clearUsageQuestion"),
-      detail: t("settings.clearUsageDetail"),
-      actionLabel: t("settings.clearUsage"),
-      onConfirm: async () => {
-        await sendRequest({ type: "CLEAR_USAGE" });
-        toast(t("settings.cleared"));
-      }
-    });
-  });
+  clearUsage.onclick = () =>
+    void settleSettingsWrites()
+      .then(() => openProtectedAction("clear-all", acceptSettings))
+      .catch((error) => toast(describeError(error), "error"));
   const resetSettings = element("button", {
     className: "btn",
     text: t("settings.reset"),
     attrs: { type: "button" }
   });
-  resetSettings.addEventListener("click", () => {
-    openConfirmation({
-      title: t("settings.resetQuestion"),
-      detail: t("settings.resetDetail"),
-      actionLabel: t("settings.reset"),
-      onConfirm: async () => {
-        settings = await sendRequest({ type: "RESET_SETTINGS" });
-        configureLocale(settings.locale);
-        applyTheme(settings.theme);
-        toast(t("settings.resetDone"));
-        renderSettings();
-      }
-    });
+  resetSettings.onclick = () =>
+    void settleSettingsWrites()
+      .then(() => openProtectedAction("reset", acceptSettings))
+      .catch((error) => toast(describeError(error), "error"));
+  const repeatConfirmation = createToggle(
+    t("pause.repeatConfirmation"),
+    settings.endPage.repeatConfirmationInNewTabs,
+    "settings-repeat-confirmation"
+  );
+  repeatConfirmation.input.onchange = () =>
+    void updateSettings(
+      { endPage: { repeatConfirmationInNewTabs: repeatConfirmation.input.checked } },
+      repeatConfirmation.input
+    );
+  const flowCharge = createToggle(
+    t("pause.flowCharge"),
+    settings.endPage.flowConsumesNextGroup,
+    "settings-flow-charge"
+  );
+  flowCharge.input.onchange = () =>
+    void updateSettings(
+      { endPage: { flowConsumesNextGroup: flowCharge.input.checked } },
+      flowCharge.input
+    );
+  const difficulty = element("select", {
+    className: "select",
+    attrs: {
+      value: settings.endPage.groupUnlock.mathDifficulty,
+      "aria-label": t("pause.mathDifficulty")
+    },
+    children: [
+      element("option", { attrs: { value: "equation" }, text: t("pause.equation") }),
+      element("option", { attrs: { value: "calculus" }, text: t("pause.calculus") })
+    ]
   });
+  difficulty.onchange = () =>
+    void updateSettings(
+      { endPage: { groupUnlock: { mathDifficulty: difficulty.value as "equation" | "calculus" } } },
+      difficulty
+    );
 
   return element("section", {
     className: "home-settings__panel",
@@ -314,6 +317,11 @@ function createPluginSettingsPanel(): HTMLElement {
                 t("settings.focusEnabled"),
                 t("settings.focusEnabledDescription"),
                 focusToggle.label
+              ),
+              createSettingRow(
+                t("pause.disableProtection"),
+                t("pause.disableHint"),
+                createDisableProtection()
               ),
               createSettingRow(t("settings.language"), t("settings.languageDescription"), locale),
               createSettingRow(t("settings.theme"), t("settings.themeDescription"), theme),
@@ -346,11 +354,6 @@ function createPluginSettingsPanel(): HTMLElement {
             t("settings.endPageDescription"),
             [
               createSettingRow(
-                t("settings.endPageView"),
-                t("settings.endPageViewDescription"),
-                endView
-              ),
-              createSettingRow(
                 t("settings.motivation"),
                 t("settings.motivationDescription"),
                 motivation
@@ -363,15 +366,24 @@ function createPluginSettingsPanel(): HTMLElement {
               ...(settings.endPage.groupUnlock.method === "wait"
                 ? [
                     createSettingRow(
-                      t("settings.waitMinutes"),
-                      t("settings.waitMinutesDescription"),
+                      t("pause.waitDuration"),
+                      t("pause.waitHint"),
                       element("label", {
                         className: "home-number-control",
-                        children: [waitMinutes, element("span", { text: t("common.minutes") })]
+                        children: [waitMinutes, element("span", { text: t("common.seconds") })]
                       })
                     )
                   ]
                 : []),
+              ...(settings.endPage.groupUnlock.method === "math"
+                ? [createSettingRow(t("pause.mathDifficulty"), t("pause.mathHint"), difficulty)]
+                : []),
+              createSettingRow(
+                t("pause.repeatConfirmation"),
+                t("pause.repeatConfirmationHint"),
+                repeatConfirmation.label
+              ),
+              createSettingRow(t("pause.flowCharge"), t("pause.flowChargeHint"), flowCharge.label),
               createSettingRow(t("settings.password"), t("settings.passwordStored"), password)
             ],
             true
@@ -511,12 +523,6 @@ async function settleSettingsWrites(): Promise<boolean> {
   return true;
 }
 
-async function sha256(value: string): Promise<string> {
-  const bytes = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 function createShell(content: HTMLElement): HTMLElement {
   return element("div", {
     className: "home-shell app-shell",
@@ -539,61 +545,89 @@ function createToggle(
   return { label, input };
 }
 
-interface ConfirmationOptions {
-  title: string;
-  detail: string;
-  actionLabel: string;
-  onConfirm(): Promise<void>;
-}
-
-function openConfirmation(options: ConfirmationOptions): void {
-  const dialog = element("dialog", {
-    className: "dialog home-confirmation",
-    attrs: { "aria-labelledby": "home-confirmation-title" },
-    children: [
-      element("h2", { text: options.title, attrs: { id: "home-confirmation-title" } }),
-      element("p", { text: options.detail }),
-      element("div", {
-        className: "dialog__actions",
-        children: [
-          element("button", {
-            className: "btn",
-            text: t("common.cancel"),
-            attrs: { type: "button" }
-          }),
-          element("button", {
-            className: "btn btn--danger",
-            text: options.actionLabel,
-            attrs: { type: "button" }
-          })
-        ]
-      })
-    ]
-  });
-  const buttons = dialog.querySelectorAll<HTMLButtonElement>("button");
-  buttons[0]?.addEventListener("click", () => dialog.close());
-  buttons[1]?.addEventListener("click", () => {
-    const confirmButton = buttons[1];
-    if (!confirmButton) return;
-    void (async () => {
-      setButtonBusy(confirmButton, true);
-      try {
-        await options.onConfirm();
-        dialog.close();
-      } catch (error) {
-        setButtonBusy(confirmButton, false);
-        toast(describeError(error), "error");
-      }
-    })();
-  });
-  dialog.addEventListener("close", () => dialog.remove());
-  document.body.append(dialog);
-  dialog.showModal();
-}
-
 function clampNumberInput(input: HTMLInputElement, min: number, max: number): number {
   const parsed = Math.round(Number(input.value));
   const value = Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : min;
   input.value = String(value);
   return value;
+}
+
+function acceptSettings(next: FocusSettings): void {
+  settings = next;
+  configureLocale(next.locale);
+  applyTheme(next.theme);
+  renderSettings();
+  toast(t("common.saved"));
+}
+function createDisableProtection(): HTMLElement {
+  const policy = settings!.disableProtection;
+  const method = element("select", {
+    className: "select",
+    attrs: {
+      value: policy.method === "wait" ? String(policy.waitMinutes) : policy.method,
+      "aria-label": t("pause.disableProtection")
+    },
+    children: [
+      element("option", { attrs: { value: "none" }, text: t("common.disabled") }),
+      ...[1, 3, 5, 10].map((minutes) =>
+        element("option", {
+          attrs: { value: minutes },
+          text: t("common.minuteCount", { count: minutes })
+        })
+      ),
+      element("option", { attrs: { value: "password" }, text: t("settings.unlock.password") })
+    ]
+  });
+  const password = element("input", {
+    className: "input",
+    attrs: {
+      type: "password",
+      autocomplete: "new-password",
+      maxlength: 128,
+      placeholder: t("pause.shutdownPassword"),
+      "aria-label": t("pause.shutdownPassword")
+    }
+  });
+  const save = element("button", {
+    className: "btn",
+    text: t("common.save"),
+    attrs: { type: "button" }
+  });
+  const update = () => {
+    password.hidden = method.value !== "password";
+  };
+  method.onchange = update;
+  update();
+  save.onclick = () =>
+    void (async () => {
+      save.disabled = true;
+      try {
+        await settleSettingsWrites();
+        const verifier = password.value ? await sha256(password.value) : policy.passwordVerifier;
+        if (method.value === "password" && !verifier)
+          throw new Error(t("settings.passwordRequired"));
+        const next: FocusSettings["disableProtection"] = {
+          method:
+            method.value === "none" ? "none" : method.value === "password" ? "password" : "wait",
+          waitMinutes: [1, 3, 5, 10].includes(Number(method.value))
+            ? Number(method.value)
+            : policy.waitMinutes,
+          passwordVerifier: verifier
+        };
+        password.value = "";
+        if (policy.method !== "none") await openProtectedAction("protection", acceptSettings, next);
+        else
+          acceptSettings(
+            await sendRequest({ type: "UPDATE_SETTINGS", patch: { disableProtection: next } })
+          );
+      } catch (error) {
+        toast(describeError(error), "error");
+      } finally {
+        save.disabled = false;
+      }
+    })();
+  return element("div", {
+    className: "home-protection-controls",
+    children: [method, password, save]
+  });
 }

@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "format": "hourleaf.local-module",
   "id": "hourleaf.local.bilibili-focus",
-  "name": "Bilibili 专注模块",
+  "name": "Bilibili",
   "author": "Hourleaf contributors",
-  "version": "1.2.1",
+  "version": "1.2.4",
   "description": "非官方本地模块：提供首页推荐、动态、相关视频与评论的可选过滤，并支持按斜杠键聚焦搜索。",
   "matches": [
     "https://www.bilibili.com/*",
@@ -29,20 +29,32 @@
     {
       "id": "dynamic-feed",
       "name": "动态信息流",
-      "description": "隐藏动态页中的普通动态卡片。",
+      "description": "隐藏普通动态卡片、动态悬停弹窗、热搜榜，并同步隐藏动态更新及消息提醒标识。",
       "selectors": [
         ".bili-dyn-list__item:not(:has([data-module='goods'], .bili-dyn-card-commercial, [class*='commercial']))",
-        ".opus-list .bili-dyn-list__item:not(:has([data-module='goods'], .bili-dyn-card-commercial, [class*='commercial']))"
+        ".opus-list .bili-dyn-list__item:not(:has([data-module='goods'], .bili-dyn-card-commercial, [class*='commercial']))",
+        ".dynamic-panel-popover:not(:has([data-module='goods'], .ad-report, [class*='commercial'], a[href*='cm.bilibili.com']))",
+        ".right-side-item > a[href^='https://t.bilibili.com'] ~ .bew-popover:not(:has([data-module='goods'], .ad-report, [class*='commercial'], a[href*='cm.bilibili.com']))",
+        ".bili-dyn-search-trendings:not(:has(.ad-report, [class*='commercial'], a[href*='cm.bilibili.com']))",
+        ".dynamic-entry > .right-entry__item-trigger .red-num",
+        ".dynamic-entry > .right-entry__item-trigger .red-point",
+        ".message-entry > .right-entry__item-trigger .red-num",
+        ".message-entry > .right-entry__item-trigger .red-point",
+        ".right-side-item:has(> a[href*='t.bilibili.com']) > :is(.unread-num-dot, .unread-dot)",
+        ".right-side-item:has(> a[href*='message.bilibili.com'], > a > [i-tabler\\:bell]) > :is(.unread-num-dot, .unread-dot)"
       ]
     },
     {
       "id": "related-videos",
       "name": "相关视频",
-      "description": "隐藏播放页中的普通相关视频卡片。",
+      "description": "隐藏播放页侧栏及片尾推荐，并在屏蔽生效时关闭相关推荐自动连播。",
       "selectors": [
+        "#hourleaf-bilibili-related-playback-guard",
         "#reco_list .video-page-card-small:not(:has(.ad-report, [data-target-url*='cm.bilibili.com'], a[href*='cm.bilibili.com']))",
         ".recommend-list-v1 .video-page-card-small:not(:has(.ad-report, [data-target-url*='cm.bilibili.com'], a[href*='cm.bilibili.com']))",
-        ".rec-list .video-page-card-small:not(:has(.ad-report, [data-target-url*='cm.bilibili.com'], a[href*='cm.bilibili.com']))"
+        ".rec-list .video-page-card-small:not(:has(.ad-report, [data-target-url*='cm.bilibili.com'], a[href*='cm.bilibili.com']))",
+        ".bpx-player-ending-related .bpx-player-ending-related-item:not(:has(.ad-report, [class*='commercial'], [data-target-url*='cm.bilibili.com'], a[href*='cm.bilibili.com'], a[href*='/cheese/']))",
+        ".bilibili-player-ending-panel-box-videos .bilibili-player-ending-panel-box-recommend:not(:has(.ad-report, [class*='commercial'], [data-target-url*='cm.bilibili.com'], a[href*='cm.bilibili.com'], a[href*='/cheese/']))"
       ]
     },
     {

@@ -82,9 +82,18 @@ export interface LocalModuleDefinition {
 }
 
 export type LocalModuleProfile = "normal" | "plan";
+export interface LocalModuleTimePeriodReference {
+  targetId: string;
+  periodId: string;
+}
+
+/** Missing group means unrestricted; an empty selection means never active. */
+export type LocalModuleFilterSchedules = Record<string, LocalModuleTimePeriodReference[]>;
+
 export interface LocalModulePreferences {
   enabled: boolean;
   disabledFilterGroupIds: string[];
+  filterGroupSchedules?: LocalModuleFilterSchedules;
 }
 
 export interface LocalModuleInstallation {
@@ -93,6 +102,7 @@ export interface LocalModuleInstallation {
   enabled: boolean;
   /** Group ids explicitly disabled by the user; new groups default to enabled. */
   disabledFilterGroupIds: string[];
+  filterGroupSchedules?: LocalModuleFilterSchedules;
   planPreferences?: LocalModulePreferences;
   importedAt: number;
   updatedAt: number;
@@ -131,6 +141,8 @@ export interface LocalPageRules {
   css: string;
   hideSelectors: string[];
   moduleIds: string[];
+  /** Next local clock boundary that can change a selected filter schedule. */
+  nextScheduleCheckAt?: number;
   /** Keep each module's styles scoped to its own declared hosts. */
   shadowRules?: Array<LocalModuleShadowRoot & { css: string; hideSelectors: string[] }>;
 }

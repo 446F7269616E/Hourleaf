@@ -13,12 +13,15 @@ const RETENTION_DAYS = 400;
 export class AnalyticsService {
   constructor(private readonly repository = new RawUsageRepository()) {}
 
-  /** Records an elapsed interval and splits it correctly if it crosses local midnight. */
+  /** Records actual time once, splitting at local hour and day boundaries. */
   async recordInterval(
     targetId: TargetId,
     startMs: number,
     endMs: number,
-    periodId?: string
+    periodId?: string,
+    extraPeriodId?: string,
+    freeExtra = false,
+    extraGroup?: number
   ): Promise<void> {
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return;
 
@@ -31,12 +34,32 @@ export class AnalyticsService {
           cursorDate.getMonth(),
           cursorDate.getDate() + 1
         ).getTime();
-        const segmentEnd = Math.min(endMs, nextMidnight);
+        // Advance by elapsed milliseconds so repeated daylight-saving hours still
+        // make progress. Repeated local hours aggregate into the same clock-hour bin.
+        const nextHour =
+          cursor +
+          3_600_000 -
+          (cursorDate.getMinutes() * 60_000 +
+            cursorDate.getSeconds() * 1000 +
+            cursorDate.getMilliseconds());
+        const segmentEnd = Math.min(endMs, nextMidnight, nextHour);
         const seconds = (segmentEnd - cursor) / 1000;
         const date = formatLocalDate(cursorDate);
         const day = store.days[date] ?? createEmptyDay(date);
         day.byTarget[targetId] = (day.byTarget[targetId] ?? 0) + seconds;
+        const hour = ((day.byHour ??= {})[String(cursorDate.getHours())] ??= {});
+        hour[targetId] = (hour[targetId] ?? 0) + seconds;
         if (periodId) day.byPeriod[periodId] = (day.byPeriod[periodId] ?? 0) + seconds;
+        if (extraPeriodId) {
+          day.byPeriod[`extra:${extraPeriodId}`] =
+            (day.byPeriod[`extra:${extraPeriodId}`] ?? 0) + seconds;
+          if (extraGroup !== undefined)
+            day.byPeriod[`extra:${extraPeriodId}:g${extraGroup}`] =
+              (day.byPeriod[`extra:${extraPeriodId}:g${extraGroup}`] ?? 0) + seconds;
+          if (freeExtra)
+            day.byPeriod[`free:${extraPeriodId}`] =
+              (day.byPeriod[`free:${extraPeriodId}`] ?? 0) + seconds;
+        }
         const legacySection = legacySectionForTarget(targetId);
         if (legacySection) day.bySection[legacySection] += seconds;
         store.days[date] = day;
@@ -61,21 +84,10 @@ export class AnalyticsService {
       const day = stored
         ? {
             date: key,
-            byTarget: Object.fromEntries(
-              Object.entries(stored.byTarget).map(([targetId, seconds]) => [
-                targetId,
-                Math.round(seconds)
-              ])
-            ),
-            byPeriod: Object.fromEntries(
-              Object.entries(stored.byPeriod).map(([periodId, seconds]) => [
-                periodId,
-                Math.round(seconds)
-              ])
-            ),
-            bySection: Object.fromEntries(
-              SECTION_IDS.map((section) => [section, Math.round(stored.bySection[section])])
-            ) as Record<SectionId, number>
+            ...(stored.byHour ? { byHour: structuredClone(stored.byHour) } : {}),
+            byTarget: { ...stored.byTarget },
+            byPeriod: { ...stored.byPeriod },
+            bySection: { ...stored.bySection }
           }
         : createEmptyDay(key);
       byDay.push(day);

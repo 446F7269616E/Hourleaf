@@ -1,3 +1,4 @@
+import { normalizeFilterSchedules } from "./schedules";
 import {
   LOCAL_MODULE_FORMAT,
   LOCAL_MODULE_CAPABILITIES,
@@ -180,6 +181,13 @@ export function normalizeLocalModuleStore(value: unknown): LocalModuleStore {
       checkUserScriptSafety: false
     });
     if (!definition || definition.id !== id) continue;
+    const groupIds = definition.filterGroups.map((group) => group.id);
+    const filterGroupSchedules = normalizeFilterSchedules(raw.filterGroupSchedules, groupIds);
+    const planSchedules = normalizeFilterSchedules(
+      isRecord(raw.planPreferences) ? raw.planPreferences.filterGroupSchedules : undefined,
+      groupIds
+    );
+    if (!filterGroupSchedules || !planSchedules) continue;
     const importedAt = isTimestamp(raw.importedAt) ? raw.importedAt : 0;
     const updatedAt = isTimestamp(raw.updatedAt) ? raw.updatedAt : importedAt;
     const installation: LocalModuleInstallation = {
@@ -190,6 +198,7 @@ export function normalizeLocalModuleStore(value: unknown): LocalModuleStore {
         raw.disabledFilterGroupIds,
         definition.filterGroups
       ),
+      ...(raw.filterGroupSchedules !== undefined ? { filterGroupSchedules } : {}),
       ...(isRecord(raw.planPreferences)
         ? {
             planPreferences: {
@@ -197,7 +206,10 @@ export function normalizeLocalModuleStore(value: unknown): LocalModuleStore {
               disabledFilterGroupIds: normalizeDisabledFilterGroupIds(
                 raw.planPreferences.disabledFilterGroupIds,
                 definition.filterGroups
-              )
+              ),
+              ...(raw.planPreferences.filterGroupSchedules !== undefined
+                ? { filterGroupSchedules: planSchedules }
+                : {})
             }
           }
         : {}),

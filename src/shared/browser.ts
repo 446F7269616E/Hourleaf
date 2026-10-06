@@ -72,6 +72,12 @@ export interface ExtensionApi {
   tabs?: {
     query(queryInfo: Record<string, unknown>, callback?: (tabs: ExtensionTab[]) => void): unknown;
     get?(tabId: number, callback?: (tab: ExtensionTab) => void): unknown;
+    sendMessage?(
+      tabId: number,
+      message: unknown,
+      options: { frameId: number },
+      callback?: (response: unknown) => void
+    ): unknown;
     getCurrent?(callback?: (tab?: ExtensionTab) => void): unknown;
     remove?(tabIds: number | number[], callback?: () => void): unknown;
     onActivated?: ExtensionEvent<(activeInfo: { tabId: number; windowId: number }) => void>;
@@ -295,6 +301,18 @@ export async function tabsGetCurrent(): Promise<ExtensionTab | null> {
   return (
     (await callbackResult<ExtensionTab | undefined>((resolve) => tabs.getCurrent?.(resolve))) ??
     null
+  );
+}
+
+/** Send only to the top-level content script, not extension iframes in the tab. */
+export async function tabsSendMessage<T>(tabId: number, message: unknown): Promise<T> {
+  const context = requireContext();
+  const tabs = context.api.tabs;
+  if (!tabs?.sendMessage) throw new Error("Tab messaging is unavailable");
+  if (context.mode === "promise")
+    return (await tabs.sendMessage(tabId, message, { frameId: 0 })) as T;
+  return callbackResult<T>((resolve) =>
+    tabs.sendMessage!(tabId, message, { frameId: 0 }, (response) => resolve(response as T))
   );
 }
 

@@ -7,6 +7,11 @@ import {
   type StorageAreaLike
 } from "../shared/browser";
 
+import type { FocusSettings } from "../shared/types";
+import { formatLocalDate } from "../shared/analytics";
+import { selectActiveTimePeriod } from "../shared/schedule";
+import { createMathChallenge, randomSeed, verifyUnlock, sha256 } from "../shared/unlock-challenge";
+
 const STORAGE_KEY = "hourleaf.visit-confirmation.v1";
 const SCHEMA_VERSION = 1 as const;
 
@@ -16,22 +21,30 @@ interface VisitGrant {
   policyVersion: number;
   requiredAt: number;
   confirmedAt?: number;
+  seed?: number;
+  accessScope?: string;
 }
 
 interface VisitGrantStore {
   schemaVersion: typeof SCHEMA_VERSION;
   byTab: Record<string, VisitGrant>;
+  bySite: Record<string, VisitGrant>;
 }
 
 /**
- * Keeps a confirmation valid only for one tab's continuous stay on one origin.
+ * Keeps pending challenges tab-bound; confirmed visits may be shared by site
+ * inside a day/schedule/policy scope. Quota enforcement remains independent.
  * `storage.session` makes the grant resilient to MV3 worker suspension without
  * carrying it into another browser session. Browsers without that API use the
  * background page's in-memory store.
  */
 export class VisitConfirmationService {
   private readonly area: StorageAreaLike | null;
-  private readonly memory: VisitGrantStore = { schemaVersion: SCHEMA_VERSION, byTab: {} };
+  private readonly memory: VisitGrantStore = {
+    schemaVersion: SCHEMA_VERSION,
+    byTab: {},
+    bySite: {}
+  };
   private writeQueue: Promise<unknown> = Promise.resolve();
 
   constructor(area: StorageAreaLike | null = getSessionStorageArea()) {
@@ -42,14 +55,24 @@ export class VisitConfirmationService {
     tabId: number,
     siteId: string,
     origin: string,
-    policyVersion: number
+    policyVersion: number,
+    context?: VisitAccessContext
   ): Promise<boolean> {
-    const grant = (await this.read()).byTab[String(tabId)];
-    return (
-      grant?.siteId === siteId &&
-      grant.origin === normalizeOrigin(origin) &&
-      grant.policyVersion === policyVersion &&
-      grant.confirmedAt !== undefined
+    await this.writeQueue;
+    const store = await this.read();
+    const grant = store.byTab[String(tabId)];
+    if (
+      matchesGrant(grant, siteId, policyVersion, context) &&
+      grant?.origin === normalizeOrigin(origin)
+    ) {
+      return true;
+    }
+    // Callers resolve and authorize the requested URL against the same managed
+    // site first, so audited site-family subdomains can share a confirmation.
+    return Boolean(
+      context &&
+      !context.repeatInNewTabs &&
+      matchesGrant(store.bySite[siteId], siteId, policyVersion, context)
     );
   }
 
@@ -59,7 +82,8 @@ export class VisitConfirmationService {
     origin: string,
     policyVersion: number,
     waitSeconds: number,
-    now = Date.now()
+    now = Date.now(),
+    context?: VisitAccessContext
   ): Promise<number> {
     const normalizedOrigin = normalizeOrigin(origin);
     if (!normalizedOrigin) throw new Error("Invalid confirmation origin");
@@ -70,6 +94,7 @@ export class VisitConfirmationService {
         current?.siteId === siteId &&
         current.origin === normalizedOrigin &&
         current.policyVersion === policyVersion &&
+        current.accessScope === context?.scope &&
         current.confirmedAt === undefined
       ) {
         requiredAt = current.requiredAt;
@@ -79,10 +104,26 @@ export class VisitConfirmationService {
         siteId,
         origin: normalizedOrigin,
         policyVersion,
-        requiredAt: now
+        requiredAt: now,
+        seed: randomSeed(),
+        ...(context ? { accessScope: context.scope } : {})
       };
     });
     return Math.max(0, Math.ceil((requiredAt + waitSeconds * 1_000 - now) / 1_000));
+  }
+
+  async getGate(tabId: number, settings: FocusSettings) {
+    const grant = (await this.read()).byTab[String(tabId)];
+    if (!grant || grant.confirmedAt) throw new Error("No pending confirmation");
+    return {
+      method: settings.endPage.groupUnlock.method,
+      waitEndsAt: grant.requiredAt + settings.endPage.groupUnlock.waitSeconds * 1000,
+      mathChallenge: {
+        prompt: createMathChallenge(grant.seed ?? 0, settings.endPage.groupUnlock.mathDifficulty)
+          .prompt
+      },
+      passwordConfigured: Boolean(settings.endPage.groupUnlock.passwordVerifier)
+    };
   }
 
   async grant(
@@ -91,7 +132,10 @@ export class VisitConfirmationService {
     origin: string,
     policyVersion: number,
     waitSeconds: number,
-    now = Date.now()
+    now = Date.now(),
+    settings?: FocusSettings,
+    proof?: string,
+    context?: VisitAccessContext
   ): Promise<void> {
     const normalizedOrigin = normalizeOrigin(origin);
     if (!normalizedOrigin) throw new Error("Invalid confirmation origin");
@@ -100,14 +144,32 @@ export class VisitConfirmationService {
       if (
         current?.siteId !== siteId ||
         current.origin !== normalizedOrigin ||
-        current.policyVersion !== policyVersion
+        current.policyVersion !== policyVersion ||
+        current.accessScope !== context?.scope
       ) {
         throw new Error("This visit confirmation is no longer available");
+      }
+      if (
+        context &&
+        !context.repeatInNewTabs &&
+        matchesGrant(store.bySite[siteId], siteId, policyVersion, context)
+      ) {
+        current.confirmedAt = now;
+        return;
       }
       if (now < current.requiredAt + waitSeconds * 1_000) {
         throw new Error("The visit confirmation wait has not finished");
       }
+      if (settings) verifyUnlock(settings, current.seed ?? 0, current.requiredAt, proof, now);
       current.confirmedAt = now;
+      if (context && !context.repeatInNewTabs) {
+        if (settings) {
+          for (const id of Object.keys(store.bySite)) {
+            if (!settings.sites[id]) delete store.bySite[id];
+          }
+        }
+        store.bySite[siteId] = { ...current };
+      }
     });
   }
 
@@ -120,6 +182,7 @@ export class VisitConfirmationService {
   async clear(): Promise<void> {
     await this.update((store) => {
       store.byTab = {};
+      store.bySite = {};
     });
   }
 
@@ -147,7 +210,9 @@ export class VisitConfirmationService {
       if (this.area) await storageSet(this.area, { [STORAGE_KEY]: store });
       else {
         this.memory.schemaVersion = SCHEMA_VERSION;
-        this.memory.byTab = cloneStore(store).byTab;
+        const copy = cloneStore(store);
+        this.memory.byTab = copy.byTab;
+        this.memory.bySite = copy.bySite;
       }
     };
     const result = this.writeQueue.then(operation, operation);
@@ -156,39 +221,107 @@ export class VisitConfirmationService {
   }
 }
 
+export interface VisitAccessContext {
+  scope: string;
+  repeatInNewTabs: boolean;
+}
+
+/** One managed website shares its scope across targets, never across websites.
+ * Quota/group changes are checked by the focus decision before using this grant.
+ */
+export async function createVisitAccessContext(
+  settings: FocusSettings,
+  siteId: string,
+  now = new Date()
+): Promise<VisitAccessContext> {
+  const site = settings.sites[siteId];
+  if (!site) throw new Error("Website no longer configured");
+  const activePeriods = [...site.targetIds].sort().map((targetId) => {
+    const target = settings.targets[targetId];
+    const period = target ? selectActiveTimePeriod(target, now) : undefined;
+    return [targetId, period ?? null];
+  });
+  return {
+    repeatInNewTabs: settings.endPage.repeatConfirmationInNewTabs,
+    scope: await sha256(
+      JSON.stringify([
+        formatLocalDate(now),
+        settings.enabled,
+        site.id,
+        site.updatedAt,
+        site.matchPatterns,
+        activePeriods,
+        settings.endPage.groupUnlock,
+        settings.endPage.repeatConfirmationInNewTabs
+      ])
+    )
+  };
+}
+
+function matchesGrant(
+  grant: VisitGrant | undefined,
+  siteId: string,
+  policyVersion: number,
+  context?: VisitAccessContext
+): boolean {
+  return (
+    grant?.siteId === siteId &&
+    grant.policyVersion === policyVersion &&
+    grant.confirmedAt !== undefined &&
+    grant.accessScope === context?.scope
+  );
+}
+
 function normalizeStore(value: unknown): VisitGrantStore {
-  const store: VisitGrantStore = { schemaVersion: SCHEMA_VERSION, byTab: {} };
-  if (!isRecord(value) || !isRecord(value.byTab)) return store;
-  for (const [tabId, raw] of Object.entries(value.byTab).slice(0, 512)) {
-    if (!/^\d{1,10}$/u.test(tabId) || !isRecord(raw)) continue;
-    const origin = normalizeOrigin(raw.origin);
-    if (
-      !origin ||
-      typeof raw.siteId !== "string" ||
-      raw.siteId.length < 1 ||
-      raw.siteId.length > 128 ||
-      typeof raw.requiredAt !== "number" ||
-      !Number.isSafeInteger(raw.requiredAt) ||
-      raw.requiredAt < 0 ||
-      typeof raw.policyVersion !== "number" ||
-      !Number.isSafeInteger(raw.policyVersion) ||
-      raw.policyVersion < 0 ||
-      (raw.confirmedAt !== undefined &&
-        (typeof raw.confirmedAt !== "number" ||
-          !Number.isSafeInteger(raw.confirmedAt) ||
-          raw.confirmedAt < raw.requiredAt))
-    ) {
-      continue;
+  const store: VisitGrantStore = { schemaVersion: SCHEMA_VERSION, byTab: {}, bySite: {} };
+  if (!isRecord(value)) return store;
+  if (isRecord(value.byTab)) {
+    for (const [tabId, raw] of Object.entries(value.byTab).slice(0, 512)) {
+      if (!/^\d{1,10}$/u.test(tabId)) continue;
+      const grant = normalizeGrant(raw);
+      if (grant) store.byTab[tabId] = grant;
     }
-    store.byTab[tabId] = {
-      siteId: raw.siteId,
-      origin,
-      policyVersion: raw.policyVersion,
-      requiredAt: raw.requiredAt,
-      ...(typeof raw.confirmedAt === "number" ? { confirmedAt: raw.confirmedAt } : {})
-    };
+  }
+  if (isRecord(value.bySite)) {
+    for (const [siteId, raw] of Object.entries(value.bySite).slice(0, 256)) {
+      const grant = normalizeGrant(raw);
+      if (grant?.siteId === siteId && grant.accessScope && grant.confirmedAt !== undefined)
+        store.bySite[siteId] = grant;
+    }
   }
   return store;
+}
+
+function normalizeGrant(raw: unknown): VisitGrant | undefined {
+  if (!isRecord(raw)) return;
+  const origin = normalizeOrigin(raw.origin);
+  if (
+    !origin ||
+    typeof raw.siteId !== "string" ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(raw.siteId) ||
+    typeof raw.requiredAt !== "number" ||
+    !Number.isSafeInteger(raw.requiredAt) ||
+    raw.requiredAt < 0 ||
+    typeof raw.policyVersion !== "number" ||
+    !Number.isSafeInteger(raw.policyVersion) ||
+    raw.policyVersion < 0 ||
+    (raw.confirmedAt !== undefined &&
+      (typeof raw.confirmedAt !== "number" ||
+        !Number.isSafeInteger(raw.confirmedAt) ||
+        raw.confirmedAt < raw.requiredAt))
+  )
+    return;
+  return {
+    siteId: raw.siteId,
+    origin,
+    policyVersion: raw.policyVersion,
+    requiredAt: raw.requiredAt,
+    ...(typeof raw.seed === "number" ? { seed: raw.seed } : {}),
+    ...(typeof raw.confirmedAt === "number" ? { confirmedAt: raw.confirmedAt } : {}),
+    ...(typeof raw.accessScope === "string" && /^[a-f0-9]{64}$/.test(raw.accessScope)
+      ? { accessScope: raw.accessScope }
+      : {})
+  };
 }
 
 function normalizeOrigin(value: unknown): string | null {
@@ -206,6 +339,9 @@ function cloneStore(store: VisitGrantStore): VisitGrantStore {
     schemaVersion: SCHEMA_VERSION,
     byTab: Object.fromEntries(
       Object.entries(store.byTab).map(([tabId, grant]) => [tabId, { ...grant }])
+    ),
+    bySite: Object.fromEntries(
+      Object.entries(store.bySite).map(([siteId, grant]) => [siteId, { ...grant }])
     )
   };
 }

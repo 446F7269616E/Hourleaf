@@ -1,4 +1,10 @@
-import { createDefaultSettings, mergeSettings, normalizeSettings } from "./config";
+import {
+  createDefaultSettings,
+  mergeSettings,
+  normalizeSettings,
+  MAX_TARGETS,
+  MAX_TIME_PERIODS
+} from "./config";
 import { STORAGE_KEYS } from "./storage-keys";
 import {
   getLocalStorageArea,
@@ -350,6 +356,7 @@ function normalizeUsageStore(value: unknown): UsageStore {
       date,
       byTarget,
       byPeriod,
+      ...(isRecord(rawDay.byHour) ? { byHour: normalizeHourlyUsage(rawDay.byHour) } : {}),
       bySection: projectLegacySections(byTarget)
     };
   }
@@ -407,7 +414,9 @@ function normalizeTemporaryAccessStore(value: unknown): TemporaryAccessStore {
 function normalizePeriodRuntimeStore(value: unknown): PeriodRuntimeStore {
   const store: PeriodRuntimeStore = { schemaVersion: 1, entries: {} };
   if (!isRecord(value) || !isRecord(value.entries)) return store;
-  for (const [key, raw] of Object.entries(value.entries).slice(0, 512)) {
+  for (const [key, raw] of Object.entries(value.entries)
+    .sort(([a], [b]) => b.localeCompare(a))
+    .slice(0, MAX_TARGETS * MAX_TIME_PERIODS)) {
     if (!isRecord(raw) || !isStableRuntimeKey(key)) continue;
     if (
       typeof raw.date !== "string" ||
@@ -415,7 +424,8 @@ function normalizePeriodRuntimeStore(value: unknown): PeriodRuntimeStore {
       typeof raw.targetId !== "string" ||
       !isStableTargetId(raw.targetId) ||
       typeof raw.periodId !== "string" ||
-      !isStableTargetId(raw.periodId)
+      !isStableTargetId(raw.periodId) ||
+      key !== `${raw.date}|${raw.targetId}|${raw.periodId}`
     ) {
       continue;
     }
@@ -428,7 +438,13 @@ function normalizePeriodRuntimeStore(value: unknown): PeriodRuntimeStore {
         : 1
     };
     if (isTimestamp(raw.waitStartedAt)) entry.waitStartedAt = raw.waitStartedAt;
+    if (isTimestamp(raw.flowStartedAt)) entry.flowStartedAt = raw.flowStartedAt;
+    if (typeof raw.flowGrantId === "string" && isStableTargetId(raw.flowGrantId))
+      entry.flowGrantId = raw.flowGrantId;
     if (raw.flowUsed === true) entry.flowUsed = true;
+    if (raw.lenientAcknowledged === true) entry.lenientAcknowledged = true;
+    if (isNonNegativeNumber(raw.mathSeed)) entry.mathSeed = raw.mathSeed;
+    if (typeof raw.flowConsumesQuota === "boolean") entry.flowConsumesQuota = raw.flowConsumesQuota;
     if (raw.flowContinuationKind === "minutes" || raw.flowContinuationKind === "video-end") {
       entry.flowContinuationKind = raw.flowContinuationKind;
     }
@@ -467,6 +483,7 @@ export function normalizePlanQueueStore(value: unknown): PlanQueueStore {
       ...(isLegacyIdentity(raw.bvid) ? { bvid: raw.bvid } : {}),
       url: url.href,
       origin: url.origin,
+      ...(typeof raw.goal === "string" ? { goal: raw.goal.trim().slice(0, 500) } : {}),
       title:
         typeof raw.title === "string" && raw.title.trim()
           ? raw.title.trim().slice(0, 200)
@@ -492,7 +509,10 @@ export function normalizePlanQueueStore(value: unknown): PlanQueueStore {
 
 export function normalizePlanAccessStore(value: unknown): PlanAccessStore {
   const store: PlanAccessStore = { schemaVersion: 1 };
-  if (!isRecord(value) || !isRecord(value.activeGrant)) return store;
+  if (!isRecord(value)) return store;
+  if (isRecord(value.endedGrant))
+    store.endedGrant = normalizePlanAccessStore({ activeGrant: value.endedGrant }).activeGrant;
+  if (!isRecord(value.activeGrant)) return store;
   const grant = value.activeGrant;
   const url = normalizePlanUrl(grant.url);
   if (
@@ -552,8 +572,19 @@ function normalizeTargetNumbers(value: Record<string, unknown>): Record<TargetId
   const result: Record<TargetId, number> = {};
   for (const [targetId, seconds] of Object.entries(value)) {
     if (isStableTargetId(targetId) && isNonNegativeNumber(seconds)) {
-      result[targetId] = Math.round(seconds);
+      result[targetId] = seconds;
     }
+  }
+  return result;
+}
+
+function normalizeHourlyUsage(
+  value: Record<string, unknown>
+): Record<string, Record<TargetId, number>> {
+  const result: Record<string, Record<TargetId, number>> = {};
+  for (let hour = 0; hour < 24; hour += 1) {
+    const targets = value[String(hour)];
+    if (isRecord(targets)) result[String(hour)] = normalizeTargetNumbers(targets);
   }
   return result;
 }
@@ -574,7 +605,12 @@ function serializeUsageStore(store: UsageStore): {
   schemaVersion: 3;
   days: Record<
     string,
-    { date: string; byTarget: Record<TargetId, number>; byPeriod: Record<string, number> }
+    {
+      date: string;
+      byTarget: Record<TargetId, number>;
+      byPeriod: Record<string, number>;
+      byHour?: Record<string, Record<TargetId, number>>;
+    }
   >;
 } {
   return {
@@ -582,14 +618,19 @@ function serializeUsageStore(store: UsageStore): {
     days: Object.fromEntries(
       Object.entries(store.days).map(([date, day]) => [
         date,
-        { date, byTarget: day.byTarget, byPeriod: day.byPeriod }
+        {
+          date,
+          byTarget: day.byTarget,
+          byPeriod: day.byPeriod,
+          ...(day.byHour ? { byHour: day.byHour } : {})
+        }
       ])
     )
   };
 }
 
 function normalizeSeconds(value: unknown): number {
-  return isNonNegativeNumber(value) ? Math.round(value) : 0;
+  return isNonNegativeNumber(value) ? value : 0;
 }
 
 function isNonNegativeNumber(value: unknown): value is number {

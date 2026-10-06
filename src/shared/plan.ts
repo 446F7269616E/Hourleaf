@@ -23,6 +23,7 @@ export interface NormalizedPlanItemInput {
   origin: string;
   identity: string;
   bvid?: string;
+  goal?: string;
   title: string;
   source: PlanItemSource;
   scheduledDurationMinutes: number;
@@ -52,6 +53,8 @@ export function normalizePlanItemInput(
   const title = typeof input.title === "string" ? input.title.trim() : "";
   if (title.length > MAX_PLAN_TITLE_LENGTH) return null;
 
+  if (input.goal !== undefined && (typeof input.goal !== "string" || input.goal.length > 500))
+    return null;
   const source = input.source === undefined ? fallbackSource : input.source;
   if (!isPlanItemSource(source)) return null;
   if (!isPlanDurationMinutes(input.scheduledDurationMinutes)) return null;
@@ -64,6 +67,7 @@ export function normalizePlanItemInput(
     identity: url.href,
     ...(typeof input.bvid === "string" ? { bvid: input.bvid } : {}),
     title: title || url.hostname,
+    ...(typeof input.goal === "string" ? { goal: input.goal.trim() } : {}),
     source,
     scheduledDurationMinutes: input.scheduledDurationMinutes,
     completionMode: input.completionMode,

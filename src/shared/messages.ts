@@ -33,9 +33,11 @@ import {
   LOCAL_MODULE_IMPORT_RISK_CODE,
   type LocalModuleDefinition,
   type LocalModuleSnapshot,
+  type LocalModuleTimePeriodReference,
   type LocalPageRules
 } from "../modules/local/types";
 import { normalizeLocalModuleDefinition } from "../modules/local/validation";
+import { normalizeFilterSchedules } from "../modules/local/schedules";
 import {
   parseConfigurationBackup,
   type ConfigurationBackupDocument,
@@ -55,7 +57,29 @@ export interface MessageContract {
     response: ConfigurationImportResult;
   };
   UPDATE_SETTINGS: { request: { patch: DeepPartial<FocusSettings> }; response: FocusSettings };
-  RESET_SETTINGS: { request: Record<never, unknown>; response: FocusSettings };
+  BEGIN_PROTECTED_ACTION: {
+    request: { action: "disable" | "reset" | "clear-all" | "protection" };
+    response: import("../background/protected-actions").ProtectedTicket;
+  };
+  COMPLETE_PROTECTED_ACTION: {
+    request: {
+      action: "disable" | "reset" | "clear-all" | "protection";
+      token: string;
+      proof?: string;
+      protection?: FocusSettings["disableProtection"];
+    };
+    response: FocusSettings;
+  };
+  ACKNOWLEDGE_PLAN_END: { request: { itemId: string }; response: { acknowledged: true } };
+  ACKNOWLEDGE_LENIENT: {
+    request: { targetId: string; periodId: string };
+    response: { acknowledged: true };
+  };
+  DEBUG_ACTION: {
+    request: { action: "consume-group" | "consume-period" | "preview" | "setup"; url?: string };
+    response: { url?: string };
+  };
+  RESET_SETTINGS: { request: { token?: string; proof?: string }; response: FocusSettings };
   GET_USAGE: {
     request: { period: UsagePeriod; anchorDate?: string };
     response: UsageSummary;
@@ -63,9 +87,23 @@ export interface MessageContract {
   CLEAR_USAGE: { request: Record<never, unknown>; response: { cleared: true } };
   GET_PAGE_DECISION: { request: { url: string; targetId?: TargetId }; response: PageDecision };
   GRANT_TEMPORARY_ACCESS: { request: { url: string; targetId?: TargetId }; response: PageDecision };
-  GRANT_VISIT_CONFIRMATION: {
+  GET_VISIT_GATE: {
     request: { url: string; siteId: string; tabId?: number };
+    response: {
+      alreadyGranted?: boolean;
+      method: import("./types").GroupUnlockMethod;
+      waitEndsAt: number;
+      mathChallenge: { prompt: string };
+      passwordConfigured: boolean;
+    };
+  };
+  GRANT_VISIT_CONFIRMATION: {
+    request: { url: string; siteId: string; tabId?: number; proof?: string };
     response: { granted: true; url: string };
+  };
+  RESUME_PAUSE_FRAME: {
+    request: { channel: string; url: string };
+    response: { resumed: true };
   };
   GET_PERIOD_RUNTIME: {
     request: { targetId: TargetId; periodId: string };
@@ -89,7 +127,7 @@ export interface MessageContract {
     response: PageDecision;
   };
   STOP_PERIOD_FLOW: {
-    request: { url: string; targetId: TargetId; periodId: string };
+    request: { url: string; targetId: TargetId; periodId: string; grantId: string };
     response: PageDecision;
   };
   GET_MANAGED_SITES: {
@@ -120,7 +158,9 @@ export interface MessageContract {
     response: { removed: true; permissionRemoved: boolean };
   };
   CLOSE_RELATED_TABS: {
-    request: { source: "focus"; siteId: string } | { source: "plan"; itemId: string };
+    request:
+      | { source: "focus"; siteId: string; tabId?: number }
+      | { source: "plan"; itemId: string; tabId?: number };
     response: { closedCount: number };
   };
   GET_SITE_MODULES: { request: Record<never, unknown>; response: SiteModuleStore };
@@ -145,6 +185,15 @@ export interface MessageContract {
   };
   SET_LOCAL_MODULE_FILTER_ENABLED: {
     request: { moduleId: string; groupId: string; enabled: boolean; profile?: "normal" | "plan" };
+    response: LocalModuleSnapshot;
+  };
+  SET_LOCAL_MODULE_FILTER_SCHEDULE: {
+    request: {
+      moduleId: string;
+      groupId: string;
+      periods: LocalModuleTimePeriodReference[] | null;
+      profile?: "normal" | "plan";
+    };
     response: LocalModuleSnapshot;
   };
   REMOVE_LOCAL_MODULE: { request: { moduleId: string }; response: LocalModuleSnapshot };
@@ -277,6 +326,15 @@ export function parseMessageRequest(
 
   let request: AnyRequest;
   switch (value.type) {
+    case "RESUME_PAUSE_FRAME":
+      if (
+        !hasOnlyKeys(payload, ["channel", "url"]) ||
+        !isOpaqueId(payload.channel) ||
+        !isHttpUrl(payload.url)
+      )
+        return null;
+      request = { type: value.type, channel: payload.channel, url: payload.url };
+      break;
     case "GET_SETTINGS":
       request = { type: "GET_SETTINGS" };
       break;
@@ -292,8 +350,66 @@ export function parseMessageRequest(
       }
       break;
     }
+    case "BEGIN_PROTECTED_ACTION":
+    case "COMPLETE_PROTECTED_ACTION": {
+      const action = payload.action;
+      if (
+        action !== "disable" &&
+        action !== "reset" &&
+        action !== "clear-all" &&
+        action !== "protection"
+      )
+        return null;
+      if (value.type === "BEGIN_PROTECTED_ACTION") request = { type: value.type, action };
+      else {
+        if (
+          typeof payload.token !== "string" ||
+          payload.token.length > 80 ||
+          (payload.proof !== undefined &&
+            (typeof payload.proof !== "string" || payload.proof.length > 160))
+        )
+          return null;
+        if (
+          payload.protection !== undefined &&
+          (!isRecord(payload.protection) || !isBoundedJson(payload.protection))
+        )
+          return null;
+        request = {
+          type: value.type,
+          action,
+          token: payload.token,
+          proof: payload.proof as string | undefined,
+          protection: payload.protection as FocusSettings["disableProtection"] | undefined
+        };
+      }
+      break;
+    }
+    case "ACKNOWLEDGE_PLAN_END":
+      if (!isOpaqueId(payload.itemId)) return null;
+      request = { type: value.type, itemId: payload.itemId };
+      break;
+    case "ACKNOWLEDGE_LENIENT":
+      if (!isOpaqueId(payload.targetId) || !isOpaqueId(payload.periodId)) return null;
+      request = { type: value.type, targetId: payload.targetId, periodId: payload.periodId };
+      break;
+    case "DEBUG_ACTION":
+      if (
+        !["consume-group", "consume-period", "preview", "setup"].includes(String(payload.action)) ||
+        (payload.url !== undefined && !isHttpUrl(payload.url))
+      )
+        return null;
+      request = {
+        type: value.type,
+        action: payload.action as "consume-group" | "consume-period" | "preview" | "setup",
+        url: payload.url as string | undefined
+      };
+      break;
     case "RESET_SETTINGS":
-      request = { type: "RESET_SETTINGS" };
+      request = {
+        type: "RESET_SETTINGS",
+        token: typeof payload.token === "string" ? payload.token : undefined,
+        proof: typeof payload.proof === "string" ? payload.proof : undefined
+      };
       break;
     case "CLEAR_USAGE":
       request = { type: "CLEAR_USAGE" };
@@ -341,9 +457,12 @@ export function parseMessageRequest(
         ...(isOpaqueId(payload.targetId) ? { targetId: payload.targetId } : {})
       };
       break;
+    case "GET_VISIT_GATE":
     case "GRANT_VISIT_CONFIRMATION":
       if (
-        !hasOnlyKeys(payload, ["url", "siteId", "tabId"]) ||
+        !hasOnlyKeys(payload, ["url", "siteId", "tabId", "proof"]) ||
+        (payload.proof !== undefined &&
+          (typeof payload.proof !== "string" || payload.proof.length > 128)) ||
         (payload.tabId !== undefined && !isBoundedInteger(payload.tabId, 0, 2147483647)) ||
         !isHttpUrl(payload.url) ||
         !isOpaqueId(payload.siteId)
@@ -354,6 +473,7 @@ export function parseMessageRequest(
         type: value.type,
         url: payload.url,
         siteId: payload.siteId,
+        ...(typeof payload.proof === "string" ? { proof: payload.proof } : {}),
         ...(typeof payload.tabId === "number" ? { tabId: payload.tabId } : {})
       };
       break;
@@ -423,10 +543,11 @@ export function parseMessageRequest(
     }
     case "STOP_PERIOD_FLOW":
       if (
-        !hasOnlyKeys(payload, ["url", "targetId", "periodId"]) ||
+        !hasOnlyKeys(payload, ["url", "targetId", "periodId", "grantId"]) ||
         !isHttpUrl(payload.url) ||
         !isOpaqueId(payload.targetId) ||
-        !isOpaqueId(payload.periodId)
+        !isOpaqueId(payload.periodId) ||
+        !isOpaqueId(payload.grantId)
       ) {
         return null;
       }
@@ -434,7 +555,8 @@ export function parseMessageRequest(
         type: value.type,
         url: payload.url,
         targetId: payload.targetId,
-        periodId: payload.periodId
+        periodId: payload.periodId,
+        grantId: payload.grantId
       };
       break;
     case "ADD_MANAGED_SITE":
@@ -512,18 +634,30 @@ export function parseMessageRequest(
       request = { type: value.type, siteId: payload.siteId };
       break;
     case "CLOSE_RELATED_TABS":
+      if (payload.tabId !== undefined && !isBoundedInteger(payload.tabId, 0, 2147483647))
+        return null;
       if (
         payload.source === "focus" &&
-        hasOnlyKeys(payload, ["source", "siteId"]) &&
+        hasOnlyKeys(payload, ["source", "siteId", "tabId"]) &&
         isOpaqueId(payload.siteId)
       ) {
-        request = { type: value.type, source: "focus", siteId: payload.siteId };
+        request = {
+          type: value.type,
+          source: "focus",
+          siteId: payload.siteId,
+          tabId: payload.tabId as number | undefined
+        };
       } else if (
         payload.source === "plan" &&
-        hasOnlyKeys(payload, ["source", "itemId"]) &&
+        hasOnlyKeys(payload, ["source", "itemId", "tabId"]) &&
         isOpaqueId(payload.itemId)
       ) {
-        request = { type: value.type, source: "plan", itemId: payload.itemId };
+        request = {
+          type: value.type,
+          source: "plan",
+          itemId: payload.itemId,
+          tabId: payload.tabId as number | undefined
+        };
       } else {
         return null;
       }
@@ -598,6 +732,32 @@ export function parseMessageRequest(
         enabled: payload.enabled
       };
       break;
+    case "SET_LOCAL_MODULE_FILTER_SCHEDULE": {
+      if (
+        !hasOnlyKeys(payload, ["moduleId", "groupId", "periods", "profile"]) ||
+        !isOpaqueId(payload.moduleId) ||
+        !isOpaqueId(payload.groupId) ||
+        (payload.profile !== undefined &&
+          payload.profile !== "normal" &&
+          payload.profile !== "plan")
+      )
+        return null;
+      const schedule =
+        payload.periods === null
+          ? null
+          : normalizeFilterSchedules({ [payload.groupId]: payload.periods });
+      if (payload.periods !== null && !schedule) return null;
+      request = {
+        type: value.type,
+        moduleId: payload.moduleId,
+        groupId: payload.groupId,
+        periods: schedule?.[payload.groupId] ?? null,
+        ...(payload.profile === "normal" || payload.profile === "plan"
+          ? { profile: payload.profile }
+          : {})
+      };
+      break;
+    }
     case "REMOVE_LOCAL_MODULE":
       if (!hasOnlyKeys(payload, ["moduleId"]) || !isOpaqueId(payload.moduleId)) return null;
       request = { type: value.type, moduleId: payload.moduleId };
@@ -855,6 +1015,7 @@ function parsePlanItemInput(value: unknown, fallbackSource?: PlanItemSource): Pl
     !isRecord(value) ||
     !hasOnlyKeys(value, [
       "title",
+      "goal",
       "url",
       "bvid",
       "source",
@@ -869,6 +1030,7 @@ function parsePlanItemInput(value: unknown, fallbackSource?: PlanItemSource): Pl
   if (!normalized) return null;
   return {
     ...(typeof value.title === "string" ? { title: value.title } : {}),
+    ...(typeof value.goal === "string" ? { goal: value.goal } : {}),
     ...(typeof value.url === "string" ? { url: value.url } : {}),
     ...(typeof value.bvid === "string" ? { bvid: value.bvid } : {}),
     ...(isPlanItemSource(value.source) ? { source: value.source } : {}),
@@ -884,6 +1046,7 @@ function parsePlanItemPatch(value: Record<string, unknown>): PlanItemPatch | nul
   if (
     !hasOnlyKeys(value, [
       "title",
+      "goal",
       "url",
       "bvid",
       "source",
@@ -896,6 +1059,7 @@ function parsePlanItemPatch(value: Record<string, unknown>): PlanItemPatch | nul
     return null;
   }
   if (
+    (value.goal !== undefined && (typeof value.goal !== "string" || value.goal.length > 500)) ||
     (value.title !== undefined &&
       (typeof value.title !== "string" || value.title.length > MAX_PLAN_TITLE_LENGTH)) ||
     (value.url !== undefined && typeof value.url !== "string") ||
@@ -911,6 +1075,7 @@ function parsePlanItemPatch(value: Record<string, unknown>): PlanItemPatch | nul
   if (value.url !== undefined && !isHttpUrl(value.url)) return null;
   return {
     ...(typeof value.title === "string" ? { title: value.title } : {}),
+    ...(typeof value.goal === "string" ? { goal: value.goal } : {}),
     ...(typeof value.url === "string" ? { url: value.url } : {}),
     ...(isLegacyIdentity(value.bvid) ? { bvid: value.bvid } : {}),
     ...(isPlanItemSource(value.source) ? { source: value.source } : {}),

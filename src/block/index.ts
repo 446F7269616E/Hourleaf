@@ -19,6 +19,9 @@ import { sendRequest } from "../shared/messages";
 import { assertAppRoot, describeError, element, icon, setButtonBusy, toast } from "../styles/dom";
 import { createPageNavigation } from "../ui/page-navigation";
 import { applyTheme } from "../ui/theme";
+import { createFilterTimePeriodPicker } from "../ui/filter-time-periods";
+import { configuredFilterTimePeriods, filterScheduleReferences } from "../modules/local/schedules";
+import type { FocusSettings } from "../shared/types";
 import { addManagedSite, requestLocalModulePermissions } from "../ui/site-management";
 
 const MODULE_RELEASES_URL = "https://github.com/446F7269616E/Hourleaf/releases/latest";
@@ -28,6 +31,7 @@ const MODULE_GUIDE_URL =
 
 const app = assertAppRoot();
 let localModules: LocalModuleSnapshot | null = null;
+let scheduleSettings: FocusSettings | null = null;
 let loadGeneration = 0;
 
 document.body.classList.add("block-page");
@@ -51,6 +55,7 @@ async function loadPage(): Promise<void> {
     applyTheme(settings.theme);
     localizeDocumentTitle("block");
     localModules = snapshot;
+    scheduleSettings = settings;
     renderPage();
   } catch (error) {
     renderError(describeError(error));
@@ -185,6 +190,10 @@ function createEmptyState(): HTMLElement {
 
 function createModuleCard(installation: LocalModuleInstallation): HTMLElement {
   const { definition, enabled } = installation;
+  const filterTimePeriods = scheduleSettings
+    ? configuredFilterTimePeriods(scheduleSettings, definition)
+    : [];
+  const profile = localModules?.profile ?? "normal";
   const moduleToggle = createToggle(
     t("settings.enableModule", { module: definition.name }),
     enabled,
@@ -282,15 +291,39 @@ function createModuleCard(installation: LocalModuleInstallation): HTMLElement {
                     );
                   });
                   return element("div", {
-                    className: "block-filter-row",
+                    className: `block-filter-row${enabled && checked ? "" : " block-filter-row--disabled"}`,
                     children: [
                       element("div", {
+                        className: "block-filter-row__header",
                         children: [
-                          element("strong", { text: group.name }),
-                          group.description ? element("p", { text: group.description }) : null
+                          element("div", {
+                            className: "block-filter-row__copy",
+                            children: [
+                              element("strong", { text: group.name }),
+                              group.description ? element("p", { text: group.description }) : null
+                            ]
+                          }),
+                          toggle.label
                         ]
                       }),
-                      toggle.label
+                      createFilterTimePeriodPicker({
+                        filterName: group.name,
+                        choices: filterTimePeriods,
+                        selected: filterScheduleReferences(
+                          installation.filterGroupSchedules,
+                          group.id
+                        ),
+                        disabled: !enabled || !checked,
+                        onChange: async (periods) => {
+                          localModules = await sendRequest({
+                            type: "SET_LOCAL_MODULE_FILTER_SCHEDULE",
+                            moduleId: definition.id,
+                            groupId: group.id,
+                            periods,
+                            profile
+                          });
+                        }
+                      })
                     ]
                   });
                 })

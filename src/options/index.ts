@@ -190,7 +190,7 @@ function renderOptions(): void {
           className: "options-header page-heading",
           children: [
             element("div", {
-            children: [element("h1", { className: "page-title", text: t("options.title") })]
+              children: [element("h1", { className: "page-title", text: t("options.title") })]
             }),
             element("div", {
               className: "options-header__actions",
@@ -349,19 +349,8 @@ function createRestrictionModeCard(site: ManagedSite): HTMLElement {
 }
 
 function createVisitConfirmationCard(site: ManagedSite): HTMLElement {
-  const confirmation = site.visitConfirmation ?? { enabled: false, waitSeconds: 3 };
+  const confirmation = site.visitConfirmation ?? { enabled: true, waitSeconds: 3 };
   site.visitConfirmation = confirmation;
-  const waitSeconds = element("input", {
-    className: "input visit-confirmation__wait",
-    attrs: {
-      type: "number",
-      min: 0,
-      max: 60,
-      step: 1,
-      value: confirmation.waitSeconds,
-      "aria-label": t("options.visitConfirmationWait")
-    }
-  });
   const prompt = element("textarea", {
     className: "input visit-confirmation__prompt",
     text: confirmation.prompt ?? "",
@@ -373,73 +362,13 @@ function createVisitConfirmationCard(site: ManagedSite): HTMLElement {
       "aria-describedby": `visit-confirmation-prompt-hint-${site.id}`
     }
   });
-  const confirmationSwitch = createToggle(
-    t("options.visitConfirmation"),
-    confirmation.enabled,
-    "visit-confirmation-toggle"
-  );
-  const fields = element("div", {
-    className: "visit-confirmation-card__fields",
-    children: [
-      element("label", {
-        className: "visit-confirmation__field",
-        children: [
-          element("span", { text: t("options.visitConfirmationWait") }),
-          element("span", {
-            className: "visit-confirmation__wait-control",
-            children: [waitSeconds, element("span", { text: t("common.seconds") })]
-          })
-        ]
-      }),
-      element("label", {
-        className: "visit-confirmation__field visit-confirmation__field--prompt",
-        children: [
-          element("span", { text: t("options.visitConfirmationPrompt") }),
-          prompt,
-          element("small", {
-            className: "field__hint",
-            text: t("options.visitConfirmationPromptHint"),
-            attrs: { id: `visit-confirmation-prompt-hint-${site.id}` }
-          })
-        ]
-      })
-    ]
-  });
-  const updateEnabledState = (): void => {
-    fields.hidden = !confirmationSwitch.input.checked;
-    waitSeconds.disabled = !confirmationSwitch.input.checked;
-    prompt.disabled = !confirmationSwitch.input.checked;
-  };
-  confirmationSwitch.input.addEventListener("change", () => {
-    const current = draft?.sites[site.id];
-    if (!current) return;
-    current.visitConfirmation = {
-      ...(current.visitConfirmation ?? { enabled: false, waitSeconds: 3 }),
-      enabled: confirmationSwitch.input.checked
-    };
-    current.updatedAt = Date.now();
-    updateEnabledState();
-    markSiteDirty(site.id);
-  });
-  waitSeconds.addEventListener("change", () => {
-    const current = draft?.sites[site.id];
-    if (!current) return;
-    const value = clamp(waitSeconds.value, 0, 60, 3);
-    waitSeconds.value = String(value);
-    current.visitConfirmation = {
-      ...(current.visitConfirmation ?? { enabled: false, waitSeconds: 3 }),
-      waitSeconds: value
-    };
-    current.updatedAt = Date.now();
-    markSiteDirty(site.id);
-  });
   prompt.addEventListener("change", () => {
     const current = draft?.sites[site.id];
     if (!current) return;
     const value = prompt.value.trim().slice(0, MAX_VISIT_CONFIRMATION_PROMPT_LENGTH);
     prompt.value = value;
     const nextConfirmation = {
-      ...(current.visitConfirmation ?? { enabled: false, waitSeconds: 3 }),
+      ...(current.visitConfirmation ?? { enabled: true, waitSeconds: 3 }),
       ...(value ? { prompt: value } : {})
     };
     if (!value) delete nextConfirmation.prompt;
@@ -447,7 +376,6 @@ function createVisitConfirmationCard(site: ManagedSite): HTMLElement {
     current.updatedAt = Date.now();
     markSiteDirty(site.id);
   });
-  updateEnabledState();
 
   return element("section", {
     className: "visit-confirmation-card card",
@@ -465,11 +393,10 @@ function createVisitConfirmationCard(site: ManagedSite): HTMLElement {
               }),
               element("p", { text: t("options.visitConfirmationDescription") })
             ]
-          }),
-          confirmationSwitch.label
+          })
         ]
       }),
-      fields
+      prompt
     ]
   });
 }
@@ -1658,7 +1585,7 @@ async function flushAutoSave(): Promise<boolean> {
         if (!site) continue;
         const persistedMode = site.restrictionMode;
         const persistedConfirmation = clone(
-          site.visitConfirmation ?? { enabled: false, waitSeconds: 3 }
+          site.visitConfirmation ?? { enabled: true, waitSeconds: 3 }
         );
         try {
           const normalized = await sendRequest({

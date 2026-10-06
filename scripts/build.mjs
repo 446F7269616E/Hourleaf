@@ -167,9 +167,12 @@ async function loadDebugPreset() {
   /** @type {DebugModule[]} */
   const modules = [];
   /** @type {DebugSite[]} */
-  const sites = [];
+  const sites = [
+    { url: "https://example.com", label: "Example 测试网站" },
+    { url: "http://localhost:4173", label: "Hourleaf 本地视频测试" }
+  ];
   /** @type {Set<string>} */
-  const hostPermissions = new Set();
+  const hostPermissions = new Set(["https://example.com/*", "http://localhost:4173/*"]);
   for (const entry of entries) {
     const sourceDir = path.join(optionalModulesDir, entry.name);
     const manifest = await readDebugModule(sourceDir);
@@ -287,7 +290,11 @@ async function prepareDebugOutputDirectory(outdir) {
       throw new Error(`Refusing to replace a directory without a valid debug marker: ${outdir}`);
     }
   }
-  await rm(outdir, { recursive: true, force: true });
+  // Preserve a mounted or sandbox-provided output root; only replace verified contents.
+  await mkdir(outdir, { recursive: true });
+  await Promise.all(
+    entries.map((entry) => rm(path.join(outdir, entry), { recursive: true, force: true }))
+  );
 }
 
 /** @param {unknown} value @returns {value is Record<string, unknown>} */

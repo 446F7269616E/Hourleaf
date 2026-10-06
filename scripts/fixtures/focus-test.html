@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><title>Hourleaf 暂停与视频测试</title
+  ><meta name="viewport" content="width=device-width" /><style>
+    body {
+      max-width: 760px;
+      margin: 60px auto;
+      padding: 24px;
+      font: 18px/1.6 system-ui;
+      background: #f0f5f2;
+      color: #17372d;
+    }
+    button,
+    video {
+      display: block;
+      margin: 24px 0;
+    }
+    button {
+      padding: 12px 24px;
+    }
+    video {
+      width: 100%;
+      background: #17372d;
+    }
+  </style>
+  <h1>Hourleaf 本地测试网站</h1>
+  <p>
+    在 Debug 工具栏点击「配置测试网站」，本网站将设为 3 分钟 / 3
+    组心流模式。使用「消耗当前组」触发暂停页，再选择延时或播放结束。测试会写入实际测试统计。
+  </p>
+  <button id="make">生成 8 秒本地测试视频</button
+  ><video controls></video>
+  <p id="status" role="status"></p>
+  <script>
+    const button = document.querySelector("button"),
+      video = document.querySelector("video"),
+      status = document.querySelector("#status");
+    button.onclick = () => {
+      button.disabled = true;
+      const canvas = document.createElement("canvas");
+      canvas.width = 640;
+      canvas.height = 360;
+      const ctx = canvas.getContext("2d");
+      const stream = canvas.captureStream(15);
+      const recorder = new MediaRecorder(stream);
+      const chunks = [];
+      recorder.ondataavailable = (e) => chunks.push(e.data);
+      const started = performance.now();
+      let frame;
+      function draw() {
+        const elapsed = (performance.now() - started) / 1000;
+        ctx.fillStyle = "#17372d";
+        ctx.fillRect(0, 0, 640, 360);
+        ctx.fillStyle = "#a8dfbb";
+        ctx.font = "48px system-ui";
+        ctx.fillText("Hourleaf " + elapsed.toFixed(1) + " s", 70, 190);
+        if (elapsed < 8) frame = requestAnimationFrame(draw);
+        else recorder.stop();
+      }
+      recorder.onstop = () => {
+        cancelAnimationFrame(frame);
+        stream.getTracks().forEach((t) => t.stop());
+        if (video.src) URL.revokeObjectURL(video.src);
+        video.src = URL.createObjectURL(new Blob(chunks, { type: recorder.mimeType }));
+        button.disabled = false;
+        status.textContent = "视频已生成。播放后用 Debug 消耗当前组，再选择「播放结束后结束」。";
+      };
+      recorder.start();
+      draw();
+      status.textContent = "正在生成视频（8 秒）…";
+    };
+  </script>
+</html>

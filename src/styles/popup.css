@@ -1,6 +1,14 @@
-.popup-page {
+.popup-document {
   width: 380px;
-  min-height: 410px;
+  min-width: 0;
+  max-height: 600px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.popup-page {
+  width: 100%;
+  min-height: 0;
   background:
     radial-gradient(
       circle at 84% -8%,
@@ -316,12 +324,26 @@
   min-height: 220px;
 }
 
-@media (max-width: 359px) {
-  .popup-page {
-    width: 100vw;
-  }
-
-  .popup-shell {
-    padding: 14px;
-  }
+.popup-debug-tools {
+  display: block;
+  padding: 16px;
+}
+.popup-debug-tools summary {
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.popup-debug-tools__content {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+}
+/* Status and plan markers belong to the selected palette. */
+.current-site-card__status[data-status="active"] {
+  color: var(--color-brand-strong);
+  background: var(--color-brand-soft);
+}
+.popup-plan-card__icon {
+  color: var(--color-brand-strong);
+  background: var(--color-brand-soft);
 }

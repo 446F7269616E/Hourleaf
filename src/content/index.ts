@@ -1,4 +1,9 @@
-import { runtimeGetURL, storageAddChangeListener } from "../shared/browser";
+import {
+  getExtensionApi,
+  runtimeAddMessageListener,
+  runtimeGetURL,
+  storageAddChangeListener
+} from "../shared/browser";
 import { formatLocalDate } from "../shared/analytics";
 import { sendRequest, type SessionEvent } from "../shared/messages";
 import { configureLocale, t } from "../shared/i18n";
@@ -26,6 +31,11 @@ let contentStarted = false;
 let planCheckGeneration = 0;
 let initializationRetry: ReturnType<typeof setTimeout> | null = null;
 let flowEndedCleanup: (() => void) | null = null;
+let pauseFrameResume: ((channel: string) => Promise<boolean>) | undefined;
+let planDeadlineTimer: ReturnType<typeof setTimeout> | undefined;
+let planDeadlineKey = "";
+let filterScheduleTimer: ReturnType<typeof setTimeout> | undefined;
+let filterScheduleDeadline: number | undefined;
 
 startContentRuntimeOnce();
 
@@ -33,6 +43,23 @@ function startContentRuntimeOnce(): void {
   const runtimeGlobal = globalThis as ContentRuntimeGlobal;
   if (runtimeGlobal[CONTENT_RUNTIME_KEY]) return;
   runtimeGlobal[CONTENT_RUNTIME_KEY] = true;
+  runtimeAddMessageListener(async (message, sender) => {
+    if (
+      !getExtensionApi()?.runtime.id ||
+      sender.id !== getExtensionApi()?.runtime.id ||
+      typeof message !== "object" ||
+      message === null
+    )
+      return undefined;
+    const request = message as { type?: unknown; channel?: unknown };
+    if (request.type !== "hourleaf:resume-pause" || typeof request.channel !== "string")
+      return undefined;
+    try {
+      return { resumed: (await pauseFrameResume?.(request.channel)) ?? false };
+    } catch {
+      return { resumed: false };
+    }
+  });
 
   subscribeSiteModuleRegistry(() => void evaluatePage());
   configureLocale("system");
@@ -41,7 +68,9 @@ function startContentRuntimeOnce(): void {
   window.addEventListener("popstate", routeMayHaveChanged);
   window.addEventListener("hashchange", routeMayHaveChanged);
   document.addEventListener("visibilitychange", () => {
-    if (contentStarted) void sendSessionUpdate("heartbeat");
+    if (!contentStarted) return;
+    if (document.visibilityState === "visible") void refreshContentState();
+    else void sendSessionUpdate("heartbeat");
   });
   // Returning from the standalone end page commonly restores this document
   // from the back/forward cache. Re-establish a fresh session instead of
@@ -59,9 +88,13 @@ function startContentRuntimeOnce(): void {
     const changed =
       settingsChanged ?? changes[STORAGE_KEYS.localModules] ?? changes[STORAGE_KEYS.planAccess];
     if (!changed || changed.newValue === undefined) return;
-    void (settingsChanged ? syncContentLocale().then(evaluatePage) : evaluatePage());
+    if (settingsChanged && (settingsChanged.newValue as { enabled?: boolean })?.enabled === false)
+      removeBlockPage();
+    void (settingsChanged ? syncContentLocale().then(() => evaluatePage()) : evaluatePage());
   });
   window.addEventListener("pagehide", () => {
+    clearPlanDeadline();
+    clearFilterScheduleTimer();
     if (!contentStarted) return;
     contentStarted = false;
     void sendSessionUpdate("stop");
@@ -93,10 +126,11 @@ async function initializeContent(): Promise<void> {
   if (outcome === "redirected" || contentStarted) return;
   contentStarted = true;
   await sendSessionUpdate("start");
-  await evaluatePage();
+  await evaluatePage(true);
 }
 
 async function handleRouteChange(): Promise<void> {
+  removeBlockPage();
   if (contentStarted) await sendSessionUpdate("stop");
   contentStarted = false;
   const outcome = await enforcePlanNavigation();
@@ -107,7 +141,7 @@ async function handleRouteChange(): Promise<void> {
   if (outcome === "redirected") return;
   contentStarted = true;
   await sendSessionUpdate("route");
-  await evaluatePage();
+  await evaluatePage(true);
 }
 
 async function refreshContentState(): Promise<void> {
@@ -120,11 +154,13 @@ async function refreshContentState(): Promise<void> {
   } else {
     await sendSessionUpdate("heartbeat");
   }
-  await evaluatePage();
+  await evaluatePage(true);
 }
 
 async function enforcePlanNavigation(): Promise<"allowed" | "redirected" | "unavailable"> {
+  if (pauseFrameCleanup && document.getElementById(ROOT_ID)) return "redirected";
   const module = resolveSiteModule(window.location.href);
+  const checkedUrl = window.location.href;
   const generation = ++planCheckGeneration;
   try {
     const decision = await sendRequest(
@@ -132,14 +168,18 @@ async function enforcePlanNavigation(): Promise<"allowed" | "redirected" | "unav
         ? module.plan.createNavigationRequest(window.location.href)
         : { type: "GET_PLAN_NAVIGATION_DECISION", url: window.location.href }
     );
-    if (generation !== planCheckGeneration) return "unavailable";
+    if (generation !== planCheckGeneration || checkedUrl !== window.location.href)
+      return "unavailable";
+    syncPlanDeadline(decision);
     if (decision.allowed) {
+      if (decision.reason === "authorized" && decision.itemId)
+        sessionStorage.removeItem(`hourleaf-plan-pause:${decision.itemId}`);
       if (decision.reason === "expired" && decision.completionMode === "lenient") {
-        void showReminder(
-          t("end.title"),
-          t("end.lenientReminder"),
-          `plan:${decision.itemId ?? ""}`
-        );
+        if (!sessionStorage.getItem(`hourleaf-plan-pause:${decision.itemId}`)) {
+          await whenDocumentReady();
+          showPauseFrame({ source: "plan", itemId: decision.itemId, reason: "expired" });
+          return "redirected";
+        }
       }
       if (decision.flowContinuationKind === "video-end" && decision.itemId) {
         monitorVideoEnd(`plan:${decision.itemId}`, undefined, async () => {
@@ -149,7 +189,7 @@ async function enforcePlanNavigation(): Promise<"allowed" | "redirected" | "unav
             reason: "video-ended",
             url: window.location.href
           });
-          goToEnd({ source: "plan", itemId: decision.itemId, reason: "expired" });
+          showPauseFrame({ source: "plan", itemId: decision.itemId, reason: "expired" });
         });
       } else if (decision.pauseOnVideoEnd && decision.itemId) {
         monitorVideoEnd(`plan-pause:${decision.itemId}`, undefined, async () => {
@@ -159,7 +199,7 @@ async function enforcePlanNavigation(): Promise<"allowed" | "redirected" | "unav
             reason: "video-ended",
             url: window.location.href
           });
-          goToEnd({ source: "plan", itemId: decision.itemId, reason: "video-ended" });
+          showPauseFrame({ source: "plan", itemId: decision.itemId, reason: "video-ended" });
         });
       }
       return "allowed";
@@ -181,7 +221,8 @@ async function enforcePlanNavigation(): Promise<"allowed" | "redirected" | "unav
     }
     removeBlockPage();
     if (decision.reason === "expired") {
-      goToEnd({ source: "plan", itemId: decision.itemId, reason: "expired" });
+      await whenDocumentReady();
+      showPauseFrame({ source: "plan", itemId: decision.itemId, reason: "expired" });
       return "redirected";
     }
     // No source URL is included: the extension page receives no arbitrary URL,
@@ -194,6 +235,57 @@ async function enforcePlanNavigation(): Promise<"allowed" | "redirected" | "unav
     // arrives; the retry below does not backfill the unavailable interval.
     return "unavailable";
   }
+}
+
+function clearFilterScheduleTimer(): void {
+  clearTimeout(filterScheduleTimer);
+  filterScheduleTimer = undefined;
+  filterScheduleDeadline = undefined;
+}
+
+function syncFilterScheduleTimer(deadline: number | undefined): void {
+  if (deadline === filterScheduleDeadline) return;
+  clearFilterScheduleTimer();
+  if (deadline === undefined) return;
+  filterScheduleDeadline = deadline;
+  filterScheduleTimer = setTimeout(
+    () => {
+      clearFilterScheduleTimer();
+      void evaluatePage();
+    },
+    Math.max(0, Math.min(2_147_483_647, deadline - Date.now()))
+  );
+}
+
+function clearPlanDeadline(): void {
+  clearTimeout(planDeadlineTimer);
+  planDeadlineTimer = undefined;
+  planDeadlineKey = "";
+}
+
+/** Check the actual deadline even when neither the route nor storage changes. */
+function syncPlanDeadline(decision: PlanNavigationDecision): void {
+  if (
+    decision.reason !== "authorized" ||
+    !decision.allowed ||
+    !decision.itemId ||
+    decision.expiresAt === undefined ||
+    decision.flowContinuationKind === "video-end"
+  ) {
+    clearPlanDeadline();
+    return;
+  }
+  const key = `${decision.itemId}:${decision.expiresAt}`;
+  if (key === planDeadlineKey) return;
+  clearPlanDeadline();
+  planDeadlineKey = key;
+  planDeadlineTimer = setTimeout(
+    () => {
+      clearPlanDeadline();
+      void refreshContentState();
+    },
+    Math.max(0, Math.min(2_147_483_647, decision.expiresAt - Date.now()))
+  );
 }
 
 function scheduleInitializationRetry(): void {
@@ -221,8 +313,16 @@ async function sendSessionUpdate(event: SessionEvent): Promise<void> {
   }
 }
 
-async function evaluatePage(): Promise<void> {
+async function evaluatePage(planChecked = false): Promise<void> {
+  if (pauseFrameCleanup && document.getElementById(ROOT_ID)) return;
   const topLevelUrl = window.location.href;
+  // Plan notifications take priority over ordinary focus rules, including the
+  // storage event emitted when an expired grant disables plan mode.
+  if (
+    (!planChecked && (await enforcePlanNavigation()) !== "allowed") ||
+    topLevelUrl !== window.location.href
+  )
+    return;
   const url = topLevelUrl;
   const module = resolveSiteModule(url);
   const match = module?.match(url);
@@ -238,13 +338,22 @@ async function evaluatePage(): Promise<void> {
       sendRequest({ type: "GET_LOCAL_PAGE_RULES", url }).catch(() => ({
         css: "",
         hideSelectors: [],
-        moduleIds: []
+        moduleIds: [],
+        nextScheduleCheckAt: undefined
       }))
     ]);
     if (generation !== evaluationGeneration || topLevelUrl !== window.location.href) return;
     configureLocale(settings.locale);
-    contentFilters.apply(module?.contentSettings(settings) ?? settings.contentFilters, url);
-    localPageRules.apply(localRules);
+    contentFilters.apply(
+      settings.enabled
+        ? (module?.contentSettings(settings) ?? settings.contentFilters)
+        : { ...settings.contentFilters, enabled: false },
+      url
+    );
+    localPageRules.apply(
+      settings.enabled ? localRules : { css: "", hideSelectors: [], moduleIds: [] }
+    );
+    syncFilterScheduleTimer(settings.enabled ? localRules.nextScheduleCheckAt : undefined);
     if (!decision.blocked) {
       removeBlockPage();
       if (decision.needsReminder && decision.activePeriodId) {
@@ -256,19 +365,22 @@ async function evaluatePage(): Promise<void> {
       }
       if (
         decision.flowContinuationKind === "video-end" &&
+        decision.flowGrantId &&
         decision.targetId &&
         decision.activePeriodId
       ) {
         monitorVideoEnd(
-          `focus:${decision.targetId}:${decision.activePeriodId}`,
+          `focus:${decision.targetId}:${decision.activePeriodId}:${decision.flowGrantId}`,
           undefined,
           async () => {
-            await sendRequest({
+            const stopped = await sendRequest({
               type: "STOP_PERIOD_FLOW",
               url: window.location.href,
               targetId: decision.targetId as string,
-              periodId: decision.activePeriodId as string
+              periodId: decision.activePeriodId as string,
+              grantId: decision.flowGrantId as string
             });
+            if (!stopped.blocked) return;
             goToEnd({
               source: "focus",
               siteId: decision.siteId,
@@ -282,12 +394,18 @@ async function evaluatePage(): Promise<void> {
       return;
     }
     await whenDocumentReady();
-    if (topLevelUrl !== window.location.href) return;
+    if (
+      generation !== evaluationGeneration ||
+      topLevelUrl !== window.location.href ||
+      pauseFrameCleanup
+    )
+      return;
     if (decision.needsVisitConfirmation && decision.siteId) {
       goToEnd({
         source: "confirmation",
         siteId: decision.siteId,
         targetId: decision.targetId,
+        periodId: decision.activePeriodId,
         reason: "visit-confirmation",
         returnUrl: url,
         waitSeconds: decision.visitConfirmationWaitSeconds
@@ -295,7 +413,7 @@ async function evaluatePage(): Promise<void> {
       return;
     }
     if (decision.needsFlowChoice && decision.targetId && decision.activePeriodId) {
-      const flowKey = `focus:${decision.targetId}:${decision.activePeriodId}`;
+      const flowKey = `focus:${decision.targetId}:${decision.activePeriodId}:${decision.flowGrantId}`;
       if (document.getElementById(ROOT_ID)?.dataset.flowKey === flowKey) {
         return;
       }
@@ -318,153 +436,146 @@ async function evaluatePage(): Promise<void> {
 }
 
 function renderPlanFlowChoice(decision: PlanNavigationDecision): void {
-  if (!decision.itemId) return;
-  renderFlowChoice(`plan:${decision.itemId}`, async (continuation, selectedVideo) => {
-    const result = await sendRequest({
-      type: "CONTINUE_PLAN_FLOW",
-      itemId: decision.itemId as string,
-      continuation,
-      url: window.location.href
-    });
-    if (result.continuationKind === "video-end") {
-      monitorVideoEnd(`plan:${decision.itemId}`, selectedVideo, async () => {
-        await sendRequest({
-          type: "STOP_PLAN_FLOW",
-          itemId: decision.itemId as string,
-          reason: "video-ended",
-          url: window.location.href
-        });
-        goToEnd({ source: "plan", itemId: decision.itemId, reason: "expired" });
-      });
-    }
-    removeBlockPage();
-    void initializeContent();
+  showPauseFrame({ source: "plan", itemId: decision.itemId, reason: "expired" });
+}
+function renderFocusFlowChoice(decision: PageDecision, url: string): void {
+  showPauseFrame({
+    source: "focus",
+    siteId: decision.siteId,
+    targetId: decision.targetId,
+    periodId: decision.activePeriodId,
+    reason: decision.reason,
+    returnUrl: url
   });
 }
-
-function renderFocusFlowChoice(decision: PageDecision, url: string): void {
-  if (!decision.targetId || !decision.activePeriodId) return;
-  renderFlowChoice(
-    `focus:${decision.targetId}:${decision.activePeriodId}`,
-    async (continuation, selectedVideo) => {
-      const next = await sendRequest({
-        type: "GRANT_PERIOD_FLOW",
-        url,
-        targetId: decision.targetId as string,
-        periodId: decision.activePeriodId as string,
-        continuation
-      });
-      if (next.flowContinuationKind === "video-end") {
-        monitorVideoEnd(
-          `focus:${decision.targetId}:${decision.activePeriodId}`,
-          selectedVideo,
-          async () => {
-            await sendRequest({
-              type: "STOP_PERIOD_FLOW",
-              url: window.location.href,
-              targetId: decision.targetId as string,
-              periodId: decision.activePeriodId as string
-            });
-            goToEnd({
-              source: "focus",
-              siteId: decision.siteId,
-              targetId: decision.targetId,
-              periodId: decision.activePeriodId,
-              reason: "period-limit"
-            });
-          }
-        );
-      }
-      removeBlockPage();
-    }
-  );
-}
-
-function renderFlowChoice(
-  flowKey: string,
-  onContinue: (
-    continuation: { kind: "minutes"; minutes: number } | { kind: "video-end" },
-    selectedVideo?: HTMLVideoElement
-  ) => Promise<void>
-): void {
+let pauseFrameCleanup: (() => void) | undefined;
+function showPauseFrame(context: EndContext): void {
+  const key = `${context.source}:${context.itemId ?? context.periodId}`;
+  if (document.getElementById(ROOT_ID)?.dataset.flowKey === key) return;
   removeBlockPage();
+  clearPlanDeadline();
+  evaluationGeneration++;
+  planCheckGeneration++;
+  const pausedUrl = window.location.href;
+  const channel = crypto.randomUUID();
   const activeMedia = [...document.querySelectorAll<HTMLMediaElement>("video, audio")].filter(
     (media) => !media.paused && !media.ended
   );
-  const selectedVideo = selectPrimaryVideo(
+  const video = selectPrimaryVideo(
     activeMedia.filter((media): media is HTMLVideoElement => media instanceof HTMLVideoElement)
   );
+  if (contentStarted) void sendSessionUpdate("stop");
+  contentStarted = false;
   pauseMedia(document);
   const host = document.createElement("div");
   host.id = ROOT_ID;
-  host.dataset.flowKey = flowKey;
-  Object.assign(host.style, {
-    position: "fixed",
-    inset: "0",
-    zIndex: "2147483647"
+  host.dataset.flowKey = key;
+  Object.assign(host.style, { position: "fixed", inset: "0", zIndex: "2147483647" });
+  const frame = document.createElement("iframe");
+  const query = new URLSearchParams({
+    source: context.source,
+    reason: context.reason ?? "",
+    returnUrl: window.location.href,
+    video: video ? "1" : "0",
+    channel
   });
-  const shadow = host.attachShadow({ mode: "open" });
-  const backdrop = element("main", "backdrop");
-  const card = element("section", "card");
-  card.setAttribute("role", "dialog");
-  card.setAttribute("aria-modal", "true");
-  const title = element("h1", "", t("end.flowTitle"));
-  const message = element("p", "message", t("end.flowDescription"));
-  const minutes = document.createElement("select");
-  minutes.setAttribute("aria-label", t("end.extensionDuration"));
-  for (let value = 1; value <= 15; value += 1) {
-    const option = document.createElement("option");
-    option.value = String(value);
-    option.textContent = t("end.minuteOption", { minutes: value });
-    if (value === 5) option.selected = true;
-    minutes.append(option);
-  }
-  const duration = element("label", "flow-duration");
-  duration.append(element("span", "", t("end.extendPrefix")), minutes);
-  const continueButton = element("button", "primary", t("end.continue"));
-  continueButton.type = "button";
-  const actions = element("div", "actions");
-  actions.append(duration, continueButton);
-  const status = element("div", "status");
-  status.setAttribute("role", "status");
-  if (selectedVideo) {
-    const videoButton = element("button", "", t("end.untilVideoEnd"));
-    videoButton.type = "button";
-    videoButton.addEventListener("click", () => {
-      void run({ kind: "video-end" }, videoButton);
-    });
-    actions.append(videoButton);
-  }
-  continueButton.addEventListener("click", () => {
-    void run({ kind: "minutes", minutes: Number(minutes.value) }, continueButton);
-  });
-  card.append(element("div", "mark", "H"), title, message, actions, status);
-  backdrop.append(card);
-  const style = document.createElement("style");
-  style.textContent = BLOCK_PAGE_CSS;
-  shadow.append(style, backdrop);
+  for (const name of ["siteId", "targetId", "periodId", "itemId"] as const)
+    if (context[name]) query.set(name, context[name] as string);
+  frame.src = `${runtimeGetURL("end.html")}#${query}`;
+  frame.title = t("pause.title");
+  Object.assign(frame.style, { width: "100%", height: "100%", border: "0", background: "white" });
+  host.attachShadow({ mode: "closed" }).append(frame);
   document.documentElement.append(host);
   setPageInert(true);
   startMediaGuard(host);
-  continueButton.focus();
-
-  async function run(
-    continuation: { kind: "minutes"; minutes: number } | { kind: "video-end" },
-    button: HTMLButtonElement
-  ): Promise<void> {
-    button.disabled = true;
-    status.textContent = "";
+  let resuming = false;
+  pauseFrameResume = async (requestedChannel) => {
+    if (
+      requestedChannel !== channel ||
+      !host.isConnected ||
+      pausedUrl !== window.location.href ||
+      resuming
+    )
+      return false;
+    resuming = true;
     try {
-      await onContinue(continuation, continuation.kind === "video-end" ? selectedVideo : undefined);
-      for (const media of activeMedia) {
-        if (!media.isConnected || media.ended || !media.paused) continue;
-        void media.play().catch(() => undefined);
+      const decision =
+        context.source === "plan"
+          ? await sendRequest({ type: "GET_PLAN_NAVIGATION_DECISION", url: window.location.href })
+          : await sendRequest({
+              type: "GET_PAGE_DECISION",
+              url: pausedUrl,
+              targetId: context.targetId
+            });
+      if (
+        ("allowed" in decision && !decision.allowed) ||
+        ("blocked" in decision && decision.blocked)
+      )
+        return false;
+      if (context.source === "focus") {
+        const planDecision = await sendRequest({
+          type: "GET_PLAN_NAVIGATION_DECISION",
+          url: pausedUrl
+        });
+        if (!planDecision.allowed) return false;
       }
-    } catch {
-      status.textContent = t("common.actionFailed");
-      button.disabled = false;
+      if (!host.isConnected || pausedUrl !== window.location.href) return false;
+      const resumeVideo =
+        video?.isConnected && !video.ended
+          ? video
+          : selectPrimaryVideo(
+              [...document.querySelectorAll<HTMLVideoElement>("video")].filter(
+                (candidate) => !candidate.ended && candidate.readyState > 0
+              )
+            );
+      if (decision.flowContinuationKind === "video-end" && !resumeVideo) return false;
+      if (context.source === "plan")
+        sessionStorage.setItem(`hourleaf-plan-pause:${context.itemId}`, "1");
+      removeBlockPage();
+      if (decision.flowContinuationKind === "video-end" && resumeVideo) {
+        const flowKey =
+          "blocked" in decision
+            ? `focus:${decision.targetId}:${decision.activePeriodId}:${decision.flowGrantId}`
+            : `plan:${context.itemId}`;
+        monitorVideoEnd(flowKey, resumeVideo, async () => {
+          if (context.source === "plan")
+            await sendRequest({
+              type: "STOP_PLAN_FLOW",
+              itemId: context.itemId as string,
+              url: window.location.href,
+              reason: "video-ended"
+            });
+          else if ("blocked" in decision && decision.flowGrantId) {
+            const stopped = await sendRequest({
+              type: "STOP_PERIOD_FLOW",
+              targetId: context.targetId as string,
+              periodId: context.periodId as string,
+              url: window.location.href,
+              grantId: decision.flowGrantId
+            });
+            if (!stopped.blocked) return;
+          } else return;
+          if (context.source === "plan") showPauseFrame(context);
+          else goToEnd(context);
+        });
+      }
+      if (
+        decision.flowContinuationKind === "video-end" &&
+        resumeVideo &&
+        !activeMedia.includes(resumeVideo)
+      )
+        void resumeVideo.play().catch(() => undefined);
+      for (const media of activeMedia)
+        if (media.isConnected && !media.ended) void media.play().catch(() => undefined);
+      void initializeContent();
+      return true;
+    } finally {
+      resuming = false;
     }
-  }
+  };
+  pauseFrameCleanup = () => {
+    pauseFrameResume = undefined;
+  };
 }
 
 interface EndContext {
@@ -494,7 +605,8 @@ function goToEnd(context: EndContext): void {
   // Returning through a verified source URL is more reliable than restoring a
   // BFCache entry with history.back(). In particular, it avoids replaying a
   // stale content-script lifecycle after a group unlock.
-  const returnUrl = context.returnUrl ?? (context.source === "focus" ? window.location.href : undefined);
+  const returnUrl =
+    context.returnUrl ?? (context.source === "focus" ? window.location.href : undefined);
   if (returnUrl) params.set("returnUrl", returnUrl);
   if (context.waitSeconds !== undefined) params.set("waitSeconds", String(context.waitSeconds));
   window.location.assign(`${runtimeGetURL("end.html")}#${params.toString()}`);
@@ -721,6 +833,8 @@ export function renderBlockPage(decision: PageDecision, url: string): void {
 }
 
 function removeBlockPage(): void {
+  pauseFrameCleanup?.();
+  pauseFrameCleanup = undefined;
   mediaObserver?.disconnect();
   mediaObserver = null;
   const host = document.getElementById(ROOT_ID);

@@ -1,9 +1,9 @@
 // ==UserScript==
 // @format       hourleaf.local-module
 // @id           hourleaf.local.xiaohongshu-focus
-// @name         小红书专注模块
+// @name         小红书
 // @author       Hourleaf contributors
-// @version      1.0.0
+// @version      1.0.1
 // @description  为首页推荐过滤维护不含页面内容的路由标记。
 // @match        https://www.xiaohongshu.com/*
 // ==/UserScript==

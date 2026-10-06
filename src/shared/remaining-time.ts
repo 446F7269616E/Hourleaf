@@ -1,3 +1,4 @@
+import { resolveGroupQuota } from "./group-quota";
 import type {
   FocusSettings,
   PageDecision,
@@ -121,17 +122,11 @@ export function resolveGroupedTargetAllowance(
     return null;
   }
 
-  const groupCount = Math.max(1, period.groupCount);
-  const groupSeconds = allowance.limitSeconds / groupCount;
-  const inferredGroup = Math.min(
-    groupCount,
-    Math.floor(allowance.allowanceUsedSeconds / groupSeconds) + 1
-  );
-  const currentGroup = clampGroupIndex(decisionGroupIndex ?? inferredGroup, groupCount);
-  const currentGroupRemainingSeconds = Math.max(
-    0,
-    currentGroup * groupSeconds - allowance.allowanceUsedSeconds
-  );
+  const quota = resolveGroupQuota(period, allowance.allowanceUsedSeconds);
+  const groupCount = quota.groupCount;
+  const currentGroup = clampGroupIndex(decisionGroupIndex ?? quota.currentGroup, groupCount);
+  const currentGroupRemainingSeconds =
+    Math.max(0, quota.boundaryMs(currentGroup) - quota.usedMs) / 1000;
   const daily = resolveTargetDailyAllowance(target, usage);
   return {
     ...allowance,

@@ -125,7 +125,7 @@
   width: 100%;
 }
 
-.plan-section + .plan-section {
+.plan-workspace > .plan-section--completed {
   padding-top: var(--space-6);
   margin-top: var(--space-6);
   border-top: 1px solid var(--color-border);
@@ -376,38 +376,6 @@
   border: 1px solid color-mix(in srgb, var(--color-brand) 24%, var(--color-border));
   border-radius: var(--radius-md);
   font-size: 12px;
-}
-
-summary.plan-mindmap__branch-title {
-  list-style: none;
-  cursor: pointer;
-  user-select: none;
-}
-
-summary.plan-mindmap__branch-title::-webkit-details-marker {
-  display: none;
-}
-
-summary.plan-mindmap__branch-title::after {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-left: 8px;
-  content: "";
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: translateY(-1px) rotate(45deg);
-  transition: transform var(--duration-fast) var(--ease-out);
-}
-
-.plan-mindmap__branch[open] > summary.plan-mindmap__branch-title::after {
-  transform: translateY(1px) rotate(225deg);
-}
-
-.plan-mindmap__branch--complete .plan-mindmap__branch-title {
-  color: var(--color-success);
-  background: var(--color-success-soft);
-  border-color: color-mix(in srgb, var(--color-success) 26%, var(--color-border));
 }
 
 .plan-mindmap__track {
@@ -925,8 +893,7 @@ summary.plan-mindmap__branch-title::after {
     border-color: color-mix(in srgb, var(--color-accent) 38%, var(--color-border));
   }
 
-  .plan-section--completed > summary:hover h2,
-  summary.plan-mindmap__branch-title:hover {
+  .plan-section--completed > summary:hover h2 {
     color: var(--color-accent);
   }
 }
@@ -1064,8 +1031,7 @@ summary.plan-mindmap__branch-title::after {
   .plan-item,
   .plan-item__check,
   .plan-input,
-  .plan-section--completed > summary h2::before,
-  summary.plan-mindmap__branch-title::after {
+  .plan-section--completed > summary h2::before {
     transition-duration: 0.01ms;
   }
 

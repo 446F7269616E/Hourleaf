@@ -13,11 +13,17 @@
   --color-text-faint: #8f93a5;
   --color-border: #e4e6ee;
   --color-border-strong: #cfd2de;
-  --color-brand: #2f8065;
-  --color-brand-strong: #1d654f;
-  --color-brand-soft: #eaf6f1;
-  --color-accent: #4e78e8;
-  --color-accent-soft: #edf2ff;
+  --palette-verdant: #00824c;
+  --palette-ocean: #006fe6;
+  --palette-violet: #7435e8;
+  --palette-amber: #b66500;
+  --palette-rose: #d81b60;
+  --color-on-brand: #ffffff;
+  --color-brand: var(--palette-verdant);
+  --color-brand-strong: #006539;
+  --color-brand-soft: #ddfaec;
+  --color-accent: #2563eb;
+  --color-accent-soft: #e8efff;
   --color-success: #188b65;
   --color-success-soft: #e9f8f2;
   --color-warning: #ad6712;
@@ -46,40 +52,41 @@
 }
 
 :root[data-theme="ocean"] {
-  --color-brand: #277a9b;
-  --color-brand-strong: #185b76;
-  --color-brand-soft: #e8f5fa;
-  --color-accent: #4569d8;
-  --color-accent-soft: #edf0ff;
+  --color-brand: var(--palette-ocean);
+  --color-brand-strong: #0055b8;
+  --color-brand-soft: #e3f1ff;
+  --color-accent: #4f46e5;
+  --color-accent-soft: #eeebff;
 }
 
 :root[data-theme="violet"] {
-  --color-brand: #7654b8;
-  --color-brand-strong: #57358f;
-  --color-brand-soft: #f2ecfb;
-  --color-accent: #b05089;
-  --color-accent-soft: #fbedf5;
+  --color-brand: var(--palette-violet);
+  --color-brand-strong: #5821bd;
+  --color-brand-soft: #f1e7ff;
+  --color-accent: #d81b7c;
+  --color-accent-soft: #ffe4f2;
 }
 
 :root[data-theme="amber"] {
-  --color-brand: #a26417;
-  --color-brand-strong: #77480e;
-  --color-brand-soft: #fff4df;
-  --color-accent: #287f73;
-  --color-accent-soft: #e8f7f3;
+  --color-brand: var(--palette-amber);
+  --color-brand-strong: #8c4b00;
+  --color-brand-soft: #fff1cc;
+  --color-accent: #008779;
+  --color-accent-soft: #ddfaf4;
 }
 
 :root[data-theme="rose"] {
-  --color-brand: #ae5069;
-  --color-brand-strong: #83354b;
-  --color-brand-soft: #fcedf1;
-  --color-accent: #6964ba;
-  --color-accent-soft: #efeffd;
+  --color-brand: var(--palette-rose);
+  --color-brand-strong: #ad1249;
+  --color-brand-soft: #ffe4ed;
+  --color-accent: #6d3be8;
+  --color-accent-soft: #eee7ff;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
+    --color-on-brand: #12141b;
     --color-canvas: #12141b;
     --color-surface: #1a1d27;
     --color-surface-raised: #20232f;
@@ -89,11 +96,11 @@
     --color-text-faint: #8e92a3;
     --color-border: #303442;
     --color-border-strong: #454a5a;
-    --color-brand: #70c9a7;
-    --color-brand-strong: #95dfc2;
-    --color-brand-soft: #17392f;
-    --color-accent: #8faaff;
-    --color-accent-soft: #222c4c;
+    --color-brand: #20df91;
+    --color-brand-strong: #6af4ba;
+    --color-brand-soft: #073c2a;
+    --color-accent: #789bff;
+    --color-accent-soft: #182a55;
     --color-success: #66d2aa;
     --color-success-soft: #18372e;
     --color-warning: #f2b866;
@@ -106,35 +113,35 @@
   }
 
   :root[data-theme="ocean"] {
-    --color-brand: #71c8e8;
-    --color-brand-strong: #a0e1f4;
-    --color-brand-soft: #173843;
-    --color-accent: #9caeff;
-    --color-accent-soft: #242d55;
+    --color-brand: #36b5ff;
+    --color-brand-strong: #8bd5ff;
+    --color-brand-soft: #082f50;
+    --color-accent: #a29aff;
+    --color-accent-soft: #292057;
   }
 
   :root[data-theme="violet"] {
-    --color-brand: #c6a2f4;
-    --color-brand-strong: #ddc2ff;
-    --color-brand-soft: #372652;
-    --color-accent: #f1a3c9;
-    --color-accent-soft: #48283b;
+    --color-brand: #b581ff;
+    --color-brand-strong: #dbc0ff;
+    --color-brand-soft: #352052;
+    --color-accent: #ff70b7;
+    --color-accent-soft: #501b3a;
   }
 
   :root[data-theme="amber"] {
-    --color-brand: #f1be70;
-    --color-brand-strong: #ffd59b;
-    --color-brand-soft: #44331e;
-    --color-accent: #72d1bd;
-    --color-accent-soft: #193b35;
+    --color-brand: #ffb92e;
+    --color-brand-strong: #ffdb85;
+    --color-brand-soft: #482e08;
+    --color-accent: #2de1be;
+    --color-accent-soft: #083c32;
   }
 
   :root[data-theme="rose"] {
-    --color-brand: #f29aae;
-    --color-brand-strong: #ffc1ce;
-    --color-brand-soft: #4a2933;
-    --color-accent: #b8b3ff;
-    --color-accent-soft: #312f59;
+    --color-brand: #ff628f;
+    --color-brand-strong: #ffacc5;
+    --color-brand-soft: #4e1930;
+    --color-accent: #b597ff;
+    --color-accent-soft: #342050;
   }
 }
 

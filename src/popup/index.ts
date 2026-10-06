@@ -1,3 +1,5 @@
+import { resolveGroupQuota } from "../shared/group-quota";
+import { formatLocalDate } from "../shared/analytics";
 import {
   storageAddChangeListener,
   tabsAddActivatedListener,
@@ -14,6 +16,7 @@ import {
 import { STORAGE_KEYS } from "../shared/storage-keys";
 import { createBrandMark } from "../ui/brand-mark";
 import { siteMatchesUrl } from "../shared/site-scope";
+import { DEBUG_BUILD } from "../debug/flags";
 import { applyTheme } from "../ui/theme";
 import type {
   FocusSettings,
@@ -55,6 +58,7 @@ const app = assertAppRoot();
 let currentData: PopupData | null = null;
 let refreshSequence = 0;
 let refreshScheduled = false;
+let debugToolsExpanded = false;
 
 configureLocale("system");
 void loadPopup();
@@ -123,7 +127,11 @@ async function refreshLiveSummary(): Promise<void> {
 
 async function fetchPopupData(): Promise<PopupData> {
   const [settings, usage, trackingStatus, tabs, planState] = await Promise.all([
-    sendRequest({ type: "GET_SETTINGS" }),
+    sendRequest({ type: "GET_SETTINGS" }).then((settings) => {
+      applyTheme(settings.theme);
+      configureLocale(settings.locale);
+      return settings;
+    }),
     sendRequest({ type: "GET_USAGE", period: "day" }),
     sendRequest({ type: "GET_TRACKING_STATUS" }),
     tabsQuery({ active: true, currentWindow: true }),
@@ -154,19 +162,56 @@ function advanceLiveUsage(): void {
   const targetId = data.trackingStatus.targetId;
   if (!targetId || data.pageDecision?.targetId !== targetId) return;
   const activePeriodId = data.pageDecision.activePeriodId;
+  if (formatLocalDate(new Date()) !== data.usage.startDate) {
+    scheduleRefresh();
+    return;
+  }
+  const period = data.settings.targets[targetId]?.timePeriods.find(
+    (item) => item.id === activePeriodId
+  );
+  const isFlow = data.pageDecision.reason === "flow-extension";
+  let increment = 1;
+  if (
+    isFlow &&
+    data.pageDecision.flowExpiresAt !== undefined &&
+    data.pageDecision.flowExpiresAt <= Date.now()
+  ) {
+    scheduleRefresh();
+    return;
+  }
+  if (
+    period &&
+    !isFlow &&
+    data.pageDecision.reason !== "domain-allow" &&
+    !data.pageDecision.needsReminder
+  ) {
+    const quota = resolveGroupQuota(
+      period,
+      data.usage.byPeriod[period.id] ?? 0,
+      data.pageDecision.groupIndex
+    );
+    increment = Math.min(increment, quota.availableMs / 1000);
+    if (increment === 0) {
+      scheduleRefresh();
+      return;
+    }
+  }
   const usage: UsageSummary = {
     ...data.usage,
-    totalSeconds: data.usage.totalSeconds + 1,
+    totalSeconds: data.usage.totalSeconds + increment,
     byTarget: {
       ...data.usage.byTarget,
-      [targetId]: (data.usage.byTarget[targetId] ?? 0) + 1
+      [targetId]: (data.usage.byTarget[targetId] ?? 0) + increment
     },
-    byPeriod: activePeriodId
-      ? {
-          ...data.usage.byPeriod,
-          [activePeriodId]: (data.usage.byPeriod[activePeriodId] ?? 0) + 1
-        }
-      : data.usage.byPeriod
+    byPeriod:
+      activePeriodId &&
+      data.pageDecision.reason !== "domain-allow" &&
+      !(data.pageDecision.reason === "flow-extension" && !data.pageDecision.flowConsumesQuota)
+        ? {
+            ...data.usage.byPeriod,
+            [activePeriodId]: (data.usage.byPeriod[activePeriodId] ?? 0) + increment
+          }
+        : data.usage.byPeriod
   };
   renderPopup({ ...data, usage });
 }
@@ -249,7 +294,11 @@ function renderPopup(data: PopupData): void {
 function createPopupContent(data: PopupData, summary: CurrentSiteSummary): HTMLElement {
   return element("div", {
     className: "popup-content",
-    children: [createCurrentSiteCard(data, summary), createPlanPreview(data.planState)]
+    children: [
+      createCurrentSiteCard(data, summary),
+      createPlanPreview(data.planState),
+      ...(DEBUG_BUILD ? [createDebugTools(data)] : [])
+    ]
   });
 }
 
@@ -323,10 +372,7 @@ function createCurrentSiteCard(data: PopupData, summary: CurrentSiteSummary): HT
       ? summary.hostname
       : t("popup.unconfiguredScope");
   const status = describeCurrentStatus(data, summary);
-  const remaining = formatRemaining(
-    configured ? summary.remainingSeconds : null,
-    configured
-  );
+  const remaining = formatRemaining(configured ? summary.remainingSeconds : null, configured);
   const metrics = hasMultipleGroups
     ? [
         createMetric(
@@ -555,4 +601,55 @@ function parseHttpUrl(value: string | null): URL | null {
   } catch {
     return null;
   }
+}
+
+function createDebugTools(data: PopupData): HTMLElement {
+  const feedback = element("p", { attrs: { role: "status" } });
+  const definitions = [
+    ["preview", "pause.debugPreview"],
+    ["consume-group", "pause.debugGroup"],
+    ["consume-period", "pause.debugPeriod"],
+    ["setup", "pause.debugSetup"]
+  ] as const;
+  const details = element("details", {
+    className: "card popup-debug-tools",
+    children: [
+      element("summary", { text: "Debug" }),
+      element("div", {
+        className: "popup-debug-tools__content",
+        children: [
+          ...definitions.map(([action, label]) => {
+            const button = element("button", {
+              className: "btn",
+              text: t(label),
+              attrs: { type: "button" }
+            });
+            button.onclick = () =>
+              void (async () => {
+                button.disabled = true;
+                try {
+                  const result = await sendRequest({
+                    type: "DEBUG_ACTION",
+                    action,
+                    ...(data.pageUrl && parseHttpUrl(data.pageUrl) ? { url: data.pageUrl } : {})
+                  });
+                  if (result.url) window.open(result.url, "_blank");
+                  scheduleRefresh();
+                } catch (error) {
+                  feedback.textContent = describeError(error);
+                  button.disabled = false;
+                }
+              })();
+            return button;
+          }),
+          feedback
+        ]
+      })
+    ]
+  });
+  details.open = debugToolsExpanded;
+  details.ontoggle = () => {
+    if (details.isConnected) debugToolsExpanded = details.open;
+  };
+  return details;
 }

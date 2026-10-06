@@ -216,11 +216,15 @@ export type EndPageView = "dashboard" | "message" | "minimal";
 export type GroupUnlockMethod = "none" | "wait" | "math" | "password";
 
 export interface EndPageSettings {
+  repeatConfirmationInNewTabs: boolean;
   view: EndPageView;
   motivationalMessage: string;
+  flowConsumesNextGroup: boolean;
   groupUnlock: {
     method: GroupUnlockMethod;
-    waitMinutes: number;
+    waitMinutes: number; // Legacy backup compatibility.
+    waitSeconds: number;
+    mathDifficulty: "equation" | "calculus";
     /** SHA-256 verifier; an empty value means that no password has been configured. */
     passwordVerifier: string;
   };
@@ -274,6 +278,11 @@ export interface FocusSettings {
   /** The accent palette used by full-page extension screens. */
   theme: UiTheme;
   endPage: EndPageSettings;
+  disableProtection: {
+    method: "none" | "wait" | "password";
+    waitMinutes: number;
+    passwordVerifier: string;
+  };
   sites: Record<SiteId, ManagedSite>;
   targets: Record<TargetId, SiteTargetSettings>;
   /** User-authored, reusable timed-period templates. */
@@ -300,6 +309,8 @@ export type DeepPartial<T> = T extends readonly (infer U)[]
 
 export interface DailyUsage {
   date: string;
+  /** Actual seconds by local clock hour (0–23), then target. Missing in older data. */
+  byHour?: Record<string, Record<TargetId, number>>;
   byTarget: Record<TargetId, number>;
   /** Independent usage totals keyed by stable TimePeriodSettings.id. */
   byPeriod: Record<string, number>;
@@ -342,8 +353,13 @@ export interface PeriodRuntimeEntry {
   periodId: string;
   unlockedGroups: number;
   waitStartedAt?: number;
-  /** A flow continuation can be granted only once per period and local day. */
+  /** A flow continuation can be granted only once per unlocked group and local day. */
   flowUsed?: boolean;
+  lenientAcknowledged?: boolean;
+  mathSeed?: number;
+  flowConsumesQuota?: boolean;
+  flowStartedAt?: number;
+  flowGrantId?: string;
   /** Present only for bounded minute continuations; video-end has no timer deadline. */
   flowExpiresAt?: number;
   flowContinuationKind?: "minutes" | "video-end";
@@ -368,7 +384,12 @@ export interface PeriodRuntimeStatus {
   canUnlock: boolean;
   waitStartedAt?: number;
   waitEndsAt?: number;
-  mathChallenge?: { left: number; right: number };
+  mathChallenge?: { prompt: string };
+  remainingSeconds: number | null;
+  remainingGroups: number;
+  extraSeconds: number;
+  canFlow: boolean;
+  canContinueLenient: boolean;
   passwordConfigured?: boolean;
 }
 
@@ -377,6 +398,7 @@ export type PlanItemSource = (typeof PLAN_ITEM_SOURCES)[number];
 export type PlanItemStatus = "pending" | "completed";
 
 export interface PlanItem {
+  goal?: string;
   /** Extension-generated stable identifier. */
   id: string;
   /** @deprecated Opaque legacy identity retained for migrated Bilibili queues. */
@@ -397,6 +419,7 @@ export interface PlanItem {
 }
 
 interface PlanItemInputMetadata {
+  goal?: string;
   title?: string;
   source?: PlanItemSource;
 }
@@ -438,6 +461,8 @@ export interface PlanWatchGrant {
 
 export interface PlanAccessStore {
   schemaVersion: 1;
+  /** Expiry awaiting acknowledgement by the pause page; never authorizes access. */
+  endedGrant?: PlanWatchGrant;
   activeGrant?: PlanWatchGrant;
 }
 
@@ -494,6 +519,8 @@ export interface PageDecision {
   needsReminder?: boolean;
   needsVisitConfirmation?: boolean;
   visitConfirmationWaitSeconds?: number;
+  flowGrantId?: string;
+  flowConsumesQuota?: boolean;
   flowContinuationKind?: "minutes" | "video-end";
   flowExpiresAt?: number;
   temporaryAccessExpiresAt?: number;
