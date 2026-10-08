@@ -3,7 +3,7 @@
 // @id           hourleaf.local.bilibili-focus
 // @name         Bilibili
 // @author       Hourleaf contributors
-// @version      1.2.4
+// @version      1.2.5
 // @description  按 / 聚焦站内搜索；相关视频屏蔽生效时关闭片尾自动连播。
 // @match        https://www.bilibili.com/*
 // @match        https://search.bilibili.com/*

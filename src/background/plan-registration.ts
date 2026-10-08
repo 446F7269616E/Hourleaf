@@ -7,6 +7,7 @@ import {
 } from "../shared/browser";
 import { normalizePlanUrl } from "../shared/plan";
 import { PlanAccessRepository, PlanQueueRepository, SettingsRepository } from "../shared/storage";
+import { planVisits, type PlanVisitService } from "./plan-visit";
 
 export const PLAN_CONTENT_SCRIPT_REGISTRATION_ID = "hourleaf-plan-active";
 
@@ -37,7 +38,8 @@ export class PlanContentRegistrationService {
     private readonly queue = new PlanQueueRepository(),
     private readonly access = new PlanAccessRepository(),
     private readonly runtime: PlanRegistrationRuntime = DEFAULT_RUNTIME,
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
+    private readonly visits: PlanVisitService = planVisits
   ) {}
 
   /** Verifies a direct user-granted origin before START_PLAN_ITEM can persist a grant. */
@@ -62,6 +64,12 @@ export class PlanContentRegistrationService {
         this.access.get()
       ]);
       const grant = access.activeGrant ?? access.endedGrant;
+      if (grant?.visitId && !(await this.visits.has(grant.visitId))) {
+        // Ownership can also be in transition while START replaces a grant.
+        // PlanService reconciles stale stored grants in its serialized reads.
+        await this.clearRegistration();
+        return;
+      }
       const item = grant
         ? queue.items.find(
             (candidate) => candidate.id === grant.itemId && candidate.url === grant.url
@@ -72,6 +80,8 @@ export class PlanContentRegistrationService {
         (grant.flowContinuationKind === "video-end" ||
           grant.expiresAt > this.now() ||
           (grant.completionMode === "flow" && grant.flowContinuationKind === undefined) ||
+          // Keep expired active grants observable until the owner receives its end notice.
+          access.activeGrant?.itemId === grant.itemId ||
           access.endedGrant?.itemId === grant.itemId)
       );
       if (

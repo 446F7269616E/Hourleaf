@@ -52,7 +52,7 @@ Hourleaf 的商店包只包含通用专注核心和本地模块导入器。扩�
 - `format`：必须为 `hourleaf.local-module`；`author` 必须是 1–100 个字符的非空文本。
 - `hideSelectors`：只生成 `display: none !important` 规则；这些选择器在模块启用期间始终生效，适合少量不可配置的基础规则。
 - `filterGroups`：可选的用户级屏蔽分组，最多 24 组且总选择器数仍受 128 条上限约束。`id` 必须是稳定的小写 kebab-case；`name`、`description` 用于屏蔽页显示，`selectors` 非空。分组默认开启，用户关闭的组 ID 随安装记录保存；模块更新新增组时默认开启，删除的组会从设置中清理。
-- `shadowRoots`：可选数组，最多 8 项，格式为 `{ "hostSelector": "#bewly", "mountEvent": "bewlyMounted" }`。宿主选择器遵循普通选择器的 300 字符限制；可选事件名只接受字母开头、最多 64 字符的字母/数字/下划线/冒号/连字符。核心仅将该模块自身的 CSS 和已启用分组规则同步到声明宿主的开放 Shadow DOM，不混入其他模块规则，不穿透关闭的根或 iframe。挂载事件只触发本地根发现，不读取事件数据或执行代码；未声明时仅处理宿主插入及已有页面状态刷新。旧清单默认不进入任何 Shadow DOM。
+- `shadowRoots`：可选数组，最多 8 项，格式为 `{ "hostSelector": "#site-root", "mountEvent": "siteMounted" }`。宿主选择器遵循普通选择器的 300 字符限制；可选事件名只接受字母开头、最多 64 字符的字母/数字/下划线/冒号/连字符。核心仅将该模块自身的 CSS 和已启用分组规则同步到声明宿主的开放 Shadow DOM，不混入其他模块规则，不穿透关闭的根或 iframe。挂载事件只触发本地根发现，不读取事件数据或执行代码；未声明时仅处理宿主插入及已有页面状态刷新。旧清单默认不进入任何 Shadow DOM。
 - `css` / `cssFiles`：内联 CSS 或同一次文件选择中按名称引用的本地 CSS；`@import` 和所有 `url()` 外部资源都会被拒绝。
 - `dnrRules`：为兼容 schema 可省略或保留空数组；任何非空规则都会被拒绝。浏览器 DNR 的 `initiatorDomains` 只能表达域名并会覆盖子域，无法兑现 Hourleaf 的精确协议、主机和端口来源契约。
 - `userScript` / `userScriptFiles`：仅通过 User Scripts API 注册。

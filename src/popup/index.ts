@@ -142,7 +142,7 @@ async function fetchPopupData(): Promise<PopupData> {
   const pageUrl = tabs[0]?.url ?? null;
   const httpUrl = parseHttpUrl(pageUrl);
   const pageDecision = httpUrl
-    ? await sendRequest({ type: "GET_PAGE_DECISION", url: httpUrl.href })
+    ? await sendRequest({ type: "GET_PAGE_DECISION", url: httpUrl.href, tabId: tabs[0]?.id })
     : null;
   return { settings, usage, trackingStatus, pageDecision, pageUrl, planState };
 }

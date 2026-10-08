@@ -12,7 +12,7 @@ import { createPauseLayout, createPauseNotes } from "../ui/pause-layout";
 import { createGroupProgress } from "../ui/group-progress";
 import { createScreenTimeSummary } from "../ui/screen-time-summary";
 import { siteMatchesUrl } from "../shared/site-scope";
-import { matchesPlanNavigation } from "../shared/plan-navigation";
+import { matchesPlanOrigin } from "../shared/plan-navigation";
 import { createSiteUsageSummary } from "../ui/site-usage-summary";
 
 const app = assertAppRoot();
@@ -185,7 +185,8 @@ async function renderPlan(card: HTMLElement, settings: FocusSettings): Promise<v
   const item = state.queue.items.find((candidate) => candidate.id === itemId);
   if (!item) throw new Error("Plan item unavailable");
   const returnUrl = params.get("returnUrl");
-  const validUrl = returnUrl && matchesPlanNavigation(item.url, returnUrl) ? returnUrl : item.url;
+  const validUrl = returnUrl && matchesPlanOrigin(item.url, returnUrl) ? returnUrl : item.url;
+  const tabId = (await tabsGetCurrent())?.id;
   const notes = createPauseNotes([
     item.goal?.trim() || settings.endPage.motivationalMessage.trim() || t("pause.planEncouragement")
   ]);
@@ -204,14 +205,18 @@ async function renderPlan(card: HTMLElement, settings: FocusSettings): Promise<v
     actions.append(
       action(t("end.confirmVisit"), async () => {
         if (!started) {
-          await sendRequest({ type: "START_PLAN_ITEM", id: item.id });
+          await sendRequest({ type: "START_PLAN_ITEM", id: item.id, tabId });
           started = true;
         }
         await resume(validUrl);
       })
     );
   } else {
-    const decision = await sendRequest({ type: "GET_PLAN_NAVIGATION_DECISION", url: validUrl });
+    const decision = await sendRequest({
+      type: "GET_PLAN_NAVIGATION_DECISION",
+      url: validUrl,
+      tabId
+    });
     if (decision.flowDecisionRequired)
       actions.append(
         createFlowControls(validUrl, async (continuation) => {
@@ -219,6 +224,7 @@ async function renderPlan(card: HTMLElement, settings: FocusSettings): Promise<v
             type: "CONTINUE_PLAN_FLOW",
             itemId: item.id,
             url: validUrl,
+            tabId,
             continuation
           });
         })
@@ -226,7 +232,7 @@ async function renderPlan(card: HTMLElement, settings: FocusSettings): Promise<v
     if (item.completionMode === "lenient")
       actions.append(
         action(t("pause.continueLenient"), async () => {
-          await sendRequest({ type: "ACKNOWLEDGE_PLAN_END", itemId: item.id });
+          await sendRequest({ type: "ACKNOWLEDGE_PLAN_END", itemId: item.id, tabId });
           await resume(validUrl);
         })
       );

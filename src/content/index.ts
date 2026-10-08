@@ -131,6 +131,8 @@ async function initializeContent(): Promise<void> {
 
 async function handleRouteChange(): Promise<void> {
   removeBlockPage();
+  flowEndedCleanup?.();
+  flowEndedCleanup = null;
   if (contentStarted) await sendSessionUpdate("stop");
   contentStarted = false;
   const outcome = await enforcePlanNavigation();
@@ -174,7 +176,11 @@ async function enforcePlanNavigation(): Promise<"allowed" | "redirected" | "unav
     if (decision.allowed) {
       if (decision.reason === "authorized" && decision.itemId)
         sessionStorage.removeItem(`hourleaf-plan-pause:${decision.itemId}`);
-      if (decision.reason === "expired" && decision.completionMode === "lenient") {
+      if (
+        decision.reason === "expired" &&
+        decision.itemId &&
+        decision.completionMode === "lenient"
+      ) {
         if (!sessionStorage.getItem(`hourleaf-plan-pause:${decision.itemId}`)) {
           await whenDocumentReady();
           showPauseFrame({ source: "plan", itemId: decision.itemId, reason: "expired" });
@@ -182,7 +188,7 @@ async function enforcePlanNavigation(): Promise<"allowed" | "redirected" | "unav
         }
       }
       if (decision.flowContinuationKind === "video-end" && decision.itemId) {
-        monitorVideoEnd(`plan:${decision.itemId}`, undefined, async () => {
+        monitorVideoEnd(`plan:${decision.itemId}:${decision.expiresAt}`, undefined, async () => {
           await sendRequest({
             type: "STOP_PLAN_FLOW",
             itemId: decision.itemId as string,
@@ -192,18 +198,26 @@ async function enforcePlanNavigation(): Promise<"allowed" | "redirected" | "unav
           showPauseFrame({ source: "plan", itemId: decision.itemId, reason: "expired" });
         });
       } else if (decision.pauseOnVideoEnd && decision.itemId) {
-        monitorVideoEnd(`plan-pause:${decision.itemId}`, undefined, async () => {
-          await sendRequest({
-            type: "STOP_PLAN_ACCESS",
-            itemId: decision.itemId as string,
-            reason: "video-ended",
-            url: window.location.href
-          });
-          showPauseFrame({ source: "plan", itemId: decision.itemId, reason: "video-ended" });
-        });
+        monitorVideoEnd(
+          `plan-pause:${decision.itemId}:${decision.expiresAt}`,
+          undefined,
+          async () => {
+            await sendRequest({
+              type: "STOP_PLAN_ACCESS",
+              itemId: decision.itemId as string,
+              reason: "video-ended",
+              url: window.location.href
+            });
+            showPauseFrame({ source: "plan", itemId: decision.itemId, reason: "video-ended" });
+          }
+        );
       }
       return "allowed";
     }
+    // A denied plan grant is not a global website restriction. Older background
+    // versions can still return not-authorized/not-video for ordinary visits.
+    // Only a concrete plan expiry owns a pause here; focus rules run afterwards.
+    if (decision.reason !== "expired" || !decision.itemId) return "allowed";
     if (contentStarted) await sendSessionUpdate("stop");
     contentStarted = false;
     if (
@@ -220,14 +234,8 @@ async function enforcePlanNavigation(): Promise<"allowed" | "redirected" | "unav
       return "redirected";
     }
     removeBlockPage();
-    if (decision.reason === "expired") {
-      await whenDocumentReady();
-      showPauseFrame({ source: "plan", itemId: decision.itemId, reason: "expired" });
-      return "redirected";
-    }
-    // No source URL is included: the extension page receives no arbitrary URL,
-    // query, search term, user id, or other browsing detail.
-    window.location.replace(runtimeGetURL("plan.html"));
+    await whenDocumentReady();
+    showPauseFrame({ source: "plan", itemId: decision.itemId, reason: "expired" });
     return "redirected";
   } catch {
     // A newly waking event page can miss the first document_start request.
@@ -536,7 +544,7 @@ function showPauseFrame(context: EndContext): void {
         const flowKey =
           "blocked" in decision
             ? `focus:${decision.targetId}:${decision.activePeriodId}:${decision.flowGrantId}`
-            : `plan:${context.itemId}`;
+            : `plan:${context.itemId}:${decision.expiresAt}`;
         monitorVideoEnd(flowKey, resumeVideo, async () => {
           if (context.source === "plan")
             await sendRequest({
@@ -620,9 +628,16 @@ function monitorVideoEnd(
   if ((monitorVideoEnd as unknown as { key?: string }).key === key) return;
   flowEndedCleanup?.();
   let monitoredVideo: HTMLVideoElement | undefined;
+  const monitoredUrl = window.location.href;
   const handler = () => {
     flowEndedCleanup?.();
     flowEndedCleanup = null;
+    // A site's old player can emit ended while replacing content during a route
+    // change. Rebind to the new page instead of ending its continuing plan.
+    if (window.location.href !== monitoredUrl) {
+      routeMayHaveChanged();
+      return;
+    }
     void onEnded().catch(() => undefined);
   };
   const attach = (video: HTMLVideoElement): boolean => {

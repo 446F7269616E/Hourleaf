@@ -514,6 +514,7 @@ export function normalizePlanAccessStore(value: unknown): PlanAccessStore {
     store.endedGrant = normalizePlanAccessStore({ activeGrant: value.endedGrant }).activeGrant;
   if (!isRecord(value.activeGrant)) return store;
   const grant = value.activeGrant;
+  if (grant.visitId !== undefined && !isPlanId(grant.visitId)) return store;
   const url = normalizePlanUrl(grant.url);
   if (
     !isPlanId(grant.itemId) ||
@@ -533,6 +534,7 @@ export function normalizePlanAccessStore(value: unknown): PlanAccessStore {
       ? grant.flowContinuationKind
       : undefined;
   store.activeGrant = {
+    ...(isPlanId(grant.visitId) ? { visitId: grant.visitId } : {}),
     itemId: grant.itemId,
     url: url.href,
     origin: url.origin,

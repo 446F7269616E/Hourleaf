@@ -4,7 +4,7 @@
   "id": "hourleaf.local.bilibili-focus",
   "name": "Bilibili",
   "author": "Hourleaf contributors",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "非官方本地模块：提供首页推荐、动态、相关视频与评论的可选过滤，并支持按斜杠键聚焦搜索。",
   "matches": [
     "https://www.bilibili.com/*",
@@ -60,8 +60,14 @@
     {
       "id": "comments",
       "name": "评论区",
-      "description": "隐藏视频、动态与文章页面中的评论区域。",
-      "selectors": ["#comment", ".comment-container", ".reply-warp", "bili-comments"]
+      "description": "隐藏视频、动态与文章页面中的评论区域，以及动态卡片下方的精选评论。",
+      "selectors": [
+        "#comment",
+        ".comment-container",
+        ".reply-warp",
+        "bili-comments",
+        ".bili-dyn-item__interaction .bili-dyn-interaction__item:has(> .bili-dyn-interaction__item__icon.comment):not(:has(.ad-report, [class*='commercial'], a[href*='cm.bilibili.com']))"
+      ]
     }
   ],
   "cssFiles": ["focus.css"],

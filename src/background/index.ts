@@ -34,6 +34,7 @@ import type {
   UsagePeriod
 } from "../shared/types";
 import { PlanService } from "./plan";
+import { planVisits, resolvePlanPageTabId } from "./plan-visit";
 import { PeriodUsageRecorder } from "./period-accounting";
 import { UsageTracker } from "./tracker";
 import {
@@ -95,10 +96,10 @@ const tracker = new UsageTracker(
   analytics,
   Date.now,
   api,
-  async (url, at, targetId) => {
+  async (url, at, targetId, tabId) => {
     const [focusDecision, planDecision, currentSettings] = await Promise.all([
       decideEffectiveFocus(url, new Date(at), targetId),
-      plan.decideNavigation(url),
+      plan.decideNavigation(url, undefined, tabId, { reconcile: false }),
       settings.get()
     ]);
     await reconcilePlanRegistration();
@@ -126,6 +127,8 @@ const tracker = new UsageTracker(
 // the same group or overlap a configuration replacement. Failures do not poison it.
 let stateChangeQueue: Promise<unknown> = Promise.resolve();
 const serializedMessages = new Set<AnyRequest["type"]>([
+  "GET_PAGE_DECISION",
+  "SESSION_UPDATE",
   "UPDATE_SETTINGS",
   "UPDATE_SITE_TARGET",
   "UPDATE_MANAGED_SITE",
@@ -196,6 +199,10 @@ if (api) {
   });
   api.tabs?.onRemoved?.addListener((tabId) => {
     void visitConfirmations.revokeTab(tabId).catch(() => undefined);
+    const pending = stateChangeQueue.then(() =>
+      withPlanRegistrationReconcile(plan.releaseTab(tabId))
+    );
+    stateChangeQueue = pending.catch(() => undefined);
   });
   storageAddChangeListener((changes, areaName) => {
     if (
@@ -305,6 +312,7 @@ export async function handleMessage(
       );
       const runtimeResults = await Promise.allSettled([
         visitConfirmations.clear(),
+        planVisits.clear(),
         localModules.initialize(),
         (async () => {
           await modulesReady;
@@ -376,7 +384,9 @@ export async function handleMessage(
       return resetData(false);
     case "ACKNOWLEDGE_PLAN_END":
       assertExtensionPageSender(sender);
-      await withPlanRegistrationReconcile(plan.acknowledgeEnd(message.itemId));
+      await withPlanRegistrationReconcile(
+        plan.acknowledgeEnd(message.itemId, await resolvePlanPageTabId(sender, message.tabId))
+      );
       return { acknowledged: true };
     case "ACKNOWLEDGE_LENIENT":
       assertExtensionPageSender(sender);
@@ -414,7 +424,11 @@ export async function handleMessage(
         settings.get()
       ]);
       const planDecision = currentSettings.planMode.enabled
-        ? await plan.decideNavigation(message.url)
+        ? await plan.decideNavigation(
+            message.url,
+            undefined,
+            sender?.tab?.id ?? (!isWebsiteRequest ? message.tabId : undefined)
+          )
         : undefined;
       const independentPlanAccess = isIndependentPlanAccess(currentSettings.planMode, planDecision);
       const planOverridesFocus = independentPlanAccess && decision.reason !== "domain-block";
@@ -767,8 +781,9 @@ export async function handleMessage(
       return withPlanRegistrationReconcile(plan.setCompleted(message.id, message.completed));
     case "START_PLAN_ITEM": {
       assertExtensionPageSender(sender);
+      const tabId = await resolvePlanPageTabId(sender, message.tabId);
       await planRegistration.prepareForStart(message.id);
-      return withPlanRegistrationReconcile(plan.start(message.id));
+      return withPlanRegistrationReconcile(plan.start(message.id, tabId));
     }
     case "GET_PLAN_NAVIGATION_DECISION": {
       if (sender?.tab && !isExtensionPageSender(sender)) {
@@ -778,7 +793,7 @@ export async function handleMessage(
         assertExtensionPageSender(sender);
       }
       const decision = await withPlanRegistrationReconcile(
-        plan.decideNavigation(message.url, message.bvid)
+        plan.decideNavigation(message.url, message.bvid, sender?.tab?.id ?? message.tabId)
       );
       if (message.url) refreshSenderToolbarBadge(sender, message.url, { planDecision: decision });
       return decision;
@@ -791,11 +806,20 @@ export async function handleMessage(
         assertExtensionPageSender(sender);
       }
       const result = await withPlanRegistrationReconcile(
-        plan.continueFlow(message.itemId, message.continuation, message.url)
+        plan.continueFlow(
+          message.itemId,
+          message.continuation,
+          message.url,
+          await resolvePlanPageTabId(sender, message.tabId)
+        )
       );
       if (message.url) {
         refreshSenderToolbarBadge(sender, message.url, {
-          planDecision: await plan.decideNavigation(message.url)
+          planDecision: await plan.decideNavigation(
+            message.url,
+            undefined,
+            sender?.tab?.id ?? message.tabId
+          )
         });
       }
       return result;
@@ -808,7 +832,7 @@ export async function handleMessage(
         assertExtensionPageSender(sender);
       }
       const result = await withPlanRegistrationReconcile(
-        plan.revokeFlow(message.itemId, message.url)
+        plan.revokeFlow(message.itemId, message.url, sender?.tab?.id)
       );
       if (message.url) refreshSenderToolbarBadge(sender, message.url);
       return result;
@@ -821,7 +845,7 @@ export async function handleMessage(
         assertExtensionPageSender(sender);
       }
       const result = await withPlanRegistrationReconcile(
-        plan.pauseAtVideoEnd(message.itemId, message.url)
+        plan.pauseAtVideoEnd(message.itemId, message.url, sender?.tab?.id)
       );
       if (message.url) refreshSenderToolbarBadge(sender, message.url);
       return result;
@@ -834,7 +858,7 @@ export async function handleMessage(
       const resolved = await assertAuthorizedConfiguredUrl(message.url, message.targetId, sender);
       const [currentSettings, planDecision] = await Promise.all([
         settings.get(),
-        plan.decideNavigation(message.url)
+        plan.decideNavigation(message.url, undefined, sender.tab.id)
       ]);
       const independentPlanAccess = isIndependentPlanAccess(currentSettings.planMode, planDecision);
       const confirmation = resolved.site.visitConfirmation;
@@ -1029,7 +1053,9 @@ async function refreshToolbarBadgeForTab(
       analytics.summarize("day", now),
       overrides.focusDecision ?? decideEffectiveFocus(parsed.href, now),
       overrides.planDecision ??
-        (currentSettings.planMode.enabled ? plan.decideNavigation(parsed.href) : undefined)
+        (currentSettings.planMode.enabled
+          ? plan.decideNavigation(parsed.href, undefined, tab.id, { reconcile: false })
+          : undefined)
     ]);
     const text = resolveToolbarBadgeText(currentSettings, usage, decision, {
       nowMs: now.getTime(),
@@ -1160,6 +1186,7 @@ async function resetData(clearAll: boolean): Promise<FocusSettings> {
       ...(clearAll ? [STORAGE_KEYS.planQueue, STORAGE_KEYS.modules, "hourleaf.plan.view"] : [])
     ]);
     await visitConfirmations.clear();
+    await planVisits.clear();
     if (clearAll)
       await storageRemove(
         getLocalStorageArea(),

@@ -477,7 +477,7 @@ const ZH_MESSAGES = {
     "计划期间默认开启已安装模块的全部内容屏蔽，并单独记住调整；结束计划后恢复平时的屏蔽设置。",
   "settings.planIndependentAccess": "计划访问独立计时",
   "settings.planIndependentAccessDescription":
-    "开启后，已开始的计划事项不受配置时段限制，也不计入配置用量。",
+    "开启后，计划标签页在同一网站内独立计时；翻页不重置时长，也不计入配置用量。",
   "settings.showRemainingMinutesOnIcon": "在插件图标显示剩余分钟",
   "settings.showRemainingMinutesOnIconDescription": "显示当前网站剩余分钟；无额度时清除数字。",
   "settings.endPage": "暂停与结束页面",
@@ -1137,7 +1137,7 @@ const EN_MESSAGES: Record<MessageKey, string> = {
     "Start with all installed content filters enabled during plans and remember changes separately. Restore your usual blocking preferences when the plan ends.",
   "settings.planIndependentAccess": "Keep plan access time separate",
   "settings.planIndependentAccessDescription":
-    "Started plan items can bypass configured time windows and do not add to configured usage.",
+    "The plan tab uses its own timer within the same website. Navigation keeps the deadline and does not add to configured usage.",
   "settings.showRemainingMinutesOnIcon": "Show remaining minutes on the extension icon",
   "settings.showRemainingMinutesOnIconDescription":
     "Show the current website's remaining minutes, and clear the number when no allowance applies.",

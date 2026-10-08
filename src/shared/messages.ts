@@ -70,7 +70,10 @@ export interface MessageContract {
     };
     response: FocusSettings;
   };
-  ACKNOWLEDGE_PLAN_END: { request: { itemId: string }; response: { acknowledged: true } };
+  ACKNOWLEDGE_PLAN_END: {
+    request: { itemId: string; tabId?: number };
+    response: { acknowledged: true };
+  };
   ACKNOWLEDGE_LENIENT: {
     request: { targetId: string; periodId: string };
     response: { acknowledged: true };
@@ -85,7 +88,10 @@ export interface MessageContract {
     response: UsageSummary;
   };
   CLEAR_USAGE: { request: Record<never, unknown>; response: { cleared: true } };
-  GET_PAGE_DECISION: { request: { url: string; targetId?: TargetId }; response: PageDecision };
+  GET_PAGE_DECISION: {
+    request: { url: string; targetId?: TargetId; tabId?: number };
+    response: PageDecision;
+  };
   GRANT_TEMPORARY_ACCESS: { request: { url: string; targetId?: TargetId }; response: PageDecision };
   GET_VISIT_GATE: {
     request: { url: string; siteId: string; tabId?: number };
@@ -226,11 +232,11 @@ export interface MessageContract {
     response: PlanState;
   };
   START_PLAN_ITEM: {
-    request: { id: string };
+    request: { id: string; tabId?: number };
     response: { state: PlanState; url: string; expiresAt: number };
   };
   GET_PLAN_NAVIGATION_DECISION: {
-    request: { url?: string; bvid?: string };
+    request: { url?: string; bvid?: string; tabId?: number };
     response: PlanNavigationDecision;
   };
   CONTINUE_PLAN_FLOW: {
@@ -238,6 +244,7 @@ export interface MessageContract {
       itemId: string;
       continuation: { kind: "minutes"; minutes: number } | { kind: "video-end" };
       url?: string;
+      tabId?: number;
     };
     response: {
       state: PlanState;
@@ -385,8 +392,16 @@ export function parseMessageRequest(
       break;
     }
     case "ACKNOWLEDGE_PLAN_END":
-      if (!isOpaqueId(payload.itemId)) return null;
-      request = { type: value.type, itemId: payload.itemId };
+      if (
+        !isOpaqueId(payload.itemId) ||
+        (payload.tabId !== undefined && !isBoundedInteger(payload.tabId, 0, 2147483647))
+      )
+        return null;
+      request = {
+        type: value.type,
+        itemId: payload.itemId,
+        ...(typeof payload.tabId === "number" ? { tabId: payload.tabId } : {})
+      };
       break;
     case "ACKNOWLEDGE_LENIENT":
       if (!isOpaqueId(payload.targetId) || !isOpaqueId(payload.periodId)) return null;
@@ -448,13 +463,19 @@ export function parseMessageRequest(
     case "GRANT_TEMPORARY_ACCESS":
       if (
         !isHttpUrl(payload.url) ||
+        (value.type === "GET_PAGE_DECISION" &&
+          payload.tabId !== undefined &&
+          !isBoundedInteger(payload.tabId, 0, 2147483647)) ||
         (payload.targetId !== undefined && !isOpaqueId(payload.targetId))
       )
         return null;
       request = {
         type: value.type,
         url: payload.url,
-        ...(isOpaqueId(payload.targetId) ? { targetId: payload.targetId } : {})
+        ...(isOpaqueId(payload.targetId) ? { targetId: payload.targetId } : {}),
+        ...(value.type === "GET_PAGE_DECISION" && typeof payload.tabId === "number"
+          ? { tabId: payload.tabId }
+          : {})
       };
       break;
     case "GET_VISIT_GATE":
@@ -827,9 +848,21 @@ export function parseMessageRequest(
       break;
     }
     case "DELETE_PLAN_ITEM":
-    case "START_PLAN_ITEM":
       if (!hasOnlyKeys(payload, ["id"]) || !isPlanId(payload.id)) return null;
       request = { type: value.type, id: payload.id };
+      break;
+    case "START_PLAN_ITEM":
+      if (
+        !hasOnlyKeys(payload, ["id", "tabId"]) ||
+        !isPlanId(payload.id) ||
+        (payload.tabId !== undefined && !isBoundedInteger(payload.tabId, 0, 2147483647))
+      )
+        return null;
+      request = {
+        type: value.type,
+        id: payload.id,
+        ...(typeof payload.tabId === "number" ? { tabId: payload.tabId } : {})
+      };
       break;
     case "MOVE_PLAN_ITEM":
       if (
@@ -864,18 +897,24 @@ export function parseMessageRequest(
       request = { type: value.type, id: payload.id, completed: payload.completed };
       break;
     case "GET_PLAN_NAVIGATION_DECISION":
-      if (!hasOnlyKeys(payload, ["url", "bvid"])) return null;
+      if (
+        !hasOnlyKeys(payload, ["url", "bvid", "tabId"]) ||
+        (payload.tabId !== undefined && !isBoundedInteger(payload.tabId, 0, 2147483647))
+      )
+        return null;
       if (payload.url !== undefined && !isHttpUrl(payload.url)) return null;
       if (payload.bvid !== undefined && !isLegacyIdentity(payload.bvid)) return null;
       request = {
         type: value.type,
         ...(typeof payload.url === "string" ? { url: payload.url } : {}),
-        ...(isLegacyIdentity(payload.bvid) ? { bvid: payload.bvid } : {})
+        ...(isLegacyIdentity(payload.bvid) ? { bvid: payload.bvid } : {}),
+        ...(typeof payload.tabId === "number" ? { tabId: payload.tabId } : {})
       };
       break;
     case "CONTINUE_PLAN_FLOW": {
       if (
-        !hasOnlyKeys(payload, ["itemId", "continuation", "url"]) ||
+        !hasOnlyKeys(payload, ["itemId", "continuation", "url", "tabId"]) ||
+        (payload.tabId !== undefined && !isBoundedInteger(payload.tabId, 0, 2147483647)) ||
         !isPlanId(payload.itemId) ||
         !isRecord(payload.continuation) ||
         (payload.url !== undefined && !isHttpUrl(payload.url))
@@ -894,6 +933,7 @@ export function parseMessageRequest(
           type: value.type,
           itemId: payload.itemId,
           continuation: { kind: "minutes", minutes: continuation.minutes },
+          ...(typeof payload.tabId === "number" ? { tabId: payload.tabId } : {}),
           ...(typeof payload.url === "string" ? { url: payload.url } : {})
         };
       } else if (continuation.kind === "video-end" && hasOnlyKeys(continuation, ["kind"])) {
@@ -901,6 +941,7 @@ export function parseMessageRequest(
           type: value.type,
           itemId: payload.itemId,
           continuation: { kind: "video-end" },
+          ...(typeof payload.tabId === "number" ? { tabId: payload.tabId } : {}),
           ...(typeof payload.url === "string" ? { url: payload.url } : {})
         };
       } else {

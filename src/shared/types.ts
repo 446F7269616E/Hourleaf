@@ -445,6 +445,8 @@ export interface PlanQueueStore {
 }
 
 export interface PlanWatchGrant {
+  /** Browser-session ownership token; the tab ID itself stays in session storage. */
+  visitId?: string;
   itemId: string;
   url: string;
   origin: string;

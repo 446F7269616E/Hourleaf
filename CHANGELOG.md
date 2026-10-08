@@ -10,10 +10,15 @@ All notable changes to Hourleaf will be documented in this file. The format foll
 
 ### Fixed
 
+- Plan access now belongs to its confirmed tab and exact website origin; pagination, refreshes, and route changes keep the original deadline, while other tabs follow ordinary focus rules.
+- Ordinary website visits no longer redirect to the plan page when they do not match the active plan.
+- Plan expiry notifications survive page navigation; stale video-end callbacks from a previous route no longer stop the continuing visit.
+- Toolbar remaining time and configured usage accounting now use the current tab's plan authorization.
+- Bilibili 1.2.5 extends the comments filter to featured comments beneath dynamic video cards while preserving likes, post content, and video cards.
 - Content filter schedules now read only the selected start/end times as daily blacklist windows; configured weekdays, period enablement, access modes, and allowance no longer prevent matching or boundary refresh.
-- Bilibili 1.2.4 hides dynamic-update and message-notification dot/count badges with the dynamic-feed filter in native and Bewly navigation.
+- Bilibili 1.2.4 hides dynamic-update and message-notification dot/count badges with the dynamic-feed filter in native navigation and supported alternative layouts.
 - Bilibili 1.2.3 disables native related-video autoplay while its related-video filter is active, including selected time periods and plan preferences; existing visible toggles are restored when suppression ends.
-- Bilibili 1.2.2 applies the related-video filter to player end-screen recommendations and the dynamic-feed filter to native/Bewly navigation popovers and the dynamic page's hot-search ranking.
+- Bilibili 1.2.2 applies the related-video filter to player end-screen recommendations and the dynamic-feed filter to supported navigation popovers and the dynamic page's hot-search ranking.
 
 ### Changed
 

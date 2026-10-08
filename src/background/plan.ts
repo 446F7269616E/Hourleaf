@@ -6,6 +6,7 @@ import {
 } from "../shared/plan";
 import { PlanAccessRepository, PlanQueueRepository, SettingsRepository } from "../shared/storage";
 import { matchesPlanNavigation } from "../shared/plan-navigation";
+import { planVisits, type PlanVisitService } from "./plan-visit";
 import type {
   PlanItem,
   PlanItemInput,
@@ -30,7 +31,8 @@ export class PlanService {
     private readonly settingsRepository = new SettingsRepository(),
     private readonly queueRepository = new PlanQueueRepository(),
     private readonly accessRepository = new PlanAccessRepository(),
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
+    private readonly visits: PlanVisitService = planVisits
   ) {}
 
   async getState(options: { reconcile?: boolean } = {}): Promise<PlanState> {
@@ -39,17 +41,30 @@ export class PlanService {
       this.queueRepository.get(),
       this.accessRepository.get()
     ]);
-    const validGrant = validGrantForQueue(access.activeGrant, queue.items, this.now());
+    const sessionValid =
+      !access.activeGrant?.visitId || (await this.visits.has(access.activeGrant.visitId));
+    const validGrant = sessionValid
+      ? validGrantForQueue(access.activeGrant, queue.items, this.now())
+      : undefined;
+    const shouldClearEnded = Boolean(
+      access.endedGrant?.visitId && !(await this.visits.has(access.endedGrant.visitId))
+    );
     const activeGrant = settings.planMode.enabled ? validGrant : undefined;
     let planSettings = settings.planMode;
     const shouldClearGrant = Boolean(access.activeGrant && !activeGrant);
     const shouldDisableMode = settings.planMode.enabled && !activeGrant;
-    if (options.reconcile !== false && (shouldClearGrant || shouldDisableMode)) {
+    if (
+      options.reconcile !== false &&
+      (shouldClearGrant || shouldDisableMode || shouldClearEnded)
+    ) {
       await Promise.all([
-        shouldClearGrant
+        shouldClearGrant || shouldClearEnded
           ? this.accessRepository.update((store) => {
-              if (store.activeGrant?.itemId === access.activeGrant?.itemId) {
+              if (shouldClearEnded && store.endedGrant?.visitId === access.endedGrant?.visitId)
+                delete store.endedGrant;
+              if (shouldClearGrant && store.activeGrant?.itemId === access.activeGrant?.itemId) {
                 if (
+                  sessionValid &&
                   store.activeGrant &&
                   store.activeGrant.expiresAt <= this.now() &&
                   queue.items.some((item) => item.id === store.activeGrant?.itemId)
@@ -63,7 +78,7 @@ export class PlanService {
           ? this.settingsRepository.update({ planMode: { enabled: false } })
           : Promise.resolve(settings)
       ]);
-      planSettings = { ...planSettings, enabled: false };
+      if (shouldDisableMode) planSettings = { ...planSettings, enabled: false };
     }
     return {
       settings: planSettings,
@@ -72,10 +87,17 @@ export class PlanService {
     };
   }
 
-  async acknowledgeEnd(itemId: string): Promise<void> {
-    await this.accessRepository.update((store) => {
-      if (store.endedGrant?.itemId === itemId) delete store.endedGrant;
+  async acknowledgeEnd(itemId: string, tabId?: number): Promise<void> {
+    let visitId: string | undefined;
+    await this.accessRepository.update(async (store) => {
+      if (store.endedGrant?.itemId !== itemId) return;
+      const ended = store.endedGrant;
+      if (!(await this.matchesNavigation(ended, ended.url, tabId)))
+        throw new Error("This plan notification belongs to another visit");
+      visitId = ended.visitId;
+      delete store.endedGrant;
     });
+    if (visitId) await this.visits.clear(visitId);
   }
 
   async setMode(patch: Partial<PlanModeSettings>): Promise<PlanState> {
@@ -85,6 +107,7 @@ export class PlanService {
         delete store.endedGrant;
         delete store.activeGrant;
       });
+      await this.visits.clear();
     }
     return this.getState();
   }
@@ -175,7 +198,10 @@ export class PlanService {
     return this.getState();
   }
 
-  async start(id: string): Promise<{ state: PlanState; url: string; expiresAt: number }> {
+  async start(
+    id: string,
+    tabId?: number
+  ): Promise<{ state: PlanState; url: string; expiresAt: number }> {
     const [settings, queue] = await Promise.all([
       this.settingsRepository.get(),
       this.queueRepository.get()
@@ -184,6 +210,7 @@ export class PlanService {
     if (item.status !== "pending") throw new Error("请先将已完成项目恢复为待办");
     const grantedAt = this.now();
     const grant: PlanWatchGrant = {
+      ...(tabId !== undefined ? { visitId: createId() } : {}),
       itemId: item.id,
       url: item.url,
       origin: item.origin,
@@ -194,11 +221,13 @@ export class PlanService {
       completionMode: item.completionMode,
       pauseOnVideoEnd: item.pauseOnVideoEnd
     };
-    await this.accessRepository.update((store) => {
-      delete store.endedGrant;
-      store.activeGrant = grant;
-    });
     try {
+      if (grant.visitId && tabId !== undefined)
+        await this.visits.bind(grant.visitId, tabId, item.origin);
+      await this.accessRepository.update((store) => {
+        delete store.endedGrant;
+        store.activeGrant = grant;
+      });
       await this.settingsRepository.update({ planMode: { enabled: true } });
       if (settings.planMode.autoCompleteOnStart) {
         await this.queueRepository.update((currentQueue) => {
@@ -214,12 +243,18 @@ export class PlanService {
         }),
         this.settingsRepository.update({ planMode: { enabled: false } })
       ]);
+      if (grant.visitId) await this.visits.clear(grant.visitId);
       throw error;
     }
     return { state: await this.getState(), url: item.url, expiresAt: grant.expiresAt };
   }
 
-  async decideNavigation(url?: string, legacyIdentity?: string): Promise<PlanNavigationDecision> {
+  async decideNavigation(
+    url?: string,
+    legacyIdentity?: string,
+    tabId?: number,
+    options: { reconcile?: boolean } = {}
+  ): Promise<PlanNavigationDecision> {
     const navigationUrl = normalizePlanUrl(url)?.href;
     const settings = await this.settingsRepository.get();
     if (!settings.enabled) return { planModeEnabled: false, allowed: true, reason: "disabled" };
@@ -228,7 +263,7 @@ export class PlanService {
       const ended = access.endedGrant;
       if (
         ended &&
-        matchesPlanNavigation(ended.url, navigationUrl) &&
+        (await this.matchesNavigation(ended, navigationUrl, tabId)) &&
         (await this.queueRepository.get()).items.some(
           (item) => item.id === ended.itemId && item.url === ended.url
         )
@@ -243,7 +278,7 @@ export class PlanService {
           flowDecisionRequired: false
         };
       }
-      if (settings.planMode.enabled)
+      if (settings.planMode.enabled && options.reconcile !== false)
         await this.settingsRepository.update({ planMode: { enabled: false } });
       return { planModeEnabled: false, allowed: true, reason: "disabled" };
     }
@@ -263,14 +298,22 @@ export class PlanService {
         ...(legacyIdentity ? { bvid: legacyIdentity } : {})
       };
     }
+    if (grant.visitId) {
+      const visit = await this.visits.get();
+      if (visit?.id !== grant.visitId) {
+        return { planModeEnabled: false, allowed: true, reason: "disabled" };
+      }
+      if (visit.tabId !== tabId)
+        return { planModeEnabled: false, allowed: true, reason: "disabled" };
+    }
     const item = queue.items.find(
       (candidate) => candidate.id === grant.itemId && candidate.url === grant.url
     );
     const identityMatches = navigationUrl
-      ? matchesPlanNavigation(grant.url, navigationUrl)
-      : Boolean(legacyIdentity && grant.bvid === legacyIdentity);
+      ? await this.matchesNavigation(grant, navigationUrl, tabId)
+      : Boolean(!grant.visitId && legacyIdentity && grant.bvid === legacyIdentity);
     if (!item || !identityMatches) {
-      if (!item) {
+      if (!item && options.reconcile !== false) {
         await Promise.all([
           this.accessRepository.update((store) => {
             delete store.activeGrant;
@@ -278,14 +321,9 @@ export class PlanService {
           this.settingsRepository.update({ planMode: { enabled: false } })
         ]);
       }
-      return {
-        planModeEnabled: true,
-        allowed: false,
-        reason: "not-authorized",
-        completionMode: grant.completionMode,
-        ...(navigationUrl ? { url: navigationUrl } : {}),
-        ...(legacyIdentity ? { bvid: legacyIdentity } : {})
-      };
+      // A plan grants its own visit access; it does not prohibit unrelated
+      // browsing. No matching visit means ordinary focus rules remain in charge.
+      return { planModeEnabled: false, allowed: true, reason: "disabled" };
     }
     if (grant.flowContinuationKind !== "video-end" && grant.expiresAt <= this.now()) {
       if (grant.completionMode === "flow" && !grant.flowContinuationKind) {
@@ -301,15 +339,16 @@ export class PlanService {
           ...(legacyIdentity ? { bvid: legacyIdentity } : {})
         };
       }
-      await Promise.all([
-        this.accessRepository.update((store) => {
-          if (store.activeGrant?.itemId === grant.itemId) {
-            store.endedGrant = store.activeGrant;
-            delete store.activeGrant;
-          }
-        }),
-        this.settingsRepository.update({ planMode: { enabled: false } })
-      ]);
+      if (options.reconcile !== false)
+        await Promise.all([
+          this.accessRepository.update((store) => {
+            if (store.activeGrant?.itemId === grant.itemId) {
+              store.endedGrant = store.activeGrant;
+              delete store.activeGrant;
+            }
+          }),
+          this.settingsRepository.update({ planMode: { enabled: false } })
+        ]);
       return {
         planModeEnabled: true,
         allowed: grant.completionMode === "lenient",
@@ -340,7 +379,8 @@ export class PlanService {
   async continueFlow(
     itemId: string,
     continuation: PlanFlowContinuation,
-    expectedUrl?: string
+    expectedUrl?: string,
+    tabId?: number
   ): Promise<{
     state: PlanState;
     url: string;
@@ -360,7 +400,7 @@ export class PlanService {
       grant.completionMode !== "flow" ||
       grant.flowContinuationKind !== undefined ||
       grant.expiresAt > this.now() ||
-      (expectedUrl !== undefined && !matchesPlanNavigation(grant.url, expectedUrl))
+      !(await this.matchesNavigation(grant, expectedUrl ?? grant.url, tabId))
     ) {
       throw new Error("This plan item is not waiting for a flow decision");
     }
@@ -409,14 +449,14 @@ export class PlanService {
     };
   }
 
-  async revokeFlow(itemId: string, expectedUrl?: string): Promise<PlanState> {
-    await this.accessRepository.update((store) => {
+  async revokeFlow(itemId: string, expectedUrl?: string, tabId?: number): Promise<PlanState> {
+    await this.accessRepository.update(async (store) => {
       const grant = store.activeGrant;
       if (
         !grant ||
         grant.itemId !== itemId ||
         grant.completionMode !== "flow" ||
-        (expectedUrl !== undefined && !matchesPlanNavigation(grant.url, expectedUrl))
+        !(await this.matchesNavigation(grant, expectedUrl ?? grant.url, tabId))
       ) {
         throw new Error("This flow continuation is no longer active");
       }
@@ -427,15 +467,15 @@ export class PlanService {
     return this.getState();
   }
 
-  async pauseAtVideoEnd(itemId: string, expectedUrl?: string): Promise<PlanState> {
-    await this.accessRepository.update((store) => {
+  async pauseAtVideoEnd(itemId: string, expectedUrl?: string, tabId?: number): Promise<PlanState> {
+    await this.accessRepository.update(async (store) => {
       const grant = store.activeGrant;
       if (
         !grant ||
         grant.itemId !== itemId ||
         !grant.pauseOnVideoEnd ||
         grant.flowContinuationKind !== undefined ||
-        (expectedUrl !== undefined && !matchesPlanNavigation(grant.url, expectedUrl))
+        !(await this.matchesNavigation(grant, expectedUrl ?? grant.url, tabId))
       ) {
         throw new Error("This plan item is no longer waiting for the video to end");
       }
@@ -470,12 +510,44 @@ export class PlanService {
 
   private async clearGrantForItem(id: string): Promise<void> {
     let cleared = false;
+    let visitId: string | undefined;
     await this.accessRepository.update((store) => {
+      if (store.endedGrant?.itemId === id) {
+        visitId = store.endedGrant.visitId;
+        delete store.endedGrant;
+      }
       if (store.activeGrant?.itemId !== id) return;
+      visitId = store.activeGrant.visitId;
       delete store.activeGrant;
       cleared = true;
     });
+    if (visitId) await this.visits.clear(visitId);
     if (cleared) await this.settingsRepository.update({ planMode: { enabled: false } });
+  }
+
+  async releaseTab(tabId: number): Promise<void> {
+    const visit = await this.visits.get();
+    if (!visit || visit.tabId !== tabId) return;
+    let stopped = false;
+    await this.accessRepository.update((store) => {
+      if (store.activeGrant?.visitId === visit.id) {
+        delete store.activeGrant;
+        stopped = true;
+      }
+      if (store.endedGrant?.visitId === visit.id) delete store.endedGrant;
+    });
+    await this.visits.clear(visit.id);
+    if (stopped) await this.settingsRepository.update({ planMode: { enabled: false } });
+  }
+
+  private matchesNavigation(
+    grant: PlanWatchGrant,
+    url: string | undefined,
+    tabId?: number
+  ): Promise<boolean> {
+    return grant.visitId
+      ? this.visits.matches(grant.visitId, url, tabId)
+      : Promise.resolve(matchesPlanNavigation(grant.url, url));
   }
 }
 

@@ -21,7 +21,8 @@ export interface IntervalHandle {
 export type UsageEligibility = (
   url: string,
   at: number,
-  targetId?: TargetId
+  targetId?: TargetId,
+  tabId?: number
 ) => boolean | Promise<boolean>;
 export interface TrackingTarget {
   targetId: TargetId;
@@ -109,9 +110,9 @@ export class UsageTracker {
       this.isUserActive() &&
       !isolatedPlanUsage;
     const isTracking = candidate
-      ? await Promise.resolve(this.isUsageAllowed(url, this.now(), target?.targetId)).catch(
-          () => false
-        )
+      ? await Promise.resolve(
+          this.isUsageAllowed(url, this.now(), target?.targetId, this.currentTab?.id)
+        ).catch(() => false)
       : false;
     return {
       ...(target?.siteId ? { siteId: target.siteId } : {}),
@@ -130,6 +131,7 @@ export class UsageTracker {
     this.lastTickAt = end;
 
     const url = this.currentTab?.url ?? "";
+    const tabId = this.currentTab?.id;
     const pageVisible =
       this.currentTab?.id !== undefined && this.visibleByTab.get(this.currentTab.id) === true;
     const eligible = pageVisible && this.windowFocused && this.isUserActive();
@@ -147,7 +149,7 @@ export class UsageTracker {
         Promise.resolve(this.resolveTarget(url, requestedTargetId, start)),
         isolatedPlanUsage
           ? Promise.resolve(false)
-          : Promise.resolve(this.isUsageAllowed(url, start, requestedTargetId))
+          : Promise.resolve(this.isUsageAllowed(url, start, requestedTargetId, tabId))
       ])
         .then(([target, allowed]) =>
           target && allowed ? this.recordUsage(target, start, end) : undefined

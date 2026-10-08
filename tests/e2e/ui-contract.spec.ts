@@ -13,7 +13,9 @@ test.beforeEach(async ({ context }) => {
   await installWebExtensionMock(context);
 });
 
-test("popup has a compact current-site and pending-plan summary without quick toggles", async ({ page }) => {
+test("popup has a compact current-site and pending-plan summary without quick toggles", async ({
+  page
+}) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(pathToFileURL(path.join(buildRoot, "popup.html")).href);

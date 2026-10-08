@@ -1,6 +1,13 @@
 import { normalizePlanUrl } from "./plan";
 
-/** Navigation identity is separate from the user-saved URL and permission origin. */
+/** The origin is a permission boundary, not an inferred pagination identity. */
+export function matchesPlanOrigin(plannedUrl: string, currentUrl: string | undefined): boolean {
+  const planned = normalizePlanUrl(plannedUrl);
+  const current = normalizePlanUrl(currentUrl);
+  return Boolean(planned && current && planned.origin === current.origin);
+}
+
+/** Compatibility matching for grants created before tab-bound visits existed. */
 export function matchesPlanNavigation(plannedUrl: string, currentUrl: string | undefined): boolean {
   const planned = normalizePlanUrl(plannedUrl);
   const current = normalizePlanUrl(currentUrl);

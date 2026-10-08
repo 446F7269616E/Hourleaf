@@ -75,7 +75,7 @@ export function normalizePlanItemInput(
   };
 }
 
-/** True only for the exact live plan identity allowed to use its own access timer. */
+/** True only for the authorized plan visit allowed to use its own access timer. */
 export function isIndependentPlanAccess(
   settings: Pick<PlanModeSettings, "independentAccessTiming">,
   decision: PlanNavigationDecision | null | undefined
@@ -87,7 +87,7 @@ export function isIndependentPlanAccess(
   );
 }
 
-/** Configured usage is never charged while an isolated plan timer owns the exact page. */
+/** Configured usage is never charged while an isolated plan timer owns the visit. */
 export function shouldRecordConfiguredUsage(
   settings: Pick<PlanModeSettings, "independentAccessTiming">,
   decision: PlanNavigationDecision,
