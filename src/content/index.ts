@@ -488,7 +488,7 @@ function showPauseFrame(context: EndContext): void {
     channel
   });
   for (const name of ["siteId", "targetId", "periodId", "itemId"] as const)
-    if (context[name]) query.set(name, context[name] as string);
+    if (context[name]) query.set(name, context[name]);
   frame.src = `${runtimeGetURL("end.html")}#${query}`;
   frame.title = t("pause.title");
   Object.assign(frame.style, { width: "100%", height: "100%", border: "0", background: "white" });

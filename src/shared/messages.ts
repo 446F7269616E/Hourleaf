@@ -2,6 +2,7 @@ import { runtimeSendMessage } from "./browser";
 import type {
   DeepPartial,
   FocusSettings,
+  GroupUnlockMethod,
   PageDecision,
   PeriodRuntimeStatus,
   PlanItemInput,
@@ -18,6 +19,7 @@ import type {
   UsageSummary
 } from "./types";
 import { MAX_VISIT_CONFIRMATION_PROMPT_LENGTH } from "./types";
+import type { ProtectedTicket } from "../background/protected-actions";
 import {
   isPlanId,
   isPlanCompletionMode,
@@ -59,7 +61,7 @@ export interface MessageContract {
   UPDATE_SETTINGS: { request: { patch: DeepPartial<FocusSettings> }; response: FocusSettings };
   BEGIN_PROTECTED_ACTION: {
     request: { action: "disable" | "reset" | "clear-all" | "protection" };
-    response: import("../background/protected-actions").ProtectedTicket;
+    response: ProtectedTicket;
   };
   COMPLETE_PROTECTED_ACTION: {
     request: {
@@ -97,7 +99,7 @@ export interface MessageContract {
     request: { url: string; siteId: string; tabId?: number };
     response: {
       alreadyGranted?: boolean;
-      method: import("./types").GroupUnlockMethod;
+      method: GroupUnlockMethod;
       waitEndsAt: number;
       mathChallenge: { prompt: string };
       passwordConfigured: boolean;
@@ -385,7 +387,7 @@ export function parseMessageRequest(
           type: value.type,
           action,
           token: payload.token,
-          proof: payload.proof as string | undefined,
+          proof: payload.proof,
           protection: payload.protection as FocusSettings["disableProtection"] | undefined
         };
       }
@@ -416,7 +418,7 @@ export function parseMessageRequest(
       request = {
         type: value.type,
         action: payload.action as "consume-group" | "consume-period" | "preview" | "setup",
-        url: payload.url as string | undefined
+        url: payload.url
       };
       break;
     case "RESET_SETTINGS":
@@ -666,7 +668,7 @@ export function parseMessageRequest(
           type: value.type,
           source: "focus",
           siteId: payload.siteId,
-          tabId: payload.tabId as number | undefined
+          tabId: payload.tabId
         };
       } else if (
         payload.source === "plan" &&
@@ -677,7 +679,7 @@ export function parseMessageRequest(
           type: value.type,
           source: "plan",
           itemId: payload.itemId,
-          tabId: payload.tabId as number | undefined
+          tabId: payload.tabId
         };
       } else {
         return null;

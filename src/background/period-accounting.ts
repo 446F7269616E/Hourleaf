@@ -1,8 +1,8 @@
-import { AnalyticsService } from "../shared/analytics";
+import type { AnalyticsService } from "../shared/analytics";
 import { resolveGroupQuota } from "../shared/group-quota";
-import { PeriodRuntimeService } from "../shared/period-runtime";
+import type { PeriodRuntimeService } from "../shared/period-runtime";
 import { selectActiveTimePeriod } from "../shared/schedule";
-import { SettingsRepository } from "../shared/storage";
+import type { SettingsRepository } from "../shared/storage";
 import type { TrackingTarget } from "./tracker";
 
 /** Owns quota read/cap/write as one serial operation, including schedule changes. */

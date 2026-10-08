@@ -201,7 +201,7 @@ export class UsageTracker {
   }
 
   resetSessions(at = this.now()): Promise<void> {
-    return this.withSessionBoundary(async () => undefined, at);
+    return this.withSessionBoundary(() => Promise.resolve(), at);
   }
 
   private async applySessionUpdate(

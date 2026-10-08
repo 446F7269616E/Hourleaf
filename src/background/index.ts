@@ -606,7 +606,7 @@ export async function handleMessage(
       return updateConfiguration(() => managedSites.remove(message.siteId));
     case "CLOSE_RELATED_TABS": {
       assertExtensionPageSender(sender);
-      let tabId = sender?.tab?.id ?? message.tabId;
+      const tabId = sender?.tab?.id ?? message.tabId;
       const page = new URL(sender?.url ?? "about:blank");
       if (!page.pathname.endsWith("/end.html")) throw new Error("Close requires its own end page");
       if (

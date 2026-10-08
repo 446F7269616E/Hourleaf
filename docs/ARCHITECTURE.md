@@ -304,3 +304,5 @@ Bilibili 1.2.3 在模块用户脚本内通过无内容的零尺寸 DOM 标记读
 GitHub 上此前的 CI 在格式检查阶段失败，涉及 `docs/SITE_MODULE_RESEARCH.md` 与 `tests/e2e/ui-contract.spec.ts`。提交前使用仓库锁定的 Prettier 整理这些文件及本次修改文件，测试文件只调整格式。Git 元数据写入及远端同步需使用允许访问仓库和网络的执行环境；受限环境中的 keyring 登录失败提示不代表凭据已经失效。
 
 本地 TypeScript 编译、Chromium / Firefox / Safari 正式构建及 Debug 构建均通过；未在本地运行单元或浏览器测试，交互留待人工验收。GitHub Actions 保留现有质量流程，远端执行结果以对应提交的运行记录为准。
+
+首轮远端 CI 已通过格式与类型检查，随后在 ESLint 阶段暴露此前被格式失败遮蔽的 13 项问题。按错误日志将仅用作类型的导入改为 `import type`，删除冗余断言和重复类型，将不会重新赋值的变量改为 `const`，会话重置改为直接返回 Promise；不修改领域行为或降低现有质量门禁。
