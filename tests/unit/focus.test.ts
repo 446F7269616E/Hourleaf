@@ -290,8 +290,8 @@ describe("focus decisions", () => {
       restrictionMode: "lenient"
     });
     const runtime = new PeriodRuntimeService(
-      new PeriodRuntimeRepository(storage),
       settings,
+      new PeriodRuntimeRepository(storage),
       analytics,
       () => now.getTime()
     );
