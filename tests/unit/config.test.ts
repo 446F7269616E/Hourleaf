@@ -249,7 +249,8 @@ describe("settings schema", () => {
       waitSeconds: 60,
       prompt: "开始前先确认任务"
     });
-    expect(normalized.endPage.groupUnlock.waitMinutes).toBe(5);
+    expect(normalized.endPage.groupUnlock.waitSeconds).toBe(30);
+    expect(normalized.endPage.groupUnlock.waitMinutes).toBe(0.5);
 
     const updated = mergeSettings(normalized, {
       sites: { "site:test": { visitConfirmation: { waitSeconds: 7 } } }

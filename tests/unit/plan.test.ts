@@ -135,8 +135,9 @@ describe("generic plan", () => {
       expiresAt: now + 30 * 60_000
     });
     await expect(service.decideNavigation("https://example.com/other")).resolves.toMatchObject({
-      allowed: false,
-      reason: "not-authorized"
+      planModeEnabled: false,
+      allowed: true,
+      reason: "disabled"
     });
 
     state = await service.setCompleted(item?.id ?? "missing", true);

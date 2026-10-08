@@ -154,7 +154,11 @@ describe("period runtime", () => {
     });
     await expect(
       runtime.grantFlow(targetId, periodId, { kind: "minutes", minutes: 1 })
-    ).rejects.toThrow("already been used");
+    ).rejects.toThrow("No flow continuation available");
+    await expect(runtime.getEntry(targetId, periodId)).resolves.toMatchObject({
+      flowGrantId: entry.flowGrantId,
+      flowExpiresAt: entry.flowExpiresAt
+    });
   });
 
   it("keeps video-end continuation active without a minute deadline", async () => {

@@ -128,8 +128,8 @@ describe("local module boundary", () => {
 
     expect(module).toMatchObject({
       id: "hourleaf.local.bilibili-focus",
-      name: "Bilibili 专注模块",
-      version: "1.2.1",
+      name: "Bilibili",
+      version: "1.2.5",
       author: "Hourleaf contributors",
       domainPolicy: "timed"
     });
@@ -193,7 +193,7 @@ describe("local module boundary", () => {
 
     expect(module).toMatchObject({
       id: candidate.id,
-      version: "1.0.0",
+      version: "1.0.1",
       author: "Hourleaf contributors",
       domainPolicy: "timed",
       hideSelectors: []

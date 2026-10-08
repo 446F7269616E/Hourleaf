@@ -285,6 +285,18 @@ describe("focus decisions", () => {
 
     await settings.update({ sites: { [siteId]: { restrictionMode: "lenient" } } });
     await expect(decisions.decide(managedUrl, now)).resolves.toMatchObject({
+      blocked: true,
+      reason: "period-limit",
+      restrictionMode: "lenient"
+    });
+    const runtime = new PeriodRuntimeService(
+      new PeriodRuntimeRepository(storage),
+      settings,
+      analytics,
+      () => now.getTime()
+    );
+    await runtime.acknowledgeLenient(targetId, "period:test");
+    await expect(decisions.decide(managedUrl, now)).resolves.toMatchObject({
       blocked: false,
       reason: "period-limit",
       restrictionMode: "lenient",

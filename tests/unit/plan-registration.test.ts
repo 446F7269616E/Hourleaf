@@ -123,6 +123,9 @@ describe("active plan content-script registration", () => {
     now += 25 * 60_000 + 1;
     await plan.decideNavigation("https://reading.example/article?id=1");
     await registration.reconcile();
+    expect(runtime.registrations.has(PLAN_CONTENT_SCRIPT_REGISTRATION_ID)).toBe(true);
+    await plan.acknowledgeEnd(itemId);
+    await registration.reconcile();
     expect(runtime.registrations.has(PLAN_CONTENT_SCRIPT_REGISTRATION_ID)).toBe(false);
     expect(runtime.registrations.has("hourleaf-site-existing")).toBe(true);
   });
@@ -148,6 +151,9 @@ describe("active plan content-script registration", () => {
     const continued = await plan.continueFlow(itemId, { kind: "minutes", minutes: 1 });
     now = continued.expiresAt + 1;
     await plan.decideNavigation("https://video.example/watch/1");
+    await registration.reconcile();
+    expect(runtime.registrations.has(PLAN_CONTENT_SCRIPT_REGISTRATION_ID)).toBe(true);
+    await plan.acknowledgeEnd(itemId);
     await registration.reconcile();
     expect(runtime.registrations.has(PLAN_CONTENT_SCRIPT_REGISTRATION_ID)).toBe(false);
   });
