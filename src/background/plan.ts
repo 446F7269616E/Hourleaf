@@ -540,6 +540,26 @@ export class PlanService {
     if (stopped) await this.settingsRepository.update({ planMode: { enabled: false } });
   }
 
+  /** Navigation starts a new ordinary visit after expiry or leaving the plan origin. */
+  async releaseAfterNavigation(tabId: number, url: string, extensionRoot: string): Promise<void> {
+    const visit = await this.visits.get();
+    if (!visit || visit.tabId !== tabId) return;
+    const access = await this.accessRepository.get();
+    const grant = access.activeGrant ?? access.endedGrant;
+    if (!grant || grant.visitId !== visit.id) {
+      await this.visits.clear(visit.id);
+      return;
+    }
+    // The standalone pause page still belongs to the original visit.
+    if (isPlanPausePage(url, extensionRoot, grant)) return;
+    const sameOrigin = normalizePlanUrl(url)?.origin === visit.origin;
+    const live = Boolean(
+      access.activeGrant &&
+      (grant.flowContinuationKind === "video-end" || grant.expiresAt > this.now())
+    );
+    if (!sameOrigin || !live) await this.releaseTab(tabId);
+  }
+
   private matchesNavigation(
     grant: PlanWatchGrant,
     url: string | undefined,
@@ -548,6 +568,28 @@ export class PlanService {
     return grant.visitId
       ? this.visits.matches(grant.visitId, url, tabId)
       : Promise.resolve(matchesPlanNavigation(grant.url, url));
+  }
+}
+
+function isPlanPausePage(url: string, extensionRoot: string, grant: PlanWatchGrant): boolean {
+  if (!extensionRoot) return false;
+  try {
+    const page = new URL(url);
+    const endPage = new URL("end.html", extensionRoot);
+    if (
+      page.protocol !== endPage.protocol ||
+      page.host !== endPage.host ||
+      page.pathname !== endPage.pathname
+    )
+      return false;
+    const params = new URLSearchParams(page.hash.slice(1));
+    if (params.get("source") === "plan" && params.get("itemId") === grant.itemId) return true;
+    return (
+      params.get("source") === "focus" &&
+      normalizePlanUrl(params.get("returnUrl"))?.origin === grant.origin
+    );
+  } catch {
+    return false;
   }
 }
 

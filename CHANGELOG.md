@@ -12,7 +12,7 @@ All notable changes to Hourleaf will be documented in this file. The format foll
 
 - Plan access now belongs to its confirmed tab and exact website origin; pagination, refreshes, and route changes keep the original deadline, while other tabs follow ordinary focus rules.
 - Ordinary website visits no longer redirect to the plan page when they do not match the active plan.
-- Plan expiry notifications survive page navigation; stale video-end callbacks from a previous route no longer stop the continuing visit.
+- Plan timers and expiry notifications are browser-session state; revisiting after expiry or leaving the website clears the old visit instead of repeatedly blocking access. Live same-origin navigation retains its deadline, and stale video-end callbacks do not stop the continuing visit.
 - Toolbar remaining time and configured usage accounting now use the current tab's plan authorization.
 - Bilibili 1.2.5 extends the comments filter to featured comments beneath dynamic video cards while preserving likes, post content, and video cards.
 - Content filter schedules now read only the selected start/end times as daily blacklist windows; configured weekdays, period enablement, access modes, and allowance no longer prevent matching or boundary refresh.
@@ -22,6 +22,7 @@ All notable changes to Hourleaf will be documented in this file. The format foll
 
 ### Changed
 
+- Managed websites with no enabled time periods now allow unlimited use while retaining actual usage statistics, content filters, and their independent daily schedules.
 - Content filter cards align switches and time-period controls, and offer only periods from the corresponding website; unrelated stored references remain inactive and removable.
 - Plan mindmaps show pending items only; completed items use the same collapsible list at the bottom in both views.
 - Optional module names now use only the website name: Bilibili, 小红书, X, YouTube, and 百度贴吧; module IDs and filter preferences remain stable.

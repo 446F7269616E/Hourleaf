@@ -24,6 +24,8 @@ import { FocusDecisionService } from "../shared/focus";
 import { isHttpUrl, parseMessageRequest, type AnyRequest } from "../shared/messages";
 import {
   PeriodRuntimeRepository,
+  PlanAccessRepository,
+  PlanQueueRepository,
   SettingsRepository,
   SiteModuleRepository
 } from "../shared/storage";
@@ -85,8 +87,10 @@ const focus = new FocusDecisionService(
   resolveManagedTarget,
   periodRuntime
 );
-const plan = new PlanService(settings);
-const planRegistration = new PlanContentRegistrationService(settings);
+const planAccess = new PlanAccessRepository();
+const planQueue = new PlanQueueRepository();
+const plan = new PlanService(settings, planQueue, planAccess);
+const planRegistration = new PlanContentRegistrationService(settings, planQueue, planAccess);
 const visitConfirmations = new VisitConfirmationService();
 const configurationBackups = new ConfigurationBackupService(settings);
 const relatedTabs = new RelatedTabService(settings, plan);
@@ -181,11 +185,19 @@ async function updateConfiguration<T>(change: () => Promise<T>): Promise<T> {
 
 if (api) {
   const extensionRoot = api.runtime.getURL?.("") ?? "";
-  api.tabs?.onUpdated?.addListener((tabId, changeInfo) => {
-    if (!changeInfo.url) return;
-    void visitConfirmations
-      .revokeIfOriginChanged(tabId, changeInfo.url, extensionRoot)
-      .catch(() => undefined);
+  // Older versions stored grants permanently. They never become session grants.
+  void storageRemove(getLocalStorageArea(), STORAGE_KEYS.planAccess).catch(() => undefined);
+  api.tabs?.onUpdated?.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.url)
+      void visitConfirmations
+        .revokeIfOriginChanged(tabId, changeInfo.url, extensionRoot)
+        .catch(() => undefined);
+    const url = changeInfo.url ?? tab.url;
+    if (!url || (changeInfo.url === undefined && changeInfo.status !== "loading")) return;
+    const pending = stateChangeQueue.then(() =>
+      withPlanRegistrationReconcile(plan.releaseAfterNavigation(tabId, url, extensionRoot))
+    );
+    stateChangeQueue = pending.catch(() => undefined);
   });
   api.tabs?.onUpdated?.addListener((_tabId, changeInfo, tab) => {
     if (changeInfo.url !== undefined || changeInfo.status === "complete") {
@@ -205,18 +217,16 @@ if (api) {
     stateChangeQueue = pending.catch(() => undefined);
   });
   storageAddChangeListener((changes, areaName) => {
-    if (
-      areaName === "local" &&
-      (changes[STORAGE_KEYS.settings] || changes[STORAGE_KEYS.planAccess])
-    ) {
+    const planChanged = areaName === "session" && changes[STORAGE_KEYS.planAccess];
+    if (planChanged || (areaName === "local" && changes[STORAGE_KEYS.settings])) {
       void currentBlockingProfile().catch(() => undefined);
     }
     if (
-      areaName === "local" &&
-      (changes[STORAGE_KEYS.settings] ||
-        changes[STORAGE_KEYS.usage] ||
-        changes[STORAGE_KEYS.periodRuntime] ||
-        changes[STORAGE_KEYS.planAccess])
+      planChanged ||
+      (areaName === "local" &&
+        (changes[STORAGE_KEYS.settings] ||
+          changes[STORAGE_KEYS.usage] ||
+          changes[STORAGE_KEYS.periodRuntime]))
     ) {
       scheduleToolbarBadgeRefresh();
     }
@@ -312,7 +322,11 @@ export async function handleMessage(
       );
       const runtimeResults = await Promise.allSettled([
         visitConfirmations.clear(),
-        planVisits.clear(),
+        (async () => {
+          await planAccess.clear();
+          await planVisits.clear();
+          await planRegistration.reconcile();
+        })(),
         localModules.initialize(),
         (async () => {
           await modulesReady;
@@ -324,7 +338,6 @@ export async function handleMessage(
             }))
           );
         })(),
-        planRegistration.reconcile(),
         refreshActiveToolbarBadges()
       ]);
       return {
@@ -1186,6 +1199,7 @@ async function resetData(clearAll: boolean): Promise<FocusSettings> {
       ...(clearAll ? [STORAGE_KEYS.planQueue, STORAGE_KEYS.modules, "hourleaf.plan.view"] : [])
     ]);
     await visitConfirmations.clear();
+    await planAccess.clear();
     await planVisits.clear();
     if (clearAll)
       await storageRemove(

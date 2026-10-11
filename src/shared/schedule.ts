@@ -127,6 +127,11 @@ export function isTimePeriodActive(period: TimePeriodSettings, now = new Date())
   );
 }
 
+/** Availability is unrestricted only when no time-period switch is enabled. */
+export function hasEnabledTimePeriods(target: Pick<SiteTargetSettings, "timePeriods">): boolean {
+  return target.timePeriods.some((period) => period.enabled);
+}
+
 /** Resolves overlaps with the same priority used by enforcement. */
 export function selectActiveTimePeriod(
   target: SiteTargetSettings,
@@ -150,6 +155,7 @@ export function evaluateTimePeriods(
   groupUnlockRequired = true
 ): TimePeriodDecision {
   if (!focusEnabled) return { blocked: false, reason: "focus-disabled" };
+  if (!hasEnabledTimePeriods(target)) return { blocked: false, reason: "outside-schedule" };
   const selected = selectActiveTimePeriod(target, now);
   const allowed = selected?.behavior === "always-allow" ? selected : undefined;
   if (allowed) return { blocked: false, reason: "outside-schedule", activePeriod: allowed };

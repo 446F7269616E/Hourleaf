@@ -38,7 +38,10 @@ document.body.classList.add("block-page");
 configureLocale("system");
 void loadPage();
 storageAddChangeListener((changes, area) => {
-  if (area === "local" && (changes[STORAGE_KEYS.settings] || changes[STORAGE_KEYS.planAccess]))
+  if (
+    (area === "local" && changes[STORAGE_KEYS.settings]) ||
+    (area === "session" && changes[STORAGE_KEYS.planAccess])
+  )
     void loadPage();
 });
 

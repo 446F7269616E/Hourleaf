@@ -83,11 +83,14 @@ function startContentRuntimeOnce(): void {
     }
   });
   storageAddChangeListener((changes, areaName) => {
-    if (areaName !== "local") return;
-    const settingsChanged = changes[STORAGE_KEYS.settings];
+    if (areaName !== "local" && areaName !== "session") return;
+    const settingsChanged = areaName === "local" ? changes[STORAGE_KEYS.settings] : undefined;
     const changed =
-      settingsChanged ?? changes[STORAGE_KEYS.localModules] ?? changes[STORAGE_KEYS.planAccess];
-    if (!changed || changed.newValue === undefined) return;
+      settingsChanged ??
+      (areaName === "local"
+        ? changes[STORAGE_KEYS.localModules]
+        : changes[STORAGE_KEYS.planAccess]);
+    if (!changed) return;
     if (settingsChanged && (settingsChanged.newValue as { enabled?: boolean })?.enabled === false)
       removeBlockPage();
     void (settingsChanged ? syncContentLocale().then(() => evaluatePage()) : evaluatePage());

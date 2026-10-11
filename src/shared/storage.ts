@@ -8,6 +8,7 @@ import {
 import { STORAGE_KEYS } from "./storage-keys";
 import {
   getLocalStorageArea,
+  getSessionStorageArea,
   getSettingsStorageArea,
   storageGet,
   storageRemove,
@@ -304,12 +305,16 @@ export class PlanQueueRepository {
   }
 }
 
+// All default repositories share the fallback during this background session.
+let memoryPlanAccess: PlanAccessStore = { schemaVersion: 1 };
+
 export class PlanAccessRepository {
   private writeQueue: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly area: StorageAreaLike = getLocalStorageArea()) {}
+  constructor(private readonly area: StorageAreaLike | null = getSessionStorageArea()) {}
 
   async get(): Promise<PlanAccessStore> {
+    if (!this.area) return normalizePlanAccessStore(memoryPlanAccess);
     const result = await storageGet(this.area, STORAGE_KEYS.planAccess);
     return normalizePlanAccessStore(result[STORAGE_KEYS.planAccess]);
   }
@@ -321,13 +326,17 @@ export class PlanAccessRepository {
       const store = await this.get();
       await mutator(store);
       const normalized = normalizePlanAccessStore(store);
-      await storageSet(this.area, { [STORAGE_KEYS.planAccess]: normalized });
+      if (this.area) await storageSet(this.area, { [STORAGE_KEYS.planAccess]: normalized });
+      else memoryPlanAccess = normalized;
       return normalized;
     });
   }
 
   async clear(): Promise<void> {
-    await this.enqueue(() => storageRemove(this.area, STORAGE_KEYS.planAccess));
+    await this.enqueue(async () => {
+      if (this.area) await storageRemove(this.area, STORAGE_KEYS.planAccess);
+      else memoryPlanAccess = { schemaVersion: 1 };
+    });
   }
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {

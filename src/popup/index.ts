@@ -72,10 +72,8 @@ const removeTabUpdatedListener = tabsAddUpdatedListener((_tabId, changeInfo, tab
 });
 const removeStorageListener = storageAddChangeListener((changes, areaName) => {
   if (
-    areaName === "local" &&
-    (changes[STORAGE_KEYS.settings] ||
-      changes[STORAGE_KEYS.planQueue] ||
-      changes[STORAGE_KEYS.planAccess])
+    (areaName === "session" && changes[STORAGE_KEYS.planAccess]) ||
+    (areaName === "local" && (changes[STORAGE_KEYS.settings] || changes[STORAGE_KEYS.planQueue]))
   ) {
     scheduleRefresh();
   }

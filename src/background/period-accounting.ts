@@ -1,7 +1,7 @@
 import type { AnalyticsService } from "../shared/analytics";
 import { resolveGroupQuota } from "../shared/group-quota";
 import type { PeriodRuntimeService } from "../shared/period-runtime";
-import { selectActiveTimePeriod } from "../shared/schedule";
+import { hasEnabledTimePeriods, selectActiveTimePeriod } from "../shared/schedule";
 import type { SettingsRepository } from "../shared/storage";
 import type { TrackingTarget } from "./tracker";
 
@@ -26,7 +26,7 @@ export class PeriodUsageRecorder {
     const config = await this.settings.get();
     const configuredTarget = config.targets[target.targetId];
     if (!config.enabled || !configuredTarget) return;
-    if (target.quotaExempt) {
+    if (target.quotaExempt || !hasEnabledTimePeriods(configuredTarget)) {
       await this.analytics.recordInterval(target.targetId, start, end);
       return;
     }
