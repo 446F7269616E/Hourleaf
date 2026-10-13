@@ -1,3 +1,4 @@
+import type { TabGroupWhitelistRule } from "./tab-group-whitelist";
 export const SECTION_IDS = [
   "home",
   "dynamic",
@@ -165,7 +166,9 @@ export interface VisitConfirmationSettings {
   enabled: boolean;
   /** Independent delay before the user may confirm opening this website. */
   waitSeconds: number;
-  /** Optional user-authored reminder shown on the standalone confirmation page. */
+  /** Presentation-only switch; omitted legacy values migrate according to existing text. */
+  promptEnabled?: boolean;
+  /** Retained when the custom prompt is switched off. */
   prompt?: string;
 }
 
@@ -197,7 +200,7 @@ export interface TemporaryAccessSettings {
 
 export interface PlanModeSettings {
   enabled: boolean;
-  /** Keeps an explicitly-started plan grant separate from configured website time rules. */
+  /** @deprecated Compatibility mirror, normalized to true. Plan grants always own their time. */
   independentAccessTiming: boolean;
   /** Uses separate blocking preferences while an active plan exists. */
   enableAllBlocking: boolean;
@@ -287,6 +290,7 @@ export interface FocusSettings {
   targets: Record<TargetId, SiteTargetSettings>;
   /** User-authored, reusable timed-period templates. */
   customTimePeriodPresets: CustomTimePeriodPreset[];
+  tabGroupWhitelist: TabGroupWhitelistRule[];
   legacyCapsules: LegacySettingsCapsules;
   /** @deprecated Compatibility mirror for the optional Bilibili module/UI. */
   sectionRules: Record<SectionId, SectionRule>;
@@ -508,10 +512,13 @@ export interface PageDecision {
     | "flow-extension"
     | "visit-confirmation"
     | "temporary-access"
+    | "tab-group-whitelist"
     | "plan-access"
     | "domain-allow"
     | "domain-block"
     | "blocked";
+  /** Re-evaluate at the next local schedule boundary, even outside whitelist hours. */
+  nextAccessCheckAt?: number;
   activePeriodId?: string;
   restrictionMode?: RestrictionMode;
   groupIndex?: number;

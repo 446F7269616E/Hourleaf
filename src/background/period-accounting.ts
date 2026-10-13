@@ -1,3 +1,4 @@
+import { isTabGroupWhitelistActive } from "../shared/tab-group-whitelist";
 import type { AnalyticsService } from "../shared/analytics";
 import { resolveGroupQuota } from "../shared/group-quota";
 import type { PeriodRuntimeService } from "../shared/period-runtime";
@@ -26,7 +27,13 @@ export class PeriodUsageRecorder {
     const config = await this.settings.get();
     const configuredTarget = config.targets[target.targetId];
     if (!config.enabled || !configuredTarget) return;
-    if (target.quotaExempt || !hasEnabledTimePeriods(configuredTarget)) {
+    const whitelistOwnsInterval = target.whitelistRules?.some((rule) =>
+      isTabGroupWhitelistActive(rule, new Date(start))
+    );
+    if (
+      !whitelistOwnsInterval &&
+      (target.quotaExempt || !hasEnabledTimePeriods(configuredTarget))
+    ) {
       await this.analytics.recordInterval(target.targetId, start, end);
       return;
     }
@@ -40,7 +47,21 @@ export class PeriodUsageRecorder {
       const nextMinute = cursor + 60_000 - at.getSeconds() * 1000 - at.getMilliseconds();
       const segmentEnd = Math.min(endMs, nextMinute);
       const period = selectActiveTimePeriod(configuredTarget, at);
-      if (period?.behavior === "always-allow") {
+      const whitelisted = target.whitelistRules?.some((rule) =>
+        isTabGroupWhitelistActive(rule, at)
+      );
+      // A whitelist interval cannot become an ordinary quota interval when its
+      // clock window ends. A new website session must establish ordinary access.
+      if (whitelistOwnsInterval && !whitelisted) {
+        cursor = segmentEnd;
+        continue;
+      }
+      if (
+        whitelisted ||
+        target.quotaExempt ||
+        !hasEnabledTimePeriods(configuredTarget) ||
+        period?.behavior === "always-allow"
+      ) {
         await this.analytics.recordInterval(target.targetId, cursor, segmentEnd);
       } else if (period?.behavior === "timed") {
         const entry = await this.runtime.getEntry(target.targetId, period.id, at);

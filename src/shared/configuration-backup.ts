@@ -369,7 +369,9 @@ function upgradePauseDefaults(value: unknown): unknown {
   if (!isRecord(value)) return value;
   const settings = clone(value);
   const normalized = normalizeSettings(settings);
+  if (isRecord(settings.planMode)) settings.planMode.independentAccessTiming = true;
   settings.disableProtection ??= normalized.disableProtection;
+  settings.tabGroupWhitelist ??= [];
   if (isRecord(settings.endPage)) {
     settings.endPage.flowConsumesNextGroup ??= false;
     settings.endPage.repeatConfirmationInNewTabs ??= false;
@@ -381,7 +383,12 @@ function upgradePauseDefaults(value: unknown): unknown {
   }
   if (isRecord(settings.sites))
     for (const site of Object.values(settings.sites)) {
-      if (isRecord(site) && isRecord(site.visitConfirmation)) site.visitConfirmation.enabled = true;
+      if (isRecord(site) && isRecord(site.visitConfirmation)) {
+        site.visitConfirmation.enabled = true;
+        site.visitConfirmation.promptEnabled ??=
+          typeof site.visitConfirmation.prompt === "string" &&
+          site.visitConfirmation.prompt.trim().length > 0;
+      }
     }
   return settings;
 }

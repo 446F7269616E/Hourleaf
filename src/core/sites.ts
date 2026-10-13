@@ -73,7 +73,7 @@ export class ManagedSiteService {
       label: cleanLabel,
       enabled: true,
       restrictionMode: "strict",
-      visitConfirmation: { enabled: true, waitSeconds: 3 },
+      visitConfirmation: { enabled: true, waitSeconds: 3, promptEnabled: false },
       targetIds: [targetId],
       createdAt: now,
       updatedAt: now

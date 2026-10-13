@@ -26,7 +26,14 @@ export interface ExtensionTab {
   id?: number;
   active?: boolean;
   windowId?: number;
+  groupId?: number;
   url?: string;
+}
+
+export interface ExtensionTabGroup {
+  id: number;
+  title?: string;
+  windowId: number;
 }
 
 export interface ExtensionMessageSender {
@@ -82,9 +89,21 @@ export interface ExtensionApi {
     remove?(tabIds: number | number[], callback?: () => void): unknown;
     onActivated?: ExtensionEvent<(activeInfo: { tabId: number; windowId: number }) => void>;
     onUpdated?: ExtensionEvent<
-      (tabId: number, changeInfo: { url?: string; status?: string }, tab: ExtensionTab) => void
+      (
+        tabId: number,
+        changeInfo: { url?: string; status?: string; groupId?: number },
+        tab: ExtensionTab
+      ) => void
     >;
     onRemoved?: ExtensionEvent<(tabId: number) => void>;
+  };
+  tabGroups?: {
+    query(
+      query: Record<string, unknown>,
+      callback?: (groups: ExtensionTabGroup[]) => void
+    ): unknown;
+    onRemoved?: ExtensionEvent<(group: ExtensionTabGroup) => void>;
+    onUpdated?: ExtensionEvent<(group: ExtensionTabGroup) => void>;
   };
   windows?: {
     WINDOW_ID_NONE?: number;
@@ -347,7 +366,7 @@ export function tabsAddActivatedListener(
 export function tabsAddUpdatedListener(
   listener: (
     tabId: number,
-    changeInfo: { url?: string; status?: string },
+    changeInfo: { url?: string; status?: string; groupId?: number },
     tab: ExtensionTab
   ) => void
 ): () => void {
@@ -627,4 +646,13 @@ function callbackResult<T>(register: (resolve: (value: T) => void) => void): Pro
 
 function callbackVoid(register: (resolve: () => void) => void): Promise<void> {
   return callbackResult<void>((resolve) => register(() => resolve()));
+}
+
+/** Returns null for browsers without reliable session-scoped tab groups. */
+export async function tabGroupsQuery(): Promise<ExtensionTabGroup[] | null> {
+  const context = requireContext();
+  const groups = context.api.tabGroups;
+  if (!groups?.query || !context.api.storage.session) return null;
+  if (context.mode === "promise") return (await groups.query({})) as ExtensionTabGroup[];
+  return callbackResult<ExtensionTabGroup[]>((resolve) => groups.query({}, resolve));
 }

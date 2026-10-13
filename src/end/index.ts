@@ -1,4 +1,5 @@
-import { tabsGetCurrent } from "../shared/browser";
+import { STORAGE_KEYS } from "../shared/storage-keys";
+import { getExtensionApi, storageAddChangeListener, tabsGetCurrent } from "../shared/browser";
 import { configureLocale, t } from "../shared/i18n";
 import { sendRequest } from "../shared/messages";
 import type { FocusSettings, PeriodRuntimeStatus, UsageSummary } from "../shared/types";
@@ -24,6 +25,54 @@ const siteId = params.get("siteId") ?? "";
 const itemId = params.get("itemId") ?? "";
 const embedded = window.parent !== window;
 void render();
+let groupResumePending = false;
+let groupCheckTimer: ReturnType<typeof setTimeout> | undefined;
+async function resumeWhitelistedVisit(): Promise<boolean> {
+  if (source === "plan" || groupResumePending) return false;
+  const url = params.get("returnUrl");
+  if (!url) return false;
+  groupResumePending = true;
+  try {
+    const tabId = (await tabsGetCurrent())?.id;
+    const decision = await sendRequest({
+      type: "GET_PAGE_DECISION",
+      url,
+      tabId,
+      ...(targetId ? { targetId } : {})
+    });
+    clearTimeout(groupCheckTimer);
+    if (decision.nextAccessCheckAt !== undefined)
+      groupCheckTimer = setTimeout(
+        () => {
+          if (document.visibilityState === "visible") void resumeWhitelistedVisit();
+        },
+        Math.max(0, decision.nextAccessCheckAt - Date.now())
+      );
+    if (decision.reason !== "tab-group-whitelist") return false;
+    const planDecision = await sendRequest({ type: "GET_PLAN_NAVIGATION_DECISION", url, tabId });
+    if (!planDecision.allowed || (planDecision.reason === "expired" && planDecision.itemId))
+      return false;
+    await resume(url);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    groupResumePending = false;
+  }
+}
+if (source !== "plan") {
+  storageAddChangeListener((changes) => {
+    if (changes[STORAGE_KEYS.settings] || changes[STORAGE_KEYS.tabGroupBindings])
+      void resumeWhitelistedVisit();
+  });
+  getExtensionApi()?.tabs?.onUpdated?.addListener((_tabId, changeInfo) => {
+    if (changeInfo.groupId !== undefined) void resumeWhitelistedVisit();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void resumeWhitelistedVisit();
+  });
+  window.addEventListener("pagehide", () => clearTimeout(groupCheckTimer));
+}
 
 async function render(): Promise<void> {
   try {
@@ -68,6 +117,7 @@ async function render(): Promise<void> {
 }
 
 async function renderFocus(card: HTMLElement, settings: FocusSettings): Promise<void> {
+  if (await resumeWhitelistedVisit()) return;
   const site = settings.sites[siteId];
   const target = settings.targets[targetId];
   const url = params.get("returnUrl");
@@ -95,7 +145,9 @@ async function renderFocus(card: HTMLElement, settings: FocusSettings): Promise<
   const siteUsage = createSiteUsageSummary(settings, usage, siteId);
   if (siteUsage) actions.before(siteUsage);
   const notes = createPauseNotes([
-    ...(source === "confirmation" && site?.visitConfirmation?.prompt
+    ...(source === "confirmation" &&
+    site?.visitConfirmation?.promptEnabled &&
+    site.visitConfirmation.prompt
       ? [site.visitConfirmation.prompt]
       : []),
     settings.endPage.motivationalMessage
@@ -268,7 +320,7 @@ async function withPauseAction(run: () => Promise<void>): Promise<void> {
   }
 }
 
-function action(label: string, run: () => Promise<void>, primary = false): HTMLElement {
+function action(label: string, run: () => Promise<void | string>, primary = false): HTMLElement {
   const feedback = element("p", { className: "end-unlock__feedback", attrs: { role: "status" } });
   const button = element("button", {
     className: primary ? "btn btn--primary" : "btn",
@@ -279,7 +331,13 @@ function action(label: string, run: () => Promise<void>, primary = false): HTMLE
     void (async () => {
       button.disabled = true;
       try {
-        await withPauseAction(run);
+        await withPauseAction(async () => {
+          const result = await run();
+          if (typeof result === "string") {
+            feedback.textContent = result;
+            button.disabled = false;
+          }
+        });
       } catch {
         feedback.textContent = t("common.actionFailed");
         button.disabled = false;
@@ -289,14 +347,20 @@ function action(label: string, run: () => Promise<void>, primary = false): HTMLE
 }
 function closeAction(kind: string | null): HTMLElement {
   return action(
-    t("end.closeRelatedTabs"),
+    t(kind === "plan" ? "end.closeRelatedTabs" : "end.closeUngroupedTabs"),
     async () => {
       const tabId = (await tabsGetCurrent())?.id;
       if (kind === "plan" && itemId)
         await sendRequest({ type: "CLOSE_RELATED_TABS", source: "plan", itemId, tabId });
-      else if (siteId)
-        await sendRequest({ type: "CLOSE_RELATED_TABS", source: "focus", siteId, tabId });
-      else window.close();
+      else if (siteId) {
+        const result = await sendRequest({
+          type: "CLOSE_RELATED_TABS",
+          source: "focus",
+          siteId,
+          tabId
+        });
+        return t("end.closedUngroupedTabs", { count: result.closedCount });
+      } else window.close();
     },
     true
   );

@@ -1,3 +1,8 @@
+import {
+  isTabGroupWhitelistActive,
+  type TabGroupWhitelistRule
+} from "../shared/tab-group-whitelist";
+import { TabGroupWhitelistService } from "./tab-group-whitelist";
 import { activeBlockingProfile } from "../modules/local/profiles";
 import type { LocalModuleProfile } from "../modules/local/types";
 import { filterScheduleReferences, referencedTimePeriod } from "../modules/local/schedules";
@@ -68,6 +73,7 @@ const protectedActions = new ProtectedActions();
 
 const api = getExtensionApi();
 const settings = new SettingsRepository();
+const tabGroupWhitelist = new TabGroupWhitelistService(settings);
 const analytics = new AnalyticsService();
 const managedSites = new ManagedSiteService(settings);
 const modules = new SiteModuleRepository(undefined, PREINSTALLED_SITE_MODULE_MANIFESTS);
@@ -100,9 +106,9 @@ const tracker = new UsageTracker(
   analytics,
   Date.now,
   api,
-  async (url, at, targetId, tabId) => {
+  async (url, at, targetId, tabId, whitelistRules) => {
     const [focusDecision, planDecision, currentSettings] = await Promise.all([
-      decideEffectiveFocus(url, new Date(at), targetId),
+      decideEffectiveFocus(url, new Date(at), targetId, tabId, whitelistRules),
       plan.decideNavigation(url, undefined, tabId, { reconcile: false }),
       settings.get()
     ]);
@@ -113,7 +119,7 @@ const tracker = new UsageTracker(
       shouldRecordConfiguredUsage(currentSettings.planMode, planDecision, focusDecision.blocked)
     );
   },
-  async (url, targetId, at = Date.now()) => {
+  async (url, targetId, at = Date.now(), tabId) => {
     const resolved = await managedSites.resolve(url, targetId);
     if (!resolved) return null;
     const activePeriod = selectActiveTimePeriod(resolved.target, new Date(at));
@@ -121,6 +127,7 @@ const tracker = new UsageTracker(
       siteId: resolved.site.id,
       targetId: resolved.target.id,
       quotaExempt: (await localModules.getDomainPolicy(url)) === "always-allow",
+      whitelistRules: await tabGroupWhitelist.rulesForTab(tabId),
       ...(activePeriod?.behavior === "timed" ? { activePeriodId: activePeriod.id } : {})
     };
   },
@@ -131,6 +138,9 @@ const tracker = new UsageTracker(
 // the same group or overlap a configuration replacement. Failures do not poison it.
 let stateChangeQueue: Promise<unknown> = Promise.resolve();
 const serializedMessages = new Set<AnyRequest["type"]>([
+  "GET_TAB_GROUP_WHITELIST",
+  "SAVE_TAB_GROUP_WHITELIST",
+  "REMOVE_TAB_GROUP_WHITELIST",
   "GET_PAGE_DECISION",
   "SESSION_UPDATE",
   "UPDATE_SETTINGS",
@@ -187,16 +197,32 @@ if (api) {
   const extensionRoot = api.runtime.getURL?.("") ?? "";
   // Older versions stored grants permanently. They never become session grants.
   void storageRemove(getLocalStorageArea(), STORAGE_KEYS.planAccess).catch(() => undefined);
+  api.tabGroups?.onRemoved?.addListener((group) => {
+    tabGroupWhitelist.markRemoved(group.id);
+    const pending = stateChangeQueue.then(async () => {
+      await tracker.withSessionBoundary(() => tabGroupWhitelist.releaseGroup(group.id));
+      await notifyTabGroupAccessChange();
+    });
+    stateChangeQueue = pending.catch(() => undefined);
+  });
   api.tabs?.onUpdated?.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.groupId !== undefined) {
+      const pending = stateChangeQueue.then(async () => {
+        await tracker.flush();
+        await notifyTabGroupAccessChange(tabId);
+      });
+      stateChangeQueue = pending.catch(() => undefined);
+    }
     if (changeInfo.url)
       void visitConfirmations
         .revokeIfOriginChanged(tabId, changeInfo.url, extensionRoot)
         .catch(() => undefined);
     const url = changeInfo.url ?? tab.url;
     if (!url || (changeInfo.url === undefined && changeInfo.status !== "loading")) return;
-    const pending = stateChangeQueue.then(() =>
-      withPlanRegistrationReconcile(plan.releaseAfterNavigation(tabId, url, extensionRoot))
-    );
+    const pending = stateChangeQueue.then(async () => {
+      if ((await planVisits.get())?.tabId !== tabId) return;
+      await withPlanSessionBoundary(() => plan.releaseAfterNavigation(tabId, url, extensionRoot));
+    });
     stateChangeQueue = pending.catch(() => undefined);
   });
   api.tabs?.onUpdated?.addListener((_tabId, changeInfo, tab) => {
@@ -211,9 +237,10 @@ if (api) {
   });
   api.tabs?.onRemoved?.addListener((tabId) => {
     void visitConfirmations.revokeTab(tabId).catch(() => undefined);
-    const pending = stateChangeQueue.then(() =>
-      withPlanRegistrationReconcile(plan.releaseTab(tabId))
-    );
+    const pending = stateChangeQueue.then(async () => {
+      if ((await planVisits.get())?.tabId !== tabId) return;
+      await withPlanSessionBoundary(() => plan.releaseTab(tabId));
+    });
     stateChangeQueue = pending.catch(() => undefined);
   });
   storageAddChangeListener((changes, areaName) => {
@@ -317,9 +344,10 @@ export async function handleMessage(
             JSON.stringify(current.disableProtection))
       )
         throw new Error("Confirm changing shutdown protection before importing this backup");
-      const result = await configurationBackups.import(message.backup, Date.now(), () =>
-        tracker.resetSessions()
-      );
+      const result = await configurationBackups.import(message.backup, Date.now(), async () => {
+        await tracker.resetSessions();
+        await tabGroupWhitelist.clearBindings();
+      });
       const runtimeResults = await Promise.allSettled([
         visitConfirmations.clear(),
         (async () => {
@@ -345,9 +373,25 @@ export async function handleMessage(
         runtimeWarningCount: runtimeResults.filter((entry) => entry.status === "rejected").length
       };
     }
+    case "GET_TAB_GROUP_WHITELIST":
+      assertExtensionPageSender(sender);
+      return tabGroupWhitelist.getState();
+    case "SAVE_TAB_GROUP_WHITELIST":
+    case "REMOVE_TAB_GROUP_WHITELIST": {
+      assertExtensionPageSender(sender);
+      const result = await tracker.withSessionBoundary(() =>
+        message.type === "SAVE_TAB_GROUP_WHITELIST"
+          ? tabGroupWhitelist.save(message.rule, message.groupId)
+          : tabGroupWhitelist.remove(message.id)
+      );
+      await notifyTabGroupAccessChange();
+      return result;
+    }
     case "UPDATE_SETTINGS": {
       assertExtensionPageSender(sender);
       assertSettingsPatch(message.patch);
+      if (message.patch.tabGroupWhitelist !== undefined)
+        throw new Error("Use the tab group whitelist configuration messages");
       const current = await settings.get();
       if (
         current.disableProtection.method !== "none" &&
@@ -397,9 +441,10 @@ export async function handleMessage(
       return resetData(false);
     case "ACKNOWLEDGE_PLAN_END":
       assertExtensionPageSender(sender);
-      await withPlanRegistrationReconcile(
-        plan.acknowledgeEnd(message.itemId, await resolvePlanPageTabId(sender, message.tabId))
-      );
+      {
+        const tabId = await resolvePlanPageTabId(sender, message.tabId);
+        await withPlanSessionBoundary(() => plan.acknowledgeEnd(message.itemId, tabId));
+      }
       return { acknowledged: true };
     case "ACKNOWLEDGE_LENIENT":
       assertExtensionPageSender(sender);
@@ -432,22 +477,15 @@ export async function handleMessage(
         ? await assertAuthorizedConfiguredUrl(message.url, message.targetId, sender)
         : await managedSites.resolve(message.url, message.targetId);
       if (!isWebsiteRequest) assertExtensionPageSender(sender);
-      const [decision, currentSettings] = await Promise.all([
-        decideEffectiveFocus(message.url, new Date(), message.targetId),
-        settings.get()
-      ]);
-      const planDecision = currentSettings.planMode.enabled
-        ? await plan.decideNavigation(
-            message.url,
-            undefined,
-            sender?.tab?.id ?? (!isWebsiteRequest ? message.tabId : undefined)
-          )
-        : undefined;
-      const independentPlanAccess = isIndependentPlanAccess(currentSettings.planMode, planDecision);
-      const planOverridesFocus = independentPlanAccess && decision.reason !== "domain-block";
-      const accessDecision = planOverridesFocus ? allowFocusDecisionForPlan(decision) : decision;
+      const accessDecision = await decideCurrentPageAccess(
+        message.url,
+        message.targetId,
+        sender?.tab?.id ?? (!isWebsiteRequest ? message.tabId : undefined)
+      );
       const effectiveDecision =
-        resolved && !planOverridesFocus
+        resolved &&
+        accessDecision.reason !== "plan-access" &&
+        accessDecision.reason !== "tab-group-whitelist"
           ? await applyVisitConfirmation(accessDecision, resolved.site, sender)
           : accessDecision;
       refreshSenderToolbarBadge(sender, message.url, { focusDecision: effectiveDecision });
@@ -566,7 +604,11 @@ export async function handleMessage(
       await tracker.withSessionBoundary(() =>
         periodRuntime.grantFlow(resolved.target.id, message.periodId, message.continuation)
       );
-      const decision = await decideEffectiveFocus(message.url, new Date(), resolved.target.id);
+      const decision = await decideCurrentPageAccess(
+        message.url,
+        resolved.target.id,
+        sender?.tab?.id
+      );
       refreshSenderToolbarBadge(sender, message.url, { focusDecision: decision });
       return decision;
     }
@@ -578,7 +620,11 @@ export async function handleMessage(
       }
       await tracker.flush();
       await periodRuntime.revokeFlow(resolved.target.id, message.periodId, message.grantId);
-      const decision = await decideEffectiveFocus(message.url, new Date(), resolved.target.id);
+      const decision = await decideCurrentPageAccess(
+        message.url,
+        resolved.target.id,
+        sender?.tab?.id
+      );
       refreshSenderToolbarBadge(sender, message.url, { focusDecision: decision });
       return decision;
     }
@@ -757,7 +803,7 @@ export async function handleMessage(
       return withPlanRegistrationReconcile(plan.getState());
     case "SET_PLAN_MODE":
       assertExtensionPageSender(sender);
-      return withPlanRegistrationReconcile(
+      return withPlanSessionBoundary(() =>
         plan.setMode({
           ...(message.enabled !== undefined ? { enabled: message.enabled } : {}),
           ...(message.watchDurationMinutes !== undefined
@@ -779,10 +825,10 @@ export async function handleMessage(
       return plan.add(message);
     case "UPDATE_PLAN_ITEM":
       assertExtensionPageSender(sender);
-      return withPlanRegistrationReconcile(plan.update(message.id, message.patch));
+      return withPlanSessionBoundary(() => plan.update(message.id, message.patch));
     case "DELETE_PLAN_ITEM":
       assertExtensionPageSender(sender);
-      return withPlanRegistrationReconcile(plan.remove(message.id));
+      return withPlanSessionBoundary(() => plan.remove(message.id));
     case "MOVE_PLAN_ITEM":
       assertExtensionPageSender(sender);
       return plan.move(message.id, message.direction);
@@ -791,12 +837,14 @@ export async function handleMessage(
       return plan.reorder(message.orderedIds);
     case "SET_PLAN_ITEM_COMPLETED":
       assertExtensionPageSender(sender);
-      return withPlanRegistrationReconcile(plan.setCompleted(message.id, message.completed));
+      return withPlanSessionBoundary(() => plan.setCompleted(message.id, message.completed));
     case "START_PLAN_ITEM": {
       assertExtensionPageSender(sender);
       const tabId = await resolvePlanPageTabId(sender, message.tabId);
-      await planRegistration.prepareForStart(message.id);
-      return withPlanRegistrationReconcile(plan.start(message.id, tabId));
+      return withPlanSessionBoundary(async () => {
+        await planRegistration.prepareForStart(message.id);
+        return plan.start(message.id, tabId);
+      });
     }
     case "GET_PLAN_NAVIGATION_DECISION": {
       if (sender?.tab && !isExtensionPageSender(sender)) {
@@ -818,13 +866,9 @@ export async function handleMessage(
       } else {
         assertExtensionPageSender(sender);
       }
-      const result = await withPlanRegistrationReconcile(
-        plan.continueFlow(
-          message.itemId,
-          message.continuation,
-          message.url,
-          await resolvePlanPageTabId(sender, message.tabId)
-        )
+      const tabId = await resolvePlanPageTabId(sender, message.tabId);
+      const result = await withPlanSessionBoundary(() =>
+        plan.continueFlow(message.itemId, message.continuation, message.url, tabId)
       );
       if (message.url) {
         refreshSenderToolbarBadge(sender, message.url, {
@@ -844,7 +888,7 @@ export async function handleMessage(
       } else {
         assertExtensionPageSender(sender);
       }
-      const result = await withPlanRegistrationReconcile(
+      const result = await withPlanSessionBoundary(() =>
         plan.revokeFlow(message.itemId, message.url, sender?.tab?.id)
       );
       if (message.url) refreshSenderToolbarBadge(sender, message.url);
@@ -857,7 +901,7 @@ export async function handleMessage(
       } else {
         assertExtensionPageSender(sender);
       }
-      const result = await withPlanRegistrationReconcile(
+      const result = await withPlanSessionBoundary(() =>
         plan.pauseAtVideoEnd(message.itemId, message.url, sender?.tab?.id)
       );
       if (message.url) refreshSenderToolbarBadge(sender, message.url);
@@ -869,6 +913,9 @@ export async function handleMessage(
     case "SESSION_UPDATE": {
       if (!sender?.tab) throw new Error("Session updates require a website tab");
       const resolved = await assertAuthorizedConfiguredUrl(message.url, message.targetId, sender);
+      // Settle the prior source before current clock/confirmation checks. A
+      // rejected heartbeat at whitelist expiry must not discard earlier usage.
+      await tracker.flush();
       const [currentSettings, planDecision] = await Promise.all([
         settings.get(),
         plan.decideNavigation(message.url, undefined, sender.tab.id)
@@ -876,7 +923,9 @@ export async function handleMessage(
       const independentPlanAccess = isIndependentPlanAccess(currentSettings.planMode, planDecision);
       const confirmation = resolved.site.visitConfirmation;
       if (
+        message.event !== "stop" &&
         !independentPlanAccess &&
+        !(await tabGroupWhitelist.allows(sender.tab.id, new Date())) &&
         confirmation?.enabled &&
         sender.tab.id !== undefined &&
         !(await visitConfirmations.isGranted(
@@ -887,6 +936,14 @@ export async function handleMessage(
           await createVisitAccessContext(currentSettings, resolved.site.id)
         ))
       ) {
+        await tracker.handleSessionUpdate(
+          sender.tab,
+          "stop",
+          message.sessionId,
+          message.url,
+          "hidden",
+          resolved.target.id
+        );
         return { accepted: false };
       }
       return {
@@ -967,7 +1024,9 @@ async function applyVisitConfirmation(
 async function decideEffectiveFocus(
   url: string,
   now: Date,
-  targetId?: TargetId
+  targetId?: TargetId,
+  tabId?: number,
+  whitelistSnapshot?: TabGroupWhitelistRule[]
 ): Promise<PageDecision> {
   const base = await focus.decide(url, now, targetId);
   if (
@@ -979,14 +1038,6 @@ async function decideEffectiveFocus(
     return base;
   }
   const policy = await localModules.getDomainPolicy(url);
-  if (policy === "always-allow") {
-    return {
-      ...base,
-      blocked: false,
-      reason: "domain-allow",
-      canRequestTemporaryAccess: false
-    };
-  }
   if (policy === "always-block") {
     return {
       ...base,
@@ -995,7 +1046,66 @@ async function decideEffectiveFocus(
       canRequestTemporaryAccess: false
     };
   }
-  return base;
+  const whitelistRules = whitelistSnapshot ?? (await tabGroupWhitelist.rulesForTab(tabId));
+  const nextAccessCheckAt = whitelistRules.some((rule) => rule.enabled)
+    ? now.getTime() + 60_000 - now.getSeconds() * 1000 - now.getMilliseconds()
+    : undefined;
+  if (whitelistRules.some((rule) => isTabGroupWhitelistActive(rule, now))) {
+    return {
+      siteId: base.siteId,
+      targetId: base.targetId,
+      section: base.section,
+      blocked: false,
+      reason: "tab-group-whitelist",
+      nextAccessCheckAt,
+      canRequestTemporaryAccess: false,
+      temporaryAccessUsesRemaining: 0
+    };
+  }
+  if (policy === "always-allow") {
+    return {
+      ...base,
+      ...(nextAccessCheckAt !== undefined ? { nextAccessCheckAt } : {}),
+      blocked: false,
+      reason: "domain-allow",
+      canRequestTemporaryAccess: false
+    };
+  }
+  return { ...base, ...(nextAccessCheckAt !== undefined ? { nextAccessCheckAt } : {}) };
+}
+
+async function notifyTabGroupAccessChange(tabId?: number): Promise<void> {
+  const tabs =
+    tabId === undefined
+      ? await tabsQuery({})
+      : [await tabsGet(tabId)].filter((tab): tab is ExtensionTab => tab !== null);
+  await Promise.allSettled(
+    tabs
+      .filter((tab) => tab.id !== undefined)
+      .map(async (tab) => {
+        await refreshToolbarBadgeForTab(tab);
+        await tabsSendMessage(tab.id!, { type: "HOURLEAF_TAB_GROUP_ACCESS_CHANGED" }).catch(
+          () => undefined
+        );
+      })
+  );
+}
+
+/** Plan > group whitelist > ordinary time rules; domain blocks remain explicit. */
+async function decideCurrentPageAccess(
+  url: string,
+  targetId?: TargetId,
+  tabId?: number
+): Promise<PageDecision> {
+  const [decision, planDecision] = await Promise.all([
+    decideEffectiveFocus(url, new Date(), targetId, tabId),
+    plan.decideNavigation(url, undefined, tabId)
+  ]);
+  return decision.reason !== "domain-block" &&
+    planDecision.allowed &&
+    planDecision.reason === "authorized"
+    ? allowFocusDecisionForPlan(decision)
+    : decision;
 }
 
 function allowFocusDecisionForPlan(decision: PageDecision): PageDecision {
@@ -1064,7 +1174,7 @@ async function refreshToolbarBadgeForTab(
     const now = new Date();
     const [usage, decision, planDecision] = await Promise.all([
       analytics.summarize("day", now),
-      overrides.focusDecision ?? decideEffectiveFocus(parsed.href, now),
+      overrides.focusDecision ?? decideEffectiveFocus(parsed.href, now, undefined, tab.id),
       overrides.planDecision ??
         (currentSettings.planMode.enabled
           ? plan.decideNavigation(parsed.href, undefined, tab.id, { reconcile: false })
@@ -1168,6 +1278,11 @@ async function withPlanRegistrationReconcile<T>(operation: Promise<T>): Promise<
   }
 }
 
+/** Defer grant mutations until the previous source's interval has been settled. */
+async function withPlanSessionBoundary<T>(change: () => Promise<T>): Promise<T> {
+  return tracker.withSessionBoundary(() => withPlanRegistrationReconcile(change()));
+}
+
 async function reconcilePlanRegistration(): Promise<void> {
   try {
     await planRegistration.reconcile();
@@ -1199,6 +1314,7 @@ async function resetData(clearAll: boolean): Promise<FocusSettings> {
       ...(clearAll ? [STORAGE_KEYS.planQueue, STORAGE_KEYS.modules, "hourleaf.plan.view"] : [])
     ]);
     await visitConfirmations.clear();
+    await tabGroupWhitelist.clearBindings();
     await planAccess.clear();
     await planVisits.clear();
     if (clearAll)

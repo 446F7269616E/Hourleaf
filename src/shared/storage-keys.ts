@@ -1,5 +1,6 @@
 /** Stable logical keys. Legacy names are retained for upgrade compatibility. */
 export const STORAGE_KEYS = {
+  tabGroupBindings: "hourleaf.tab-group-bindings.v1",
   settings: "bilifocus.settings.v1",
   usage: "bilifocus.usage.v1",
   temporaryAccess: "bilifocus.temporary-access.v1",

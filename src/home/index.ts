@@ -123,17 +123,6 @@ function createPluginSettingsPanel(): HTMLElement {
       autoComplete.input
     );
   });
-  const independentPlanTiming = createToggle(
-    t("settings.planIndependentAccess"),
-    settings.planMode.independentAccessTiming,
-    "settings-plan-independent-access"
-  );
-  independentPlanTiming.input.addEventListener("change", () => {
-    void updateSettings(
-      { planMode: { independentAccessTiming: independentPlanTiming.input.checked } },
-      independentPlanTiming.input
-    );
-  });
   const planBlocking = createToggle(
     t("settings.planEnableAllBlocking"),
     settings.planMode.enableAllBlocking,
@@ -306,12 +295,12 @@ function createPluginSettingsPanel(): HTMLElement {
         t("settings.otherDescription")
       ),
       element("div", {
-        className: "home-plugin-card card",
+        className: "home-settings-categories",
         children: [
           createSettingsGroup(
             "general",
-            t("settings.general"),
-            t("settings.generalDescription"),
+            t("settings.runtime"),
+            t("settings.runtimeDescription"),
             [
               createSettingRow(
                 t("settings.focusEnabled"),
@@ -322,24 +311,17 @@ function createPluginSettingsPanel(): HTMLElement {
                 t("pause.disableProtection"),
                 t("pause.disableHint"),
                 createDisableProtection()
-              ),
+              )
+            ],
+            true
+          ),
+          createSettingsGroup(
+            "appearance",
+            t("settings.appearance"),
+            t("settings.appearanceDescription"),
+            [
               createSettingRow(t("settings.language"), t("settings.languageDescription"), locale),
               createSettingRow(t("settings.theme"), t("settings.themeDescription"), theme),
-              createSettingRow(
-                t("settings.planAutoComplete"),
-                t("settings.planAutoCompleteDescription"),
-                autoComplete.label
-              ),
-              createSettingRow(
-                t("settings.planIndependentAccess"),
-                t("settings.planIndependentAccessDescription"),
-                independentPlanTiming.label
-              ),
-              createSettingRow(
-                t("settings.planEnableAllBlocking"),
-                t("settings.planEnableAllBlockingDescription"),
-                planBlocking.label
-              ),
               createSettingRow(
                 t("settings.showRemainingMinutesOnIcon"),
                 t("settings.showRemainingMinutesOnIconDescription"),
@@ -349,15 +331,28 @@ function createPluginSettingsPanel(): HTMLElement {
             true
           ),
           createSettingsGroup(
-            "end-page",
-            t("settings.endPage"),
-            t("settings.endPageDescription"),
+            "plan",
+            t("settings.planCategory"),
+            t("settings.planCategoryDescription"),
             [
               createSettingRow(
-                t("settings.motivation"),
-                t("settings.motivationDescription"),
-                motivation
+                t("settings.planAutoComplete"),
+                t("settings.planAutoCompleteDescription"),
+                autoComplete.label
               ),
+              createSettingRow(
+                t("settings.planEnableAllBlocking"),
+                t("settings.planEnableAllBlockingDescription"),
+                planBlocking.label
+              )
+            ],
+            false
+          ),
+          createSettingsGroup(
+            "access",
+            t("settings.accessCategory"),
+            t("settings.accessCategoryDescription"),
+            [
               createSettingRow(
                 t("settings.groupUnlock"),
                 t("settings.groupUnlockDescription"),
@@ -383,10 +378,23 @@ function createPluginSettingsPanel(): HTMLElement {
                 t("pause.repeatConfirmationHint"),
                 repeatConfirmation.label
               ),
-              createSettingRow(t("pause.flowCharge"), t("pause.flowChargeHint"), flowCharge.label),
               createSettingRow(t("settings.password"), t("settings.passwordStored"), password)
             ],
-            true
+            false
+          ),
+          createSettingsGroup(
+            "end-page",
+            t("settings.endPage"),
+            t("settings.endPageDescription"),
+            [
+              createSettingRow(
+                t("settings.motivation"),
+                t("settings.motivationDescription"),
+                motivation
+              ),
+              createSettingRow(t("pause.flowCharge"), t("pause.flowChargeHint"), flowCharge.label)
+            ],
+            false
           ),
           createSettingsGroup(
             "data-management",
@@ -421,7 +429,7 @@ function createSettingsGroup(
   open: boolean
 ): HTMLDetailsElement {
   const group = element("details", {
-    className: "home-settings-group",
+    className: "home-settings-group card",
     attrs: { open: settingsGroupStates.get(id) ?? open, "data-settings-group": id },
     children: [
       element("summary", {

@@ -14,14 +14,15 @@ Hourleaf 的单一用途是：帮助用户按自己的规则管理网站使用�
 
 ## 权限预算
 
-| 能力             | 权限                        | 约束                                                                  |
-| ---------------- | --------------------------- | --------------------------------------------------------------------- |
-| 本地设置与统计   | `storage`                   | 不使用云同步或遥测                                                    |
-| 工具栏当前页预览 | `activeTab`                 | 仅在用户点击工具栏后读取当前页来源，不保存页面 URL                    |
-| 排除设备离开时间 | `idle`（平台支持时）        | 只判断 active/idle/locked                                             |
-| 注册已授权网站   | `scripting`                 | 只注册到配置中且仍获授权的精确来源                                    |
-| 用户选择的网站   | `optional_host_permissions` | `http://*/*`/`https://*/*` 只是请求上限；每次只申请精确 `${origin}/*` |
-| 用户本地脚本     | `userScripts`               | Chromium 必需/用户另行开启；Firefox 可选；Safari 不声明               |
+| 能力             | 权限                            | 约束                                                                           |
+| ---------------- | ------------------------------- | ------------------------------------------------------------------------------ |
+| 本地设置与统计   | `storage`                       | 不使用云同步或遥测                                                             |
+| 工具栏当前页预览 | `activeTab`                     | 仅在用户点击工具栏后读取当前页来源，不保存页面 URL                             |
+| 排除设备离开时间 | `idle`（平台支持时）            | 只判断 active/idle/locked                                                      |
+| 标签页组白名单   | `tabGroups`（Chromium/Firefox） | 只读取组元数据与所属关系，当前会话绑定；无 API/会话存储时不放行，Safari 不声明 |
+| 注册已授权网站   | `scripting`                     | 只注册到配置中且仍获授权的精确来源                                             |
+| 用户选择的网站   | `optional_host_permissions`     | `http://*/*`/`https://*/*` 只是请求上限；每次只申请精确 `${origin}/*`          |
+| 用户本地脚本     | `userScripts`                   | Chromium 必需/用户另行开启；Firefox 可选；Safari 不声明                        |
 
 默认禁止持续的 `tabs`、`history`、`cookies`、`identity`、`webRequest`、`downloads`、`management`、`nativeMessaging`、`debugger` 与 `unlimitedStorage`。`activeTab` 只允许用户点击工具栏后的单页临时预览。新增权限必须有已实现功能、产品内说明和三平台兼容评审，不能只为未来预留。
 

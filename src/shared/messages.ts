@@ -1,3 +1,8 @@
+import {
+  parseTabGroupWhitelistRule,
+  type TabGroupWhitelistRule,
+  type TabGroupWhitelistState
+} from "./tab-group-whitelist";
 import { runtimeSendMessage } from "./browser";
 import type {
   DeepPartial,
@@ -49,6 +54,12 @@ import {
 export type SessionEvent = "start" | "heartbeat" | "route" | "stop";
 
 export interface MessageContract {
+  GET_TAB_GROUP_WHITELIST: { request: Record<never, unknown>; response: TabGroupWhitelistState };
+  SAVE_TAB_GROUP_WHITELIST: {
+    request: { rule: TabGroupWhitelistRule; groupId?: number };
+    response: TabGroupWhitelistState;
+  };
+  REMOVE_TAB_GROUP_WHITELIST: { request: { id: string }; response: TabGroupWhitelistState };
   GET_SETTINGS: { request: Record<never, unknown>; response: FocusSettings };
   GET_CONFIGURATION_BACKUP: {
     request: Record<never, unknown>;
@@ -152,7 +163,12 @@ export interface MessageContract {
       patch: {
         label?: string;
         restrictionMode?: "lenient" | "flow" | "strict";
-        visitConfirmation?: { enabled: boolean; waitSeconds: number; prompt?: string };
+        visitConfirmation?: {
+          enabled: boolean;
+          waitSeconds: number;
+          promptEnabled?: boolean;
+          prompt?: string;
+        };
       };
     };
     response: ManagedSite;
@@ -442,6 +458,29 @@ export function parseMessageRequest(
     case "GET_LOCAL_MODULES":
       request = { type: value.type };
       break;
+    case "GET_TAB_GROUP_WHITELIST":
+      if (!hasOnlyKeys(payload, [])) return null;
+      request = { type: value.type };
+      break;
+    case "SAVE_TAB_GROUP_WHITELIST": {
+      if (
+        !hasOnlyKeys(payload, ["rule", "groupId"]) ||
+        (payload.groupId !== undefined && !isBoundedInteger(payload.groupId, 0, 2147483647))
+      )
+        return null;
+      const rule = parseTabGroupWhitelistRule(payload.rule);
+      if (!rule) return null;
+      request = {
+        type: value.type,
+        rule,
+        ...(typeof payload.groupId === "number" ? { groupId: payload.groupId } : {})
+      };
+      break;
+    }
+    case "REMOVE_TAB_GROUP_WHITELIST":
+      if (!hasOnlyKeys(payload, ["id"]) || !isOpaqueId(payload.id)) return null;
+      request = { type: value.type, id: payload.id };
+      break;
     case "UPDATE_SETTINGS":
       if (!isRecord(payload.patch) || !isBoundedJson(payload.patch)) return null;
       request = { type: value.type, patch: payload.patch };
@@ -610,9 +649,16 @@ export function parseMessageRequest(
       if (payload.patch.visitConfirmation !== undefined) {
         if (
           !isRecord(payload.patch.visitConfirmation) ||
-          !hasOnlyKeys(payload.patch.visitConfirmation, ["enabled", "waitSeconds", "prompt"]) ||
+          !hasOnlyKeys(payload.patch.visitConfirmation, [
+            "enabled",
+            "waitSeconds",
+            "promptEnabled",
+            "prompt"
+          ]) ||
           typeof payload.patch.visitConfirmation.enabled !== "boolean" ||
           !isBoundedInteger(payload.patch.visitConfirmation.waitSeconds, 0, 60) ||
+          (payload.patch.visitConfirmation.promptEnabled !== undefined &&
+            typeof payload.patch.visitConfirmation.promptEnabled !== "boolean") ||
           (payload.patch.visitConfirmation.prompt !== undefined &&
             (typeof payload.patch.visitConfirmation.prompt !== "string" ||
               payload.patch.visitConfirmation.prompt.length > MAX_VISIT_CONFIRMATION_PROMPT_LENGTH))

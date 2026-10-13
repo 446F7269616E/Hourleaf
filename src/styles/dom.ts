@@ -1,4 +1,4 @@
-import { getResolvedLocale, t } from "../shared/i18n";
+import { t } from "../shared/i18n";
 
 export type IconName =
   | "arrow"
@@ -183,12 +183,6 @@ export function formatClockTime(value: string): string {
   const hour = Number(hourText);
   const minute = Number(minuteText);
   if (!Number.isFinite(hour) || !Number.isFinite(minute)) return value;
-  if (getResolvedLocale() === "en") {
-    return new Intl.DateTimeFormat("en", {
-      hour: "numeric",
-      minute: "2-digit"
-    }).format(new Date(2000, 0, 1, hour, minute));
-  }
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 

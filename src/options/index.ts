@@ -1,3 +1,13 @@
+import { createClockInput, clockRangeHint } from "../ui/clock-input";
+import { mountViewportScrollPanel } from "../ui/viewport-scroll-panel";
+import { createConfigurationDirectory } from "../ui/configuration-directory";
+import {
+  createConfigurationField as createField,
+  createConfigurationToggle as createToggle,
+  createConfigurationDayPicker,
+  formatConfigurationDays as formatDays
+} from "../ui/configuration-controls";
+import { createTabGroupWhitelist } from "../ui/tab-group-whitelist";
 import {
   createDefaultTimePeriod,
   MAX_CUSTOM_TIME_PERIOD_PRESETS,
@@ -14,8 +24,7 @@ import {
   type RestrictionMode,
   type SiteTargetSettings,
   type TimePeriodBehavior,
-  type TimePeriodSettings,
-  type Weekday
+  type TimePeriodSettings
 } from "../shared/types";
 import { siteMatchesUrl } from "../shared/site-scope";
 import {
@@ -44,20 +53,6 @@ import {
   requestWebsitePermission
 } from "../ui/site-management";
 
-const WEEKDAYS: ReadonlyArray<{
-  value: Weekday;
-  shortKey: MessageKey;
-  labelKey: MessageKey;
-}> = [
-  { value: 1, shortKey: "weekday.mon.short", labelKey: "weekday.mon" },
-  { value: 2, shortKey: "weekday.tue.short", labelKey: "weekday.tue" },
-  { value: 3, shortKey: "weekday.wed.short", labelKey: "weekday.wed" },
-  { value: 4, shortKey: "weekday.thu.short", labelKey: "weekday.thu" },
-  { value: 5, shortKey: "weekday.fri.short", labelKey: "weekday.fri" },
-  { value: 6, shortKey: "weekday.sat.short", labelKey: "weekday.sat" },
-  { value: 0, shortKey: "weekday.sun.short", labelKey: "weekday.sun" }
-];
-
 const app = assertAppRoot();
 let draft: FocusSettings | null = null;
 let savedConfiguration: Pick<
@@ -65,6 +60,9 @@ let savedConfiguration: Pick<
   "sites" | "targets" | "customTimePeriodPresets"
 > | null = null;
 let selectedSiteId: string | null = null;
+let selectedConfigurationKind: "site" | "tab-group" = "site";
+let selectedGroupRuleId: string | null = null;
+let releaseSidebarSizing: (() => void) | undefined;
 let saveState: HTMLElement | null = null;
 let saveStateText: HTMLElement | null = null;
 let autoSaveTimer: number | undefined;
@@ -93,6 +91,8 @@ async function loadOptions(preferredOrigin?: string): Promise<void> {
         : selectedSiteId && draft.sites[selectedSiteId]
           ? selectedSiteId
           : sortedSites()[0]?.id) ?? null;
+    if (preferredOrigin) selectedConfigurationKind = "site";
+    else if (!selectedSiteId) selectedConfigurationKind = "tab-group";
     savedConfiguration = configurationOf(draft);
     saveStatus = "saved";
     renderOptions();
@@ -102,6 +102,8 @@ async function loadOptions(preferredOrigin?: string): Promise<void> {
 }
 
 function renderLoading(): void {
+  releaseSidebarSizing?.();
+  releaseSidebarSizing = undefined;
   app.replaceChildren(
     element("section", {
       className: "state-view",
@@ -145,6 +147,7 @@ function renderError(message: string): void {
 
 function renderOptions(): void {
   if (!draft) return;
+  releaseSidebarSizing?.();
   document.body.classList.add("options-page");
   saveStateText = element("span", {
     attrs: {
@@ -162,24 +165,48 @@ function renderOptions(): void {
   });
   updateSaveState();
 
+  const groupWhitelist = createTabGroupWhitelist({
+    active: selectedConfigurationKind === "tab-group",
+    selectedRuleId: selectedGroupRuleId,
+    onSelect: (ruleId) => {
+      selectedConfigurationKind = "tab-group";
+      selectedGroupRuleId = ruleId;
+      renderOptionsPreservingScroll();
+    },
+    onSelectionChange: (ruleId) => {
+      selectedGroupRuleId = ruleId;
+    }
+  });
   const site = selectedSiteId ? draft.sites[selectedSiteId] : undefined;
-  const content = site
-    ? element("div", {
-        className: "settings-content options-workspace",
+  const content = element("div", {
+    className: "settings-content options-workspace",
+    children: [
+      element("aside", {
+        className: "options-sidebar",
+        attrs: { "aria-label": t("options.configurationDirectory") },
+        children: [createSiteDirectory(), groupWhitelist.directory]
+      }),
+      element("div", {
+        className: "options-detail-editor",
+        attrs: { id: "configuration-editor" },
         children: [
-          createSiteDirectory(),
-          element("div", {
-            className: "options-site-editor",
-            children: [
-              createSiteContext(site),
-              createVisitConfirmationCard(site),
-              createRestrictionModeCard(site),
-              createTimePeriodWorkspace(site)
-            ]
-          })
+          selectedConfigurationKind === "tab-group"
+            ? groupWhitelist.editor
+            : site
+              ? element("div", {
+                  className: "options-site-editor",
+                  children: [
+                    createSiteContext(site),
+                    createRestrictionModeCard(site),
+                    createTimePeriodWorkspace(site),
+                    createVisitConfirmationCard(site)
+                  ]
+                })
+              : createEmptyState()
         ]
       })
-    : createEmptyState();
+    ]
+  });
 
   app.replaceChildren(
     element("div", {
@@ -194,7 +221,7 @@ function renderOptions(): void {
             }),
             element("div", {
               className: "options-header__actions",
-              children: [createAddSiteButton()]
+              children: [createAddSiteButton(), groupWhitelist.addButton]
             })
           ]
         }),
@@ -202,6 +229,8 @@ function renderOptions(): void {
       ]
     })
   );
+  const sidebar = document.querySelector<HTMLElement>(".options-sidebar");
+  if (sidebar) releaseSidebarSizing = mountViewportScrollPanel(sidebar);
   updateSaveState();
 }
 
@@ -218,52 +247,25 @@ function createEmptyState(): HTMLElement {
 
 function createSiteDirectory(): HTMLElement {
   const sites = sortedSites();
-  return element("aside", {
-    className: "options-site-directory card",
-    attrs: { "aria-label": t("options.siteDirectoryLabel") },
-    children: [
-      element("header", {
-        children: [
-          element("h2", { text: t("options.sites") }),
-          element("span", {
-            className: "status-chip",
-            text: t("common.itemCount", { count: sites.length })
-          })
-        ]
-      }),
-      element("div", {
-        className: "options-site-directory__list",
-        children: sites.map((site) => {
-          const selected = site.id === selectedSiteId;
-          const button = element("button", {
-            className: "options-site-directory__item",
-            attrs: {
-              type: "button",
-              "aria-current": selected ? "page" : undefined
-            },
-            dataset: { selected: String(selected) },
-            children: [
-              element("span", {
-                className: "options-site-directory__mark",
-                text: (site.label || site.hostname).slice(0, 1).toUpperCase()
-              }),
-              element("span", {
-                className: "options-site-directory__copy",
-                children: [
-                  element("strong", { text: site.label || site.hostname }),
-                  element("small", { text: site.hostname })
-                ]
-              })
-            ]
-          });
-          button.addEventListener("click", () => {
-            selectedSiteId = site.id;
-            renderOptions();
-          });
-          return button;
-        })
-      })
-    ]
+  const selectSite = (siteId: string | null) => {
+    selectedConfigurationKind = "site";
+    selectedSiteId = siteId;
+    renderOptionsPreservingScroll();
+  };
+  return createConfigurationDirectory({
+    title: t("options.sites"),
+    label: t("options.siteDirectoryLabel"),
+    active: selectedConfigurationKind === "site",
+    emptyLabel: t("options.emptyTitle"),
+    onSelect: () => selectSite(selectedSiteId ?? sites[0]?.id ?? null),
+    items: sites.map((site) => ({
+      id: site.id,
+      label: site.label || site.hostname,
+      detail: site.hostname,
+      mark: (site.label || site.hostname).slice(0, 1).toUpperCase(),
+      selected: selectedConfigurationKind === "site" && site.id === selectedSiteId,
+      onSelect: () => selectSite(site.id)
+    }))
   });
 }
 
@@ -335,12 +337,13 @@ function createRestrictionModeCard(site: ManagedSite): HTMLElement {
               element("h2", {
                 text: t("options.restrictionMode"),
                 attrs: { id: "restriction-mode-title" }
-              })
+              }),
+              description
             ]
           }),
           element("div", {
             className: "restriction-mode-card__control",
-            children: [mode, description]
+            children: [mode]
           })
         ]
       })
@@ -349,8 +352,16 @@ function createRestrictionModeCard(site: ManagedSite): HTMLElement {
 }
 
 function createVisitConfirmationCard(site: ManagedSite): HTMLElement {
-  const confirmation = site.visitConfirmation ?? { enabled: true, waitSeconds: 3 };
+  const confirmation = site.visitConfirmation ?? {
+    enabled: true,
+    waitSeconds: 3,
+    promptEnabled: false
+  };
   site.visitConfirmation = confirmation;
+  const promptEnabled = createToggle(
+    t("options.customPromptEnabled"),
+    confirmation.promptEnabled ?? Boolean(confirmation.prompt)
+  );
   const prompt = element("textarea", {
     className: "input visit-confirmation__prompt",
     text: confirmation.prompt ?? "",
@@ -362,13 +373,37 @@ function createVisitConfirmationCard(site: ManagedSite): HTMLElement {
       "aria-describedby": `visit-confirmation-prompt-hint-${site.id}`
     }
   });
+  const promptField = element("div", {
+    className: "visit-confirmation-card__prompt",
+    attrs: { id: `visit-confirmation-prompt-${site.id}`, hidden: !promptEnabled.input.checked },
+    children: [
+      createField(t("options.visitConfirmationPrompt"), prompt),
+      element("p", {
+        className: "field__hint",
+        text: t("options.visitConfirmationPromptHint"),
+        attrs: { id: `visit-confirmation-prompt-hint-${site.id}` }
+      })
+    ]
+  });
+  promptEnabled.input.setAttribute("aria-controls", promptField.id);
+  promptEnabled.input.addEventListener("change", () => {
+    const current = draft?.sites[site.id];
+    if (!current) return;
+    current.visitConfirmation = {
+      ...(current.visitConfirmation ?? confirmation),
+      promptEnabled: promptEnabled.input.checked
+    };
+    promptField.hidden = !promptEnabled.input.checked;
+    current.updatedAt = Date.now();
+    markSiteDirty(site.id);
+  });
   prompt.addEventListener("change", () => {
     const current = draft?.sites[site.id];
     if (!current) return;
     const value = prompt.value.trim().slice(0, MAX_VISIT_CONFIRMATION_PROMPT_LENGTH);
     prompt.value = value;
     const nextConfirmation = {
-      ...(current.visitConfirmation ?? { enabled: true, waitSeconds: 3 }),
+      ...(current.visitConfirmation ?? confirmation),
       ...(value ? { prompt: value } : {})
     };
     if (!value) delete nextConfirmation.prompt;
@@ -376,7 +411,6 @@ function createVisitConfirmationCard(site: ManagedSite): HTMLElement {
     current.updatedAt = Date.now();
     markSiteDirty(site.id);
   });
-
   return element("section", {
     className: "visit-confirmation-card card",
     attrs: { "aria-labelledby": `visit-confirmation-title-${site.id}` },
@@ -396,7 +430,14 @@ function createVisitConfirmationCard(site: ManagedSite): HTMLElement {
           })
         ]
       }),
-      prompt
+      element("div", {
+        className: "access-toggle-row",
+        children: [
+          element("strong", { text: t("options.customPromptEnabled") }),
+          promptEnabled.label
+        ]
+      }),
+      promptField
     ]
   });
 }
@@ -845,14 +886,8 @@ function openCustomPresetDialog(target: SiteTargetSettings, trigger: HTMLButtonE
             placeholder: t("options.quickAdd.customPeriodFallback", { count: index + 1 })
           }
         });
-        const start = element("input", {
-          className: "input",
-          attrs: { type: "time", required: true, value: period.startTime }
-        });
-        const end = element("input", {
-          className: "input",
-          attrs: { type: "time", required: true, value: period.endTime }
-        });
+        const start = createClockInput(period.startTime);
+        const end = createClockInput(period.endTime);
         const limit = element("input", {
           className: "input",
           attrs: { type: "number", required: true, min: 1, max: 1440, value: period.limitMinutes }
@@ -1215,24 +1250,9 @@ function openPeriodDialog(target: SiteTargetSettings, existing?: TimePeriodSetti
     className: "input",
     attrs: { type: "number", min: 1, max: 24, step: 1, value: period.groupCount, required: true }
   });
-  const start = element("input", {
-    className: "input",
-    attrs: { type: "time", value: period.startTime, required: true }
-  });
-  const end = element("input", {
-    className: "input",
-    attrs: { type: "time", value: period.endTime, required: true }
-  });
-  const dayInputs = WEEKDAYS.map((day) => ({
-    day,
-    input: element("input", {
-      attrs: {
-        type: "checkbox",
-        checked: period.days.includes(day.value),
-        "aria-label": t(day.labelKey)
-      }
-    })
-  }));
+  const start = createClockInput(period.startTime);
+  const end = createClockInput(period.endTime);
+  const dayPicker = createConfigurationDayPicker(t("options.periodDays"), period.days);
   const note = element("p", { className: "schedule-note", attrs: { role: "status" } });
   const enabled = createToggle(t("common.enabled"), period.enabled);
   const close = element("button", {
@@ -1274,21 +1294,7 @@ function openPeriodDialog(target: SiteTargetSettings, existing?: TimePeriodSetti
       createField(t("options.periodName"), name),
       createField(t("options.periodBehavior"), behavior),
       timedFields,
-      element("fieldset", {
-        className: "field schedule-weekdays",
-        children: [
-          element("legend", { text: t("options.periodDays") }),
-          element("div", {
-            className: "day-picker",
-            children: dayInputs.map(({ day, input }) =>
-              element("label", {
-                attrs: { title: t(day.labelKey) },
-                children: [input, t(day.shortKey)]
-              })
-            )
-          })
-        ]
-      }),
+      dayPicker.field,
       element("div", {
         className: "time-fields",
         children: [
@@ -1312,12 +1318,7 @@ function openPeriodDialog(target: SiteTargetSettings, existing?: TimePeriodSetti
     timedFields.hidden = !timed;
     limit.required = timed;
     groups.required = timed;
-    note.textContent =
-      start.value === end.value
-        ? t("options.fullDayNote")
-        : start.value > end.value
-          ? t("options.crossMidnightNote")
-          : "";
+    note.textContent = clockRangeHint(start.value, end.value);
   };
   close.addEventListener("click", closeDialog);
   cancel.addEventListener("click", closeDialog);
@@ -1329,10 +1330,10 @@ function openPeriodDialog(target: SiteTargetSettings, existing?: TimePeriodSetti
   end.addEventListener("input", updateFields);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    const days = dayInputs.filter(({ input }) => input.checked).map(({ day }) => day.value);
+    const days = dayPicker.selectedDays();
     if (days.length === 0) {
       note.textContent = t("options.selectOneDay");
-      dayInputs[0]?.input.focus();
+      dayPicker.inputs[0]?.input.focus();
       return;
     }
     const current = draft?.targets[target.id];
@@ -1366,18 +1367,6 @@ function openPeriodDialog(target: SiteTargetSettings, existing?: TimePeriodSetti
 
 function displayPeriodName(period: TimePeriodSettings): string {
   return period.name || t("options.defaultPeriodName");
-}
-
-function createField(label: string, control: HTMLElement, suffix?: string): HTMLElement {
-  return element("label", {
-    className: "field",
-    children: [
-      element("span", { text: label }),
-      suffix
-        ? element("span", { className: "period-dialog__number", children: [control, suffix] })
-        : control
-    ]
-  });
 }
 
 function createAddSiteButton(): HTMLButtonElement {
@@ -1415,10 +1404,21 @@ function openAddSiteDialog(): void {
   });
   const dialog = element("dialog", {
     className: "dialog options-site-dialog",
+    attrs: { "aria-labelledby": "site-add-title" },
     children: [
       element("form", {
         children: [
-          element("h2", { text: t("options.addSite") }),
+          element("header", {
+            className: "dialog__header",
+            children: [
+              element("h2", { text: t("options.addSite"), attrs: { id: "site-add-title" } }),
+              element("button", {
+                className: "btn btn--icon",
+                attrs: { type: "button", "aria-label": t("common.close") },
+                children: [icon("close")]
+              })
+            ]
+          }),
           createField(t("options.websiteInput"), input),
           note,
           element("footer", { className: "dialog__footer", children: [cancel, submit] })
@@ -1427,6 +1427,7 @@ function openAddSiteDialog(): void {
     ]
   });
   cancel.addEventListener("click", () => dialog.close());
+  dialog.querySelector(".dialog__header button")?.addEventListener("click", () => dialog.close());
   dialog.querySelector("form")?.addEventListener("submit", (event) => {
     event.preventDefault();
     void (async () => {
@@ -1501,28 +1502,6 @@ function openRemoveSiteDialog(site: ManagedSite): void {
   dialog.addEventListener("close", () => dialog.remove());
   document.body.append(dialog);
   dialog.showModal();
-}
-
-function createToggle(
-  labelText: string,
-  checked: boolean,
-  testId?: string
-): { label: HTMLLabelElement; input: HTMLInputElement } {
-  const input = element("input", {
-    attrs: {
-      type: "checkbox",
-      checked,
-      "aria-label": labelText,
-      ...(testId ? { "data-testid": testId } : {})
-    }
-  });
-  return {
-    input,
-    label: element("label", {
-      className: "switch",
-      children: [input, element("span", { className: "sr-only", text: labelText })]
-    })
-  };
 }
 
 function sortedSites(): ManagedSite[] {
@@ -1699,19 +1678,11 @@ function updateSaveState(): void {
 
 function renderOptionsPreservingScroll(): void {
   const scrollY = window.scrollY;
+  const sidebarScroll = document.querySelector<HTMLElement>(".options-sidebar")?.scrollTop ?? 0;
   renderOptions();
+  const sidebar = document.querySelector<HTMLElement>(".options-sidebar");
+  if (sidebar) sidebar.scrollTop = sidebarScroll;
   window.scrollTo({ top: scrollY });
-}
-
-function formatDays(days: Weekday[]): string {
-  if (days.length === 7) return t("options.everyDay");
-  if ([1, 2, 3, 4, 5].every((day) => days.includes(day as Weekday)) && days.length === 5) {
-    return t("options.weekdays");
-  }
-  if (days.length === 2 && days.includes(0) && days.includes(6)) return t("options.weekend");
-  return WEEKDAYS.filter(({ value }) => days.includes(value))
-    .map(({ shortKey }) => t(shortKey))
-    .join(" · ");
 }
 
 function formatGroupMinutes(minutes: number): string {

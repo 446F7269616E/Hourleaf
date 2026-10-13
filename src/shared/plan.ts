@@ -77,14 +77,10 @@ export function normalizePlanItemInput(
 
 /** True only for the authorized plan visit allowed to use its own access timer. */
 export function isIndependentPlanAccess(
-  settings: Pick<PlanModeSettings, "independentAccessTiming">,
+  _settings: Pick<PlanModeSettings, "independentAccessTiming">,
   decision: PlanNavigationDecision | null | undefined
 ): boolean {
-  return (
-    settings.independentAccessTiming &&
-    decision?.allowed === true &&
-    decision.reason === "authorized"
-  );
+  return decision?.allowed === true && decision.reason === "authorized";
 }
 
 /** Configured usage is never charged while an isolated plan timer owns the visit. */
@@ -93,7 +89,12 @@ export function shouldRecordConfiguredUsage(
   decision: PlanNavigationDecision,
   focusBlocked: boolean
 ): boolean {
-  return !focusBlocked && decision.allowed && !isIndependentPlanAccess(settings, decision);
+  return (
+    !focusBlocked &&
+    decision.allowed &&
+    decision.reason !== "expired" &&
+    !isIndependentPlanAccess(settings, decision)
+  );
 }
 
 export function normalizePlanUrl(value: unknown): URL | null {

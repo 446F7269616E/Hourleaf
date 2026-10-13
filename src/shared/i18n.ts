@@ -3,6 +3,41 @@ export type UiLocalePreference = (typeof UI_LOCALE_PREFERENCES)[number];
 export type ResolvedUiLocale = Exclude<UiLocalePreference, "system">;
 
 const ZH_MESSAGES = {
+  "common.clock24Hint": "24 小时制，例如 09:00 或 18:30",
+  "options.customPromptEnabled": "自定义提示语",
+  "settings.runtime": "运行与保护",
+  "settings.runtimeDescription": "管理扩展开关及关闭保护。",
+  "settings.appearance": "界面与显示",
+  "settings.appearanceDescription": "语言、主题色和工具栏时间显示。",
+  "settings.planCategory": "计划访问",
+  "settings.planCategoryDescription": "计划独立计时；在此设置完成状态和屏蔽行为。",
+  "settings.accessCategory": "访问确认与解锁",
+  "settings.accessCategoryDescription": "开启条件、等待时间、数学题和确认密码。",
+
+  "groups.current": "当前白名单",
+  "options.configurationDirectory": "配置目录",
+  "groups.title": "标签页组白名单",
+  "groups.add": "添加标签页组白名单",
+  "groups.edit": "编辑标签页组白名单",
+  "groups.refresh": "刷新标签页组",
+  "groups.unsupported": "当前浏览器不支持可用的标签页组接口。白名单配置会保留，但不会放行访问。",
+  "groups.empty": "暂无标签页组白名单",
+  "groups.unbound": "组已关闭或绑定已失效，当前不放行。编辑后选择现有组重新绑定。",
+  "groups.bindingExpired": "绑定已失效",
+  "groups.number": "组 {number}",
+  "groups.allDay": "全天",
+  "groups.keepBinding": "保持现有绑定",
+  "groups.keepBindingHint": "选择其他组可重新绑定；仅修改时段会保留当前绑定。",
+  "groups.select": "选择已有标签页组",
+  "groups.name": "配置名称",
+  "groups.group": "浏览器标签页组",
+  "groups.days": "适用星期",
+  "groups.start": "开始时间",
+  "groups.end": "结束时间",
+  "groups.invalid": "请输入配置名称、有效时间，并至少选择一天。",
+  "groups.untitled": "未命名标签页组",
+  "groups.window": "窗口 {id}",
+
   "pause.todayCurrentSite": "今日本站用时",
   "pause.planEncouragement": "专注眼前这一件事，每一小步都在向目标靠近。",
   "pause.timeBalance": "时长分布",
@@ -192,8 +227,7 @@ const ZH_MESSAGES = {
   "options.mode.flowDescription": "每组结束时暂停，可选择本组延时一次或在视频结束后停止。",
   "options.mode.strictDescription": "每组结束时暂停；总额度用完后结束访问。",
   "options.visitConfirmation": "访问前确认",
-  "options.visitConfirmationDescription":
-    "首次访问前显示暂停页；新标签页是否重复确认及开启条件在设置中统一管理。可在下方记录本网站的访问目标。",
+  "options.visitConfirmationDescription": "确认方式及新标签页重复确认在设置中管理。",
   "options.visitConfirmationWait": "确认前等待",
   "options.visitConfirmationPrompt": "自定义打开提示语",
   "options.visitConfirmationPromptPlaceholder": "例如：打开前确认当前任务是否需要这个网站",
@@ -475,9 +509,6 @@ const ZH_MESSAGES = {
   "settings.planEnableAllBlocking": "计划模式下打开插件的全部屏蔽选项",
   "settings.planEnableAllBlockingDescription":
     "计划期间默认开启已安装模块的全部内容屏蔽，并单独记住调整；结束计划后恢复平时的屏蔽设置。",
-  "settings.planIndependentAccess": "计划访问独立计时",
-  "settings.planIndependentAccessDescription":
-    "开启后，计划标签页在同一网站内独立计时；翻页不重置时长，也不计入配置用量。",
   "settings.showRemainingMinutesOnIcon": "在插件图标显示剩余分钟",
   "settings.showRemainingMinutesOnIconDescription": "显示当前网站剩余分钟；无额度时清除数字。",
   "settings.endPage": "暂停与结束页面",
@@ -527,6 +558,8 @@ const ZH_MESSAGES = {
   "end.continue": "继续",
   "end.untilVideoEnd": "当前视频结束后关闭",
   "end.closeRelatedTabs": "关闭当前所有相关标签页",
+  "end.closeUngroupedTabs": "关闭组外相关标签页",
+  "end.closedUngroupedTabs": "已关闭 {count} 个组外标签页，组内页面已保留。",
   "end.closingRelatedTabs": "正在关闭相关标签页…",
   "end.openNextGroup": "开启下一组",
   "end.openNextGroupDescription": "是否直接开启第 {next} 组用时？",
@@ -630,6 +663,46 @@ const ZH_MESSAGES = {
 export type MessageKey = keyof typeof ZH_MESSAGES;
 
 const EN_MESSAGES: Record<MessageKey, string> = {
+  "common.clock24Hint": "24-hour time, for example 09:00 or 18:30",
+  "options.customPromptEnabled": "Custom prompt",
+  "settings.runtime": "Operation and protection",
+  "settings.runtimeDescription": "Control the extension and shutdown protection.",
+  "settings.appearance": "Appearance and display",
+  "settings.appearanceDescription": "Language, theme and toolbar time display.",
+  "settings.planCategory": "Plan access",
+  "settings.planCategoryDescription":
+    "Plans use their own timer. Set completion and blocking behavior here.",
+  "settings.accessCategory": "Confirmation and unlocking",
+  "settings.accessCategoryDescription":
+    "Opening conditions, waits, math challenges and confirmation password.",
+
+  "groups.current": "Current whitelist",
+  "options.configurationDirectory": "Configuration directory",
+  "groups.title": "Tab group whitelist",
+  "groups.add": "Add tab group whitelist",
+  "groups.edit": "Edit tab group whitelist",
+  "groups.refresh": "Refresh tab groups",
+  "groups.unsupported":
+    "This browser has no usable tab group API. Saved rules are retained but do not grant access.",
+  "groups.empty": "No tab group whitelist yet",
+  "groups.unbound":
+    "Group closed or binding expired. Access is not granted. Edit and select an existing group to rebind.",
+  "groups.bindingExpired": "Binding expired",
+  "groups.number": "Group {number}",
+  "groups.allDay": "All day",
+  "groups.keepBinding": "Keep current binding",
+  "groups.keepBindingHint":
+    "Select another group to rebind. Editing hours alone keeps the current binding.",
+  "groups.select": "Select an existing tab group",
+  "groups.name": "Rule name",
+  "groups.group": "Browser tab group",
+  "groups.days": "Weekdays",
+  "groups.start": "Start time",
+  "groups.end": "End time",
+  "groups.invalid": "Enter a name, valid times and at least one weekday.",
+  "groups.untitled": "Untitled tab group",
+  "groups.window": "Window {id}",
+
   "pause.todayCurrentSite": "Time on this site today",
   "pause.planEncouragement":
     "Focus on one thing at a time. Every small step brings you closer to your goal.",
@@ -833,7 +906,7 @@ const EN_MESSAGES: Record<MessageKey, string> = {
   "options.mode.strictDescription": "Go to the end page as soon as the allowance ends.",
   "options.visitConfirmation": "Confirm before visiting",
   "options.visitConfirmationDescription":
-    "Pause before the first visit. New-tab confirmation and opening conditions are managed in Settings; add a website goal below.",
+    "Manage confirmation conditions and repeated new-tab confirmation in Settings.",
   "options.visitConfirmationWait": "Wait before confirming",
   "options.visitConfirmationPrompt": "Custom opening prompt",
   "options.visitConfirmationPromptPlaceholder":
@@ -1135,9 +1208,6 @@ const EN_MESSAGES: Record<MessageKey, string> = {
   "settings.planEnableAllBlocking": "Enable all blocking options during plans",
   "settings.planEnableAllBlockingDescription":
     "Start with all installed content filters enabled during plans and remember changes separately. Restore your usual blocking preferences when the plan ends.",
-  "settings.planIndependentAccess": "Keep plan access time separate",
-  "settings.planIndependentAccessDescription":
-    "The plan tab uses its own timer within the same website. Navigation keeps the deadline and does not add to configured usage.",
   "settings.showRemainingMinutesOnIcon": "Show remaining minutes on the extension icon",
   "settings.showRemainingMinutesOnIconDescription":
     "Show the current website's remaining minutes, and clear the number when no allowance applies.",
@@ -1192,6 +1262,8 @@ const EN_MESSAGES: Record<MessageKey, string> = {
   "end.continue": "Continue",
   "end.untilVideoEnd": "Close when the current video ends",
   "end.closeRelatedTabs": "Close all related tabs",
+  "end.closeUngroupedTabs": "Close related tabs outside groups",
+  "end.closedUngroupedTabs": "Closed {count} tabs outside groups. Grouped pages were kept.",
   "end.closingRelatedTabs": "Closing related tabs…",
   "end.openNextGroup": "Open the next group",
   "end.openNextGroupDescription": "Open time for group {next}?",

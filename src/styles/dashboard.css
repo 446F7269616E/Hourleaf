@@ -30,7 +30,7 @@
 }
 
 .dashboard-heading {
-  margin-bottom: var(--space-7);
+  margin-bottom: var(--page-heading-gap);
 }
 
 .dashboard-section-heading {
@@ -65,12 +65,13 @@
   justify-content: space-between;
   gap: var(--space-4);
   padding: 10px 14px;
-  margin-bottom: var(--space-7);
+  margin-bottom: var(--space-6);
   color: var(--color-text-muted);
   background: color-mix(in srgb, var(--color-surface) 82%, transparent);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   font-size: 12px;
+  flex-wrap: wrap;
 }
 
 .dashboard-current-range strong {
@@ -90,9 +91,10 @@
 .metric-card {
   display: grid;
   min-width: 0;
-  min-height: 154px;
-  align-content: space-between;
-  padding: var(--space-5);
+  min-height: 160px;
+  align-content: stretch;
+  padding: var(--panel-padding);
+  grid-template-rows: auto minmax(56px, 1fr) auto;
 }
 
 .metric-card--primary {
@@ -101,7 +103,7 @@
   color: #fff;
   background: linear-gradient(140deg, #252b48 0%, #343b62 56%, #4b4f79 100%);
   border: 0;
-  box-shadow: 0 14px 34px rgb(29 33 56 / 22%);
+  box-shadow: 0 8px 24px rgb(29 33 56 / 16%);
 }
 
 .metric-card--primary::after {
@@ -134,14 +136,16 @@
 }
 
 .metric-card__value {
-  overflow: hidden;
+  overflow: visible;
   margin-block: var(--space-2);
   font-size: clamp(27px, 4vw, 42px);
   font-variant-numeric: tabular-nums;
   font-weight: 780;
   letter-spacing: -0.045em;
-  line-height: 1.08;
-  text-overflow: ellipsis;
+  line-height: 1.2;
+  text-overflow: clip;
+  align-self: center;
+  overflow-wrap: anywhere;
 }
 
 .metric-card:not(.metric-card--primary) .metric-card__value {
@@ -150,7 +154,7 @@
 
 .metric-card__note {
   color: var(--color-text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-description);
 }
 
 .metric-card__note-row {
@@ -185,7 +189,7 @@
 .chart-card,
 .site-breakdown,
 .module-statistics {
-  padding: var(--space-5);
+  padding: var(--panel-padding);
 }
 
 .chart-card,

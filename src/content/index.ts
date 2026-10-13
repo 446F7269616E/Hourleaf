@@ -31,9 +31,14 @@ let contentStarted = false;
 let planCheckGeneration = 0;
 let initializationRetry: ReturnType<typeof setTimeout> | null = null;
 let flowEndedCleanup: (() => void) | null = null;
+let videoEndOwner: "focus" | "plan" | undefined;
 let pauseFrameResume: ((channel: string) => Promise<boolean>) | undefined;
 let planDeadlineTimer: ReturnType<typeof setTimeout> | undefined;
 let planDeadlineKey = "";
+let accessScheduleTimer: ReturnType<typeof setTimeout> | undefined;
+let accessScheduleDeadline: number | undefined;
+let pauseFrameSource: string | undefined;
+let pauseFrameChannel: string | undefined;
 let filterScheduleTimer: ReturnType<typeof setTimeout> | undefined;
 let filterScheduleDeadline: number | undefined;
 
@@ -52,6 +57,10 @@ function startContentRuntimeOnce(): void {
     )
       return undefined;
     const request = message as { type?: unknown; channel?: unknown };
+    if (request.type === "HOURLEAF_TAB_GROUP_ACCESS_CHANGED") {
+      void refreshTabGroupAccess();
+      return { accepted: true };
+    }
     if (request.type !== "hourleaf:resume-pause" || typeof request.channel !== "string")
       return undefined;
     try {
@@ -89,7 +98,7 @@ function startContentRuntimeOnce(): void {
       settingsChanged ??
       (areaName === "local"
         ? changes[STORAGE_KEYS.localModules]
-        : changes[STORAGE_KEYS.planAccess]);
+        : (changes[STORAGE_KEYS.planAccess] ?? changes[STORAGE_KEYS.tabGroupBindings]));
     if (!changed) return;
     if (settingsChanged && (settingsChanged.newValue as { enabled?: boolean })?.enabled === false)
       removeBlockPage();
@@ -98,6 +107,8 @@ function startContentRuntimeOnce(): void {
   window.addEventListener("pagehide", () => {
     clearPlanDeadline();
     clearFilterScheduleTimer();
+    clearTimeout(accessScheduleTimer);
+    accessScheduleDeadline = undefined;
     if (!contentStarted) return;
     contentStarted = false;
     void sendSessionUpdate("stop");
@@ -176,6 +187,12 @@ async function enforcePlanNavigation(): Promise<"allowed" | "redirected" | "unav
     if (generation !== planCheckGeneration || checkedUrl !== window.location.href)
       return "unavailable";
     syncPlanDeadline(decision);
+    if (decision.reason === "authorized") clearVideoEndMonitor("focus");
+    if (
+      decision.reason !== "authorized" ||
+      (decision.flowContinuationKind !== "video-end" && !decision.pauseOnVideoEnd)
+    )
+      clearVideoEndMonitor("plan");
     if (decision.allowed) {
       if (decision.reason === "authorized" && decision.itemId)
         sessionStorage.removeItem(`hourleaf-plan-pause:${decision.itemId}`);
@@ -354,6 +371,8 @@ async function evaluatePage(planChecked = false): Promise<void> {
       }))
     ]);
     if (generation !== evaluationGeneration || topLevelUrl !== window.location.href) return;
+    if (decision.flowContinuationKind !== "video-end") clearVideoEndMonitor("focus");
+    syncAccessScheduleTimer(decision.nextAccessCheckAt);
     configureLocale(settings.locale);
     contentFilters.apply(
       settings.enabled
@@ -469,6 +488,8 @@ function showPauseFrame(context: EndContext): void {
   planCheckGeneration++;
   const pausedUrl = window.location.href;
   const channel = crypto.randomUUID();
+  pauseFrameSource = context.source;
+  pauseFrameChannel = channel;
   const activeMedia = [...document.querySelectorAll<HTMLMediaElement>("video, audio")].filter(
     (media) => !media.paused && !media.ended
   );
@@ -664,12 +685,20 @@ function monitorVideoEnd(
   });
   replacementObserver.observe(document, { childList: true, subtree: true });
   (monitorVideoEnd as unknown as { key?: string }).key = key;
+  videoEndOwner = key.startsWith("focus:") ? "focus" : "plan";
   flowEndedCleanup = () => {
     replacementObserver.disconnect();
     document.removeEventListener("play", handlePlay, true);
     monitoredVideo?.removeEventListener("ended", handler);
     delete (monitorVideoEnd as unknown as { key?: string }).key;
+    videoEndOwner = undefined;
   };
+}
+
+function clearVideoEndMonitor(owner: "focus" | "plan"): void {
+  if (videoEndOwner !== owner) return;
+  flowEndedCleanup?.();
+  flowEndedCleanup = null;
 }
 
 function findPlayingVideos(): HTMLVideoElement[] {
@@ -961,3 +990,38 @@ const BLOCK_PAGE_CSS = `
   }
   @media (prefers-reduced-motion: no-preference) { button { transition: transform .15s ease, filter .15s ease; } }
 `;
+
+function syncAccessScheduleTimer(deadline?: number): void {
+  if (deadline === accessScheduleDeadline) return;
+  clearTimeout(accessScheduleTimer);
+  accessScheduleDeadline = deadline;
+  if (deadline === undefined) return;
+  accessScheduleTimer = setTimeout(
+    () => {
+      accessScheduleDeadline = undefined;
+      void refreshTabGroupAccess();
+    },
+    Math.max(0, deadline - Date.now())
+  );
+}
+
+async function refreshTabGroupAccess(): Promise<void> {
+  try {
+    if (pauseFrameCleanup && pauseFrameSource !== "plan") {
+      const decision = await sendRequest({ type: "GET_PAGE_DECISION", url: window.location.href });
+      syncAccessScheduleTimer(decision.nextAccessCheckAt);
+      if (decision.reason === "tab-group-whitelist" && pauseFrameChannel) {
+        const planDecision = await sendRequest({
+          type: "GET_PLAN_NAVIGATION_DECISION",
+          url: window.location.href
+        });
+        if (planDecision.allowed && !(planDecision.reason === "expired" && planDecision.itemId))
+          await pauseFrameResume?.(pauseFrameChannel);
+      }
+      return;
+    }
+    await refreshContentState();
+  } catch {
+    /* The normal heartbeat retries after a worker wakeup. */
+  }
+}

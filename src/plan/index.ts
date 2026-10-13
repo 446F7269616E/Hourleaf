@@ -1794,7 +1794,8 @@ function formatDateTime(timestamp: number): string {
       month: "numeric",
       day: "numeric",
       hour: "2-digit",
-      minute: "2-digit"
+      minute: "2-digit",
+      hourCycle: "h23"
     }).format(new Date(timestamp));
   } catch {
     return "—";

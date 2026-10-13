@@ -31,8 +31,18 @@
   --color-danger: #c73f48;
   --color-danger-soft: #fff0f1;
   --shadow-xs: 0 1px 2px rgb(27 31 51 / 5%);
-  --shadow-sm: 0 4px 14px rgb(27 31 51 / 7%);
-  --shadow-md: 0 14px 40px rgb(27 31 51 / 12%);
+  --shadow-sm: 0 3px 12px rgb(27 31 51 / 6%);
+  --shadow-md: 0 12px 32px rgb(27 31 51 / 10%);
+  --shadow-lg: 0 16px 40px rgb(27 31 51 / 12%);
+  --color-focus-ring: var(--color-accent);
+  --font-size-page-title: 30px;
+  --font-size-section-title: 18px;
+  --font-size-item-title: 15px;
+  --font-size-description: 12px;
+  --control-height: 42px;
+  --control-height-compact: 40px;
+  --panel-padding: 20px;
+  --page-heading-gap: 32px;
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 18px;
@@ -108,8 +118,9 @@
     --color-danger: #ff8c93;
     --color-danger-soft: #3d2428;
     --shadow-xs: 0 1px 2px rgb(0 0 0 / 22%);
-    --shadow-sm: 0 4px 18px rgb(0 0 0 / 22%);
-    --shadow-md: 0 18px 48px rgb(0 0 0 / 34%);
+    --shadow-sm: 0 3px 14px rgb(0 0 0 / 20%);
+    --shadow-md: 0 14px 40px rgb(0 0 0 / 30%);
+    --shadow-lg: 0 18px 48px rgb(0 0 0 / 32%);
   }
 
   :root[data-theme="ocean"] {
@@ -149,5 +160,19 @@
   :root {
     --duration-fast: 0ms;
     --duration-base: 0ms;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --panel-padding: 16px;
+    --page-heading-gap: 24px;
+  }
+}
+
+@media (pointer: coarse) {
+  :root {
+    --control-height: 44px;
+    --control-height-compact: 44px;
   }
 }

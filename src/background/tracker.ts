@@ -1,3 +1,4 @@
+import type { TabGroupWhitelistRule } from "../shared/tab-group-whitelist";
 import {
   getExtensionApi,
   idleQueryState,
@@ -22,26 +23,30 @@ export type UsageEligibility = (
   url: string,
   at: number,
   targetId?: TargetId,
-  tabId?: number
+  tabId?: number,
+  whitelistRules?: TabGroupWhitelistRule[]
 ) => boolean | Promise<boolean>;
 export interface TrackingTarget {
   targetId: TargetId;
   activePeriodId?: string;
   /** An explicit domain allow records actual usage without consuming grouped quota. */
   quotaExempt?: boolean;
+  whitelistRules?: TabGroupWhitelistRule[];
   siteId?: SiteId;
   legacySection?: SectionId;
 }
 export type TrackingTargetResolver = (
   url: string,
   requestedTargetId?: TargetId,
-  at?: number
+  at?: number,
+  tabId?: number
 ) => TrackingTarget | null | Promise<TrackingTarget | null>;
 
 export class UsageTracker {
   private readonly activeTabByWindow = new Map<number, ExtensionTab>();
   private readonly sessionByTab = new Map<number, string>();
   private readonly visibleByTab = new Map<number, boolean>();
+  private readonly trackingTargetByTab = new Map<number, TrackingTarget>();
   private readonly targetByTab = new Map<number, TargetId>();
   private readonly isolatedPlanUsageByTab = new Map<number, boolean>();
   private currentTab: ExtensionTab | null = null;
@@ -144,12 +149,25 @@ export class UsageTracker {
     const isolatedPlanUsage =
       this.currentTab?.id !== undefined &&
       this.isolatedPlanUsageByTab.get(this.currentTab.id) === true;
+    const capturedTarget = tabId === undefined ? undefined : this.trackingTargetByTab.get(tabId);
     const write = this.flushQueue.then(() =>
       Promise.all([
-        Promise.resolve(this.resolveTarget(url, requestedTargetId, start)),
+        Promise.resolve(this.resolveTarget(url, requestedTargetId, start, tabId)).then((target) =>
+          target && capturedTarget?.targetId === target.targetId
+            ? { ...target, whitelistRules: capturedTarget.whitelistRules }
+            : target
+        ),
         isolatedPlanUsage
           ? Promise.resolve(false)
-          : Promise.resolve(this.isUsageAllowed(url, start, requestedTargetId, tabId))
+          : Promise.resolve(
+              this.isUsageAllowed(
+                url,
+                start,
+                requestedTargetId,
+                tabId,
+                capturedTarget?.whitelistRules
+              )
+            )
       ])
         .then(([target, allowed]) =>
           target && allowed ? this.recordUsage(target, start, end) : undefined
@@ -192,6 +210,7 @@ export class UsageTracker {
       this.sessionByTab.clear();
       this.visibleByTab.clear();
       this.targetByTab.clear();
+      this.trackingTargetByTab.clear();
       this.isolatedPlanUsageByTab.clear();
       this.lastTickAt = Math.max(at, this.lastTickAt);
       return change();
@@ -235,6 +254,7 @@ export class UsageTracker {
       this.visibleByTab.set(tabId, false);
       this.sessionByTab.delete(tabId);
       this.targetByTab.delete(tabId);
+      this.trackingTargetByTab.delete(tabId);
       this.isolatedPlanUsageByTab.delete(tabId);
       return true;
     }
@@ -243,9 +263,14 @@ export class UsageTracker {
     this.visibleByTab.set(tabId, visibility === "visible");
     if (targetId) this.targetByTab.set(tabId, targetId);
     this.isolatedPlanUsageByTab.set(tabId, isolateConfiguredUsage);
-    const updatedTab = { ...tab, id: tabId, url };
-    if (tab?.windowId !== undefined) this.activeTabByWindow.set(tab.windowId, updatedTab);
-    if (this.currentTab?.id === tabId || tab?.active) this.currentTab = updatedTab;
+    const liveTab = await tabsGet(tabId).catch(() => null);
+    const snapshotTarget = await this.resolveTarget(url, targetId, this.now(), tabId);
+    if (snapshotTarget) this.trackingTargetByTab.set(tabId, snapshotTarget);
+    else this.trackingTargetByTab.delete(tabId);
+    const updatedTab = { ...tab, ...liveTab, id: tabId, url };
+    if (updatedTab.windowId !== undefined)
+      this.activeTabByWindow.set(updatedTab.windowId, updatedTab);
+    if (this.currentTab?.id === tabId || updatedTab.active) this.currentTab = updatedTab;
     return true;
   }
 
@@ -264,23 +289,26 @@ export class UsageTracker {
     });
 
     this.api?.tabs?.onUpdated?.addListener((tabId, changeInfo, tab) => {
-      if (!changeInfo.url && changeInfo.status !== "complete") return;
+      if (!changeInfo.url && changeInfo.status !== "complete" && changeInfo.groupId === undefined)
+        return;
       const windowId = tab.windowId;
       const activeInWindow =
         windowId === undefined ? undefined : this.activeTabByWindow.get(windowId);
       if (activeInWindow?.id !== tabId && this.currentTab?.id !== tabId) return;
       void this.flush();
+      if (changeInfo.groupId !== undefined) this.trackingTargetByTab.delete(tabId);
       if (windowId !== undefined) this.activeTabByWindow.set(windowId, tab);
       if (this.currentTab?.id === tabId) this.currentTab = tab;
     });
 
     this.api?.tabs?.onRemoved?.addListener((tabId) => {
+      if (this.currentTab?.id === tabId) void this.flush();
       this.sessionByTab.delete(tabId);
       this.visibleByTab.delete(tabId);
       this.targetByTab.delete(tabId);
+      this.trackingTargetByTab.delete(tabId);
       this.isolatedPlanUsageByTab.delete(tabId);
       if (this.currentTab?.id !== tabId) return;
-      void this.flush();
       this.currentTab = null;
     });
 

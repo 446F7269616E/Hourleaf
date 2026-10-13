@@ -51,6 +51,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
+  flex-wrap: wrap;
 }
 
 .current-site-card__identity {
@@ -76,8 +77,8 @@
 }
 
 .current-site-card__identity p {
-  color: var(--color-text-faint);
-  font-size: 10px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-description);
   font-weight: 720;
   letter-spacing: 0.06em;
 }
@@ -95,7 +96,7 @@
   overflow: hidden;
   margin-top: 2px;
   color: var(--color-text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-description);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -108,7 +109,7 @@
   color: var(--color-brand-strong);
   background: var(--color-brand-soft);
   border-radius: 999px;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 720;
   letter-spacing: 0.02em;
 }
@@ -119,7 +120,7 @@
   color: var(--color-text-muted);
   background: var(--color-surface-soft);
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -157,24 +158,26 @@
 
 .current-site-card__metric span {
   color: var(--color-text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-description);
 }
 
 .current-site-card__metric strong {
-  overflow: hidden;
-  margin-top: 2px;
-  font-size: 17px;
+  overflow: visible;
+  margin-top: 4px;
+  font-size: 22px;
   font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
 }
 
 .current-site-card__metrics[data-count="3"] .current-site-card__metric span {
-  font-size: 9px;
+  font-size: var(--font-size-description);
 }
 
 .current-site-card__metrics[data-count="3"] .current-site-card__metric strong {
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .current-site-card__progress {
@@ -193,7 +196,7 @@
 
 .current-site-card__note {
   color: var(--color-text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-description);
   text-align: center;
 }
 
@@ -254,7 +257,7 @@
   color: var(--color-brand-strong);
   background: var(--color-brand-soft);
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 720;
 }
 
@@ -265,7 +268,7 @@
 
 .popup-plan-card__list {
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -302,7 +305,7 @@
 .popup-plan-card__empty,
 .popup-plan-card__more {
   color: var(--color-text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-description);
 }
 
 .popup-plan-card__more {

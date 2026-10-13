@@ -1,3 +1,4 @@
+import { normalizeTabGroupWhitelistRules } from "./tab-group-whitelist";
 import {
   CONTENT_FILTER_IDS,
   type ContentFilterId,
@@ -76,6 +77,7 @@ export const DEFAULT_SETTINGS: Readonly<FocusSettings> = Object.freeze({
   sites: Object.freeze({}),
   targets: Object.freeze({}),
   customTimePeriodPresets: [] as CustomTimePeriodPreset[],
+  tabGroupWhitelist: [],
   sectionRules: Object.freeze(
     Object.fromEntries(
       SECTION_IDS.map((section) => [section, Object.freeze(defaultRule(section))])
@@ -153,6 +155,9 @@ export function mergeSettings(
     },
     sites: { ...base.sites },
     targets: { ...base.targets },
+    tabGroupWhitelist: normalizeTabGroupWhitelistRules(
+      patch.tabGroupWhitelist ?? base.tabGroupWhitelist
+    ),
     customTimePeriodPresets: patch.customTimePeriodPresets
       ? normalizeCustomTimePeriodPresets(patch.customTimePeriodPresets)
       : base.customTimePeriodPresets.map(cloneCustomTimePeriodPreset),
@@ -301,10 +306,8 @@ export function normalizeSettings(value: unknown): FocusSettings {
       : {};
   const planMode: PlanModeSettings = {
     enabled: typeof rawPlanMode.enabled === "boolean" ? rawPlanMode.enabled : false,
-    independentAccessTiming:
-      typeof rawPlanMode.independentAccessTiming === "boolean"
-        ? rawPlanMode.independentAccessTiming
-        : true,
+    // Plan grants always own their time; legacy coupled timing is no longer valid.
+    independentAccessTiming: true,
     enableAllBlocking: rawPlanMode.enableAllBlocking !== false,
     watchDurationMinutes: clampInteger(rawPlanMode.watchDurationMinutes, 1, 360, 45),
     defaultCompletionMode:
@@ -387,6 +390,7 @@ export function normalizeSettings(value: unknown): FocusSettings {
     sites,
     targets,
     customTimePeriodPresets,
+    tabGroupWhitelist: normalizeTabGroupWhitelistRules(value.tabGroupWhitelist),
     sectionRules,
     temporaryAccess,
     planMode,
@@ -735,6 +739,7 @@ function cloneSettings(settings: Readonly<FocusSettings>): FocusSettings {
       ])
     ),
     customTimePeriodPresets: settings.customTimePeriodPresets.map(cloneCustomTimePeriodPreset),
+    tabGroupWhitelist: normalizeTabGroupWhitelistRules(settings.tabGroupWhitelist),
     targets: Object.fromEntries(
       Object.entries(settings.targets).map(([id, target]) => [
         id,
@@ -803,6 +808,7 @@ function createUnsafeDefaultSettings(): FocusSettings {
     sites: {},
     targets: {},
     customTimePeriodPresets: [],
+    tabGroupWhitelist: [],
     sectionRules,
     temporaryAccess: { enabled: true, durationMinutes: 5, maxUsesPerDay: 3 },
     planMode: {
@@ -855,6 +861,7 @@ function normalizeTimestamp(value: unknown, fallback = Date.now()): number {
 function normalizeVisitConfirmation(value: unknown): {
   enabled: boolean;
   waitSeconds: number;
+  promptEnabled: boolean;
   prompt?: string;
 } {
   const raw = isRecord(value) ? value : {};
@@ -865,6 +872,7 @@ function normalizeVisitConfirmation(value: unknown): {
   return {
     enabled: true,
     waitSeconds: clampInteger(raw.waitSeconds, 0, 60, 3),
+    promptEnabled: typeof raw.promptEnabled === "boolean" ? raw.promptEnabled : Boolean(prompt),
     ...(prompt ? { prompt } : {})
   };
 }

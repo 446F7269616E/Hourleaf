@@ -133,18 +133,50 @@ svg {
 }
 
 .page-title {
-  font-size: clamp(26px, 3.5vw, 34px);
+  font-size: clamp(26px, 3.2vw, var(--font-size-page-title));
   font-weight: 760;
   letter-spacing: -0.04em;
-  line-height: 1.12;
+  line-height: 1.25;
 }
 
 .page-heading {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-5);
-  margin-bottom: var(--space-7);
+  margin-bottom: var(--page-heading-gap);
+}
+
+/* Leave room for the shared sticky navigation when keyboard focus scrolls. */
+.app-shell :where(h1, h2, h3, button, a, input, select, textarea, summary, [tabindex]) {
+  scroll-margin-top: 100px;
+  scroll-margin-bottom: 24px;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+p,
+.field__hint,
+.toast {
+  overflow-wrap: anywhere;
+}
+
+button,
+a,
+summary {
+  touch-action: manipulation;
+}
+
+.dialog,
+dialog,
+.home-import-dialog__body,
+.plan-dialog__body {
+  overscroll-behavior: contain;
 }
 
 @media (max-width: 640px) {
@@ -172,7 +204,7 @@ svg {
 }
 
 .section-heading h2 {
-  font-size: 18px;
+  font-size: var(--font-size-section-title);
   font-weight: 720;
   letter-spacing: -0.02em;
 }
@@ -184,6 +216,7 @@ svg {
 }
 
 .card {
+  min-width: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -213,7 +246,7 @@ svg {
 
 .btn {
   display: inline-flex;
-  min-height: 40px;
+  min-height: var(--control-height);
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
@@ -225,6 +258,8 @@ svg {
   cursor: pointer;
   font-weight: 650;
   line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
   text-decoration: none;
   transition:
     transform var(--duration-fast) var(--ease-out),
@@ -246,7 +281,7 @@ svg {
   color: var(--color-on-brand);
   background: var(--color-brand);
   border-color: transparent;
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--color-brand) 24%, transparent);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--color-brand) 18%, transparent);
 }
 
 .btn--soft {
@@ -262,7 +297,8 @@ svg {
 }
 
 .btn--icon {
-  width: 40px;
+  flex: 0 0 auto;
+  width: var(--control-height);
   padding: 0;
 }
 
@@ -343,13 +379,13 @@ svg {
 
 .field__hint {
   color: var(--color-text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-description);
 }
 
 .input,
 .select {
   width: 100%;
-  min-height: 42px;
+  min-height: var(--control-height);
   padding: 9px 11px;
   color: var(--color-text);
   background: var(--color-surface);
@@ -361,6 +397,11 @@ svg {
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .segmented__item:hover {
+    color: var(--color-text);
+    background: var(--color-surface);
+  }
+
   .btn:hover:not(:disabled) {
     background: var(--color-surface-soft);
     border-color: var(--color-text-faint);
@@ -396,6 +437,7 @@ svg {
 
 .segmented {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 3px;
   padding: 3px;
   background: var(--color-surface-soft);
@@ -404,7 +446,7 @@ svg {
 }
 
 .segmented__item {
-  min-height: 34px;
+  min-height: var(--control-height-compact);
   padding: 7px 13px;
   color: var(--color-text-muted);
   background: transparent;
@@ -686,6 +728,7 @@ svg {
 .dialog__footer,
 .dialog__actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-3);
   margin-top: var(--space-6);
@@ -723,6 +766,13 @@ svg {
 
   .configuration-backup-dialog__summary {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after,
+  .toast {
+    animation: none;
   }
 }
 
