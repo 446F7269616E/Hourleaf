@@ -1,4 +1,5 @@
 import { storageAddChangeListener } from "../shared/browser";
+import { localizeLocalModuleCopy } from "../ui/local-module-copy";
 import { STORAGE_KEYS } from "../shared/storage-keys";
 import {
   createLocalModuleImportPreview,
@@ -74,7 +75,9 @@ function renderPage(): void {
   });
   importButton.addEventListener("click", openImportDialog);
   const installations = Object.values(localModules.store.installations).sort((left, right) =>
-    left.definition.name.localeCompare(right.definition.name)
+    localizeLocalModuleCopy(left.definition).name.localeCompare(
+      localizeLocalModuleCopy(right.definition).name
+    )
   );
 
   app.replaceChildren(
@@ -192,7 +195,8 @@ function createEmptyState(): HTMLElement {
 }
 
 function createModuleCard(installation: LocalModuleInstallation): HTMLElement {
-  const { definition, enabled } = installation;
+  const definition = localizeLocalModuleCopy(installation.definition);
+  const { enabled } = installation;
   const filterTimePeriods = scheduleSettings
     ? configuredFilterTimePeriods(scheduleSettings, definition)
     : [];
@@ -457,7 +461,7 @@ function openImportDialog(): void {
           }))
         );
         candidate = parseLocalModuleFiles(files);
-        const value = createLocalModuleImportPreview(candidate);
+        const value = createLocalModuleImportPreview(localizeLocalModuleCopy(candidate));
         preview.replaceChildren(
           element("strong", { text: `${value.name} ${value.version}` }),
           element("p", { text: `${t("settings.moduleAuthor")}: ${value.author}` }),

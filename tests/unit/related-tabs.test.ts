@@ -4,7 +4,7 @@ import type { PlanService } from "../../src/background/plan";
 import type { SettingsRepository } from "../../src/shared/storage";
 
 describe("related tab closing", () => {
-  it("closes every Bilibili family tab and the current end page", async () => {
+  it("closes only ungrouped Bilibili tabs and preserves the grouped end page", async () => {
     const settings = {
       get: () =>
         Promise.resolve({
@@ -16,15 +16,24 @@ describe("related tab closing", () => {
           }
         })
     } as unknown as SettingsRepository;
-    const queryTabs = vi.fn(() => Promise.resolve([{ id: 2 }, { id: 3 }, { id: 2 }]));
+    const queryTabs = vi.fn(() => Promise.resolve([{ id: 2 }, { id: 3 }, { id: 4 }, { id: 2 }]));
     const removeTabs = vi.fn(() => Promise.resolve());
-    const service = new RelatedTabService(settings, {} as PlanService, queryTabs, removeTabs);
+    const getTab = vi.fn((id: number) =>
+      Promise.resolve({ id, groupId: id === 2 ? -1 : id === 4 ? undefined : 7 })
+    );
+    const service = new RelatedTabService(
+      settings,
+      {} as PlanService,
+      queryTabs,
+      removeTabs,
+      getTab
+    );
 
     await expect(service.close({ source: "focus", siteId: "site:bilibili" }, 99)).resolves.toEqual({
-      closedCount: 3
+      closedCount: 1
     });
     expect(queryTabs).toHaveBeenCalledWith({ url: ["https://*.bilibili.com/*"] });
-    expect(removeTabs).toHaveBeenCalledWith([2, 3, 99]);
+    expect(removeTabs).toHaveBeenCalledWith([2]);
   });
 
   it("keeps plan closing scoped to the planned item's exact origin", async () => {

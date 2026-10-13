@@ -6,7 +6,7 @@ import {
   tabsGet,
   type StorageAreaLike
 } from "../shared/browser";
-import { SettingsRepository } from "../shared/storage";
+import type { SettingsRepository } from "../shared/storage";
 import {
   isTabGroupWhitelistActive,
   MAX_TAB_GROUP_WHITELIST_RULES,
@@ -135,16 +135,19 @@ export class TabGroupWhitelistService {
       STORAGE_KEYS.tabGroupBindings
     ];
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-    return Object.fromEntries(
-      Object.entries(raw)
-        .filter(
-          ([id, groupId]) =>
-            /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id) &&
-            Number.isInteger(groupId) &&
-            Number(groupId) >= 0 &&
-            Number(groupId) <= 2147483647
-        )
-        .slice(0, MAX_TAB_GROUP_WHITELIST_RULES)
-    ) as Record<string, number>;
+    const bindings: Record<string, number> = {};
+    for (const [id, groupId] of Object.entries(raw)) {
+      if (
+        /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id) &&
+        typeof groupId === "number" &&
+        Number.isInteger(groupId) &&
+        groupId >= 0 &&
+        groupId <= 2147483647
+      ) {
+        bindings[id] = groupId;
+        if (Object.keys(bindings).length >= MAX_TAB_GROUP_WHITELIST_RULES) break;
+      }
+    }
+    return bindings;
   }
 }

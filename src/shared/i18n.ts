@@ -3,6 +3,36 @@ export type UiLocalePreference = (typeof UI_LOCALE_PREFERENCES)[number];
 export type ResolvedUiLocale = Exclude<UiLocalePreference, "system">;
 
 const ZH_MESSAGES = {
+  "moduleCopy.bilibili.scriptDescription":
+    "按 / 聚焦站内搜索；相关视频屏蔽生效时关闭片尾自动连播。",
+  "moduleCopy.xiaohongshu.scriptDescription": "为首页推荐过滤维护不含页面内容的路由标记。",
+  "moduleCopy.bilibili.description":
+    "非官方本地模块：提供首页推荐、动态、相关视频与评论的可选过滤，并支持按斜杠键聚焦搜索。",
+  "moduleCopy.filter.home-recommendations.name": "首页推荐",
+  "moduleCopy.bilibili.home-recommendations.description": "隐藏首页中的普通推荐视频卡片。",
+  "moduleCopy.filter.dynamic-feed.name": "动态信息流",
+  "moduleCopy.bilibili.dynamic-feed.description":
+    "隐藏普通动态卡片、动态悬停弹窗、热搜榜，并同步隐藏动态更新及消息提醒标识。",
+  "moduleCopy.filter.related-videos.name": "相关视频",
+  "moduleCopy.bilibili.related-videos.description":
+    "隐藏播放页侧栏及片尾推荐，并在屏蔽生效时关闭相关推荐自动连播。",
+  "moduleCopy.filter.comments.name": "评论区",
+  "moduleCopy.bilibili.comments.description":
+    "隐藏视频、动态与文章页面中的评论区域，以及动态卡片下方的精选评论。",
+  "moduleCopy.youtube.description":
+    "非官方本地模块：提供 YouTube 首页推荐、相关视频、Shorts 与评论的可选过滤。",
+  "moduleCopy.youtube.shorts.description": "隐藏页面中的普通 Shorts 卡片与列表项。",
+  "moduleCopy.youtube.related-videos.description": "隐藏播放页侧栏中的普通相关视频卡片。",
+  "moduleCopy.youtube.comments.description": "隐藏普通视频播放页中的评论区域。",
+  "moduleCopy.xiaohongshu.name": "小红书",
+  "moduleCopy.xiaohongshu.description": "非官方本地模块：提供小红书网页版首页推荐流的可选过滤。",
+  "moduleCopy.xiaohongshu.home-recommendations.description": "隐藏首页和探索首页中的普通推荐笔记。",
+  "moduleCopy.baidu-tieba.name": "百度贴吧",
+  "moduleCopy.baidu-tieba.description": "非官方本地模块：提供百度贴吧网页版首页推荐流的可选过滤。",
+  "moduleCopy.baidu-tieba.home-recommendations.description": "隐藏贴吧首页中的普通推荐帖子。",
+  "moduleCopy.x.description": "非官方本地模块：提供 X 网页版主页信息流的可选过滤。",
+  "moduleCopy.filter.home-timeline.name": "主页时间线",
+  "moduleCopy.x.home-timeline.description": "隐藏主页时间线中的普通帖子卡片。",
   "common.clock24Hint": "24 小时制，例如 09:00 或 18:30",
   "options.customPromptEnabled": "自定义提示语",
   "settings.runtime": "运行与保护",
@@ -663,6 +693,44 @@ const ZH_MESSAGES = {
 export type MessageKey = keyof typeof ZH_MESSAGES;
 
 const EN_MESSAGES: Record<MessageKey, string> = {
+  "moduleCopy.bilibili.scriptDescription":
+    "Press / to focus site search. Turn off end-screen autoplay while the related-video filter is active.",
+  "moduleCopy.xiaohongshu.scriptDescription":
+    "Maintain a route marker for the home-feed filter without reading page content.",
+  "moduleCopy.bilibili.description":
+    "Unofficial local module with optional filters for home recommendations, activity feeds, related videos and comments, plus the / shortcut to focus search.",
+  "moduleCopy.filter.home-recommendations.name": "Home recommendations",
+  "moduleCopy.bilibili.home-recommendations.description":
+    "Hide regular recommended video cards on the home page.",
+  "moduleCopy.filter.dynamic-feed.name": "Activity feed",
+  "moduleCopy.bilibili.dynamic-feed.description":
+    "Hide regular activity cards, activity previews and trending searches, along with activity and message notification badges.",
+  "moduleCopy.filter.related-videos.name": "Related videos",
+  "moduleCopy.bilibili.related-videos.description":
+    "Hide sidebar and end-screen recommendations, and turn off related-video autoplay while this filter is active.",
+  "moduleCopy.filter.comments.name": "Comments",
+  "moduleCopy.bilibili.comments.description":
+    "Hide comments on video, activity and article pages, including featured comments below activity cards.",
+  "moduleCopy.youtube.description":
+    "Unofficial local module with optional filters for YouTube home recommendations, related videos, Shorts and comments.",
+  "moduleCopy.youtube.shorts.description": "Hide regular Shorts cards and list items.",
+  "moduleCopy.youtube.related-videos.description":
+    "Hide regular related-video cards in the watch-page sidebar.",
+  "moduleCopy.youtube.comments.description": "Hide comments on regular video watch pages.",
+  "moduleCopy.xiaohongshu.name": "Xiaohongshu",
+  "moduleCopy.xiaohongshu.description":
+    "Unofficial local module with an optional filter for the Xiaohongshu web home feed.",
+  "moduleCopy.xiaohongshu.home-recommendations.description":
+    "Hide regular recommended notes on the home and Explore pages.",
+  "moduleCopy.baidu-tieba.name": "Baidu Tieba",
+  "moduleCopy.baidu-tieba.description":
+    "Unofficial local module with an optional filter for the Baidu Tieba web home feed.",
+  "moduleCopy.baidu-tieba.home-recommendations.description":
+    "Hide regular recommended posts on the Tieba home page.",
+  "moduleCopy.x.description":
+    "Unofficial local module with an optional filter for the X web home timeline.",
+  "moduleCopy.filter.home-timeline.name": "Home timeline",
+  "moduleCopy.x.home-timeline.description": "Hide regular post cards in the home timeline.",
   "common.clock24Hint": "24-hour time, for example 09:00 or 18:30",
   "options.customPromptEnabled": "Custom prompt",
   "settings.runtime": "Operation and protection",

@@ -47,10 +47,14 @@ export function parseTabGroupWhitelistRule(value: unknown): TabGroupWhitelistRul
     id: raw.id,
     name: raw.name.trim(),
     enabled: raw.enabled,
-    days: [...raw.days].sort((a, b) => a - b) as Weekday[],
+    days: raw.days.filter(isWeekday).sort((a, b) => a - b),
     startTime: raw.startTime,
     endTime: raw.endTime
   };
+}
+
+function isWeekday(value: unknown): value is Weekday {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 6;
 }
 
 export function normalizeTabGroupWhitelistRules(value: unknown): TabGroupWhitelistRule[] {

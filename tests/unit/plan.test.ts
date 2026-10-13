@@ -163,7 +163,7 @@ describe("generic plan", () => {
           reason: "authorized"
         }
       )
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isIndependentPlanAccess(settings, {
         planModeEnabled: true,
@@ -184,7 +184,7 @@ describe("generic plan", () => {
         { planModeEnabled: true, allowed: true, reason: "authorized" },
         false
       )
-    ).toBe(true);
+    ).toBe(false);
     expect(
       shouldRecordConfiguredUsage(
         { independentAccessTiming: false },

@@ -24,7 +24,7 @@ export function createConfigurationDirectory(options: {
     text: options.title,
     attrs: { type: "button", "aria-controls": "configuration-editor" }
   });
-  heading.addEventListener("click", options.onSelect);
+  heading.addEventListener("click", () => options.onSelect());
   return element("section", {
     className: "options-site-directory card",
     attrs: { "aria-label": options.label },
@@ -68,7 +68,7 @@ export function createConfigurationDirectory(options: {
                     })
                   ]
                 });
-                control.addEventListener("click", item.onSelect);
+                control.addEventListener("click", () => item.onSelect());
                 return control;
               })
             : [
@@ -78,7 +78,7 @@ export function createConfigurationDirectory(options: {
                     text: options.emptyLabel,
                     attrs: { type: "button", "aria-controls": "configuration-editor" }
                   });
-                  empty.addEventListener("click", options.onSelect);
+                  empty.addEventListener("click", () => options.onSelect());
                   return empty;
                 })()
               ]

@@ -181,3 +181,7 @@ unzip -l dist/modules/hourleaf-module-<slug>-<version>.zip
 - [ ] Chromium、Firefox、Safari 能力差异已记录；
 - [ ] 真实模块文件通过导入测试和打包检查；
 - [ ] README / Release 说明明确非官方状态和已知限制。
+
+## 界面文案的语言维护
+
+仓库模块的用户可见名称、说明和过滤组文案需要同时提供简体中文与英文的稳定 i18n key。映射入口为 `src/ui/local-module-copy.ts`，资源入口为 `src/shared/i18n.ts`；使用模块 ID 与组 ID 选择资源，不按整句中文替换。修改过滤行为时同步更新两种说明，未知组不要套用其他组文案。界面语言投影不写回已导入文件，不改变权限和执行内容；无需为纯界面翻译修改模块 ID 或执行文件版本。

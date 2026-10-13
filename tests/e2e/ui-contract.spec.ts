@@ -200,15 +200,15 @@ test("plan expiry mode uses short options with a persistent explanation", async 
   await expect(page.getByText("额度结束后立即进入结束页面。")).toBeVisible();
 });
 
-test("terminal end page offers to close every related tab", async ({ page }) => {
+test("terminal end page offers to close related tabs outside groups", async ({ page }) => {
   await page.goto(
     `${pathToFileURL(path.join(buildRoot, "end.html")).href}#source=focus&siteId=site%3Abilibili&reason=limit`
   );
 
-  const closeRelatedTabs = page.getByRole("button", { name: "关闭当前所有相关标签页" });
+  const closeRelatedTabs = page.getByRole("button", { name: "关闭组外相关标签页" });
   await expect(closeRelatedTabs).toBeVisible();
   await closeRelatedTabs.click();
-  await expect(closeRelatedTabs).toBeDisabled();
+  await expect(closeRelatedTabs).toBeEnabled();
 });
 
 test("dashboard exposes day, week, month and year without color-only data", async ({ page }) => {

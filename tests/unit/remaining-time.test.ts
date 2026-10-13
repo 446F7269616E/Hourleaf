@@ -148,7 +148,7 @@ describe("remaining time presentation", () => {
     ).toBe("");
   });
 
-  it("uses the tighter plan or focus deadline for the toolbar badge", () => {
+  it("uses the plan deadline independently of ordinary quota and legacy opt-out", () => {
     const settings = createDefaultSettings();
     settings.planMode.independentAccessTiming = false;
     settings.targets[target.id] = target;
@@ -172,7 +172,6 @@ describe("remaining time presentation", () => {
     expect(resolveToolbarBadgeText(settings, usage, focusDecision, { nowMs, planDecision })).toBe(
       "7"
     );
-    settings.planMode.independentAccessTiming = true;
     expect(
       resolveToolbarBadgeText(settings, usage, focusDecision, {
         nowMs,

@@ -353,12 +353,12 @@ describe("settings schema", () => {
     });
   });
 
-  it("defaults plan access isolation on and preserves an explicit opt-out", () => {
+  it("keeps plan access isolated even for a legacy opt-out", () => {
     expect(normalizeSettings({}).planMode.independentAccessTiming).toBe(true);
     expect(
       normalizeSettings({ planMode: { independentAccessTiming: false } }).planMode
         .independentAccessTiming
-    ).toBe(false);
+    ).toBe(true);
     expect(
       normalizeSettings({ planMode: { independentAccessTiming: "yes" } }).planMode
         .independentAccessTiming
