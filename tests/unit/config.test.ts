@@ -247,6 +247,7 @@ describe("settings schema", () => {
     expect(normalized.sites["site:test"]?.visitConfirmation).toEqual({
       enabled: true,
       waitSeconds: 60,
+      promptEnabled: true,
       prompt: "开始前先确认任务"
     });
     expect(normalized.endPage.groupUnlock.waitSeconds).toBe(30);
@@ -258,6 +259,7 @@ describe("settings schema", () => {
     expect(updated.sites["site:test"]?.visitConfirmation).toEqual({
       enabled: true,
       waitSeconds: 7,
+      promptEnabled: true,
       prompt: "开始前先确认任务"
     });
   });
