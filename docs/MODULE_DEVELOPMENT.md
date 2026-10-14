@@ -13,7 +13,7 @@
 - 用少量本地 CSS 降低视觉干扰；
 - 用无网络、无扩展权限的用户脚本提供轻量键盘操作。
 
-计时、时间段、计划、访问确认、结束页和统计属于通用核心。模块不得复制这些功能，也不得读取或修改 Hourleaf storage。
+计时、时间段、独立计划、标签页组白名单、访问确认、结束页和统计属于通用核心。模块不得复制这些功能，也不得读取或修改 Hourleaf storage。先在 [开发目录](./README.md) 定位核心契约；当前使用行为见 [FEATURES.md](./FEATURES.md)。
 
 ### 商业内容边界（内部开发约束）
 
@@ -143,21 +143,18 @@ optional-modules/<slug>/
 
 ## 8. 本地验证
 
-1. 在设置页一次选择清单及全部引用文件，检查预览中的名称、作者、版本、来源和能力。
+1. 在“屏蔽”页一次选择清单及全部引用文件，人工检查预览中的名称、作者、版本、来源和能力。
 2. 分别验证授权拒绝、授权成功、启用、停用、删除和重新导入。
 3. 检查模块声明的每个来源，以及未声明来源不会生效。
 4. 在无登录、已登录、窄屏、200% 缩放、深浅色和减少动态环境下检查主要页面。
-5. 运行：
+5. 本地自动检查仅编译与构建：
 
 ```bash
 npm run typecheck
-npm run lint
-npm run test -- tests/unit/local-modules.test.ts
-npm run package
-unzip -l dist/modules/hourleaf-module-<slug>-<version>.zip
+npm run build
 ```
 
-仓库模块必须增加导入测试，直接读取目录中的真实文件并调用 `parseLocalModuleFiles()`，避免示例和运行契约漂移。
+发布打包另外使用 `npm run package` 生成独立模块 ZIP，不将 Debug 文件复制到候选目录。GitHub Actions 保留既有单元覆盖与打包检查；实际站点表现、权限拒绝、定时切换、普通/计划偏好与中英文文案留给人工验收，不以编译成功代替。
 
 ## 9. 版本与发布
 

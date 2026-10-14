@@ -1,5 +1,7 @@
 # Hourleaf 公开发布清单
 
+功能与文档同步：2026-10-14。候选行为按 [FEATURES.md](./FEATURES.md) 核对；本地仅编译/构建，远端 CI 与人工验收分别记录，不因文档更新勾选发布门禁。
+
 ## 候选冻结
 
 - [ ] 版本、commit、变更日志、最低浏览器版本与 manifest 一致。
@@ -18,6 +20,11 @@
 - [ ] 停用/删除模块会注销 User Scripts；初始化会清理 Hourleaf 旧版自有动态 DNR ID 范围。
 - [ ] 升级迁移、权限拒绝/撤销、清空、删除网站、卸载和回滚已验证。
 - [ ] `PRIVACY.md`、商店数据披露、Storage 和抓包结果一致。
+- [ ] 无启用时间段的网站无限使用，屏蔽与每日屏蔽窗口仍有效。
+- [ ] 独立计划不写普通用量/额度，到期重入无旧拦截；来源切换先结算，旧媒体回调不影响新访问。
+- [ ] 标签页组白名单窗口、组销毁/移出、重启与恢复重绑符合会话边界；不改变计划截止或扩展网站权限。
+- [ ] 普通关闭只关闭组外相关标签，未知分组候选保留；计划关闭按自身来源。
+- [ ] 备份覆盖自定义预设、白名单时段、计划与同版本模块偏好，排除运行授权、统计、组绑定及源码。
 
 ## 公共素材
 
@@ -33,6 +40,7 @@
 
 - [ ] Chromium ZIP 根目录直接包含 `manifest.json`，且只发布一个扩展包。
 - [ ] `userScripts` 与精确来源权限均有单一用途说明；manifest 不再申请 DNR 权限。
+- [ ] `tabGroups` 仅用于用户绑定已有组及读取归属，不申请全量 `tabs`；会话失效后不自动重绑。
 - [ ] Developer Dashboard 的 single purpose、permission justification、data usage 与隐私 URL 填写完成。
 - [ ] 商店草稿安装后复测权限提示、Service Worker 恢复与升级。
 
@@ -40,6 +48,7 @@
 
 - [ ] manifest 保留稳定 Gecko ID 和准确 `data_collection_permissions`。
 - [ ] `userScripts` 仅在平台所需权限范围；未授权时域名策略、元素隐藏与 CSS 仍可使用。
+- [ ] 在有/无组 API、会话存储的实际版本分别验证白名单可用性与安全降级，不能只根据 Firefox 名称承诺支持。
 - [ ] `web-ext lint` 通过；构建说明和可审计源码按 AMO 要求提交。
 - [ ] 使用最终 AMO 签名 XPI 验证安装、升级、禁用、启用和卸载。
 
@@ -48,6 +57,7 @@
 - [ ] 用当前 Xcode 转换 `dist/safari`，所有 warning 都有决议。
 - [ ] entitlements、网站权限和隐私信息只包含必要能力；签名资料不进 Git。
 - [ ] Safari 候选导入 `.user.js` 时明确拒绝，包内不声明 `userScripts`。
+- [ ] 不声明 `tabGroups` 或 `idle`；组白名单显示不可用且不放行，普通计时按已有可用信号运行。
 - [ ] TestFlight/App Store 候选完成 macOS/iOS 权限拒绝、授权、撤销与升级。
 
 ## GitHub 与发布
@@ -56,4 +66,5 @@
 - [ ] CI 先执行 `npm run package`，再上传 `dist/packages`；缺失产物时任务失败。
 - [ ] 创建受保护 tag 和 GitHub Release，上传三平台商店候选包、源码、`dist/packages/SHA256SUMS`，以及与扩展包分离的 `dist/modules/` 模块 ZIP 和 `MODULE-SHA256SUMS`。
 - [ ] Release 只记录产品变更、已知限制与平台状态，不包含内部协作说明或面向单个用户的建议。
+- [ ] README、功能说明、文档目录、架构、模块规范、隐私和人工验收无过期功能约定；Unreleased 与已发布资产范围分清。
 - [ ] 小比例发布后观察错误计时、权限和站点兼容问题；保留上一安全版本和数据兼容路径。

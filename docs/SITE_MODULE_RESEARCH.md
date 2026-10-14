@@ -1,5 +1,7 @@
 # 站点模块选择器研究
 
+当前模块目录见 [optional-modules/README.md](../optional-modules/README.md)，核心定时与语言契约见 [LOCAL_MODULES.md](./LOCAL_MODULES.md)。本文件保留具体页面研究记录；2026-10-14 的文档同步没有重新联网核验网站 DOM，实际效果按人工验收检查。
+
 本记录用于维护仓库中的可选站点模块，按网站记录选择器边界、页面范围和安全失效方法。规则实现遵循 Hourleaf 本地模块协议，维护入口为各模块的清单、CSS 和用户脚本。
 
 ## 选择器策略

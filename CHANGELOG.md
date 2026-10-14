@@ -6,7 +6,9 @@ All notable changes to Hourleaf will be documented in this file. The format foll
 
 ### Added
 
+- Scheduled tab-group whitelists allow unlimited access to configured, authorized websites in a bound browser group without consuming ordinary quotas; bindings last only for the browser session and require explicit rebinding after group removal, restart, or configuration restore.
 - Local-module content filters can select saved Configuration time periods and apply only during matching daily clock ranges, with separate normal/plan preferences and configuration-backup support.
+- Local configuration backup includes reusable custom presets, whitelist rules, plan items, and compatible installed-module preferences, excluding usage history, executable module files, active grants, and browser group bindings.
 
 ### Fixed
 
@@ -14,6 +16,9 @@ All notable changes to Hourleaf will be documented in this file. The format foll
 - Ordinary website visits no longer redirect to the plan page when they do not match the active plan.
 - Plan timers and expiry notifications are browser-session state; revisiting after expiry or leaving the website clears the old visit instead of repeatedly blocking access. Live same-origin navigation retains its deadline, and stale video-end callbacks do not stop the continuing visit.
 - Toolbar remaining time and configured usage accounting now use the current tab's plan authorization.
+- Ordinary pause-page close actions preserve all grouped tabs and close only related tabs confirmed to be ungrouped; plan close actions retain their exact-origin scope.
+- Switching between ordinary access, whitelist access, and plan access settles the previous usage interval and clears media callbacks owned by the previous source.
+- Built-in module names, descriptions, and filter-group labels follow the interface language without rewriting module files or stored preferences.
 - Bilibili 1.2.5 extends the comments filter to featured comments beneath dynamic video cards while preserving likes, post content, and video cards.
 - Content filter schedules now read only the selected start/end times as daily blacklist windows; configured weekdays, period enablement, access modes, and allowance no longer prevent matching or boundary refresh.
 - Bilibili 1.2.4 hides dynamic-update and message-notification dot/count badges with the dynamic-feed filter in native navigation and supported alternative layouts.
@@ -22,10 +27,14 @@ All notable changes to Hourleaf will be documented in this file. The format foll
 
 ### Changed
 
+- Plans always use independent access timers and never consume configured usage or quotas; the former toggle is removed and older settings normalize to independent timing.
+- Configuration uses parallel website and whitelist directories with an independently scrolling desktop sidebar; settings are organized into six collapsible categories.
+- All clock inputs and timestamps use 24-hour notation, including systems configured for a 12-hour clock; website visit prompts have a separate text-visibility switch.
 - Managed websites with no enabled time periods now allow unlimited use while retaining actual usage statistics, content filters, and their independent daily schedules.
 - Content filter cards align switches and time-period controls, and offer only periods from the corresponding website; unrelated stored references remain inactive and removable.
 - Plan mindmaps show pending items only; completed items use the same collapsible list at the bottom in both views.
 - Optional module names now use only the website name: Bilibili, 小红书, X, YouTube, and 百度贴吧; module IDs and filter preferences remain stable.
+- README and product/developer documentation now describe the complete current feature set, with a feature guide and a module-oriented documentation index.
 
 ## [0.6.0] - 2026-08-11
 
