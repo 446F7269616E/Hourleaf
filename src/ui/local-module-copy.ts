@@ -16,6 +16,7 @@ const PUBLISHED_COPY = new Map<string, ModuleCopy>([
   [
     "hourleaf.local.bilibili-focus",
     {
+      name: "moduleCopy.bilibili.name",
       description: "moduleCopy.bilibili.description",
       scriptDescription: "moduleCopy.bilibili.scriptDescription",
       filters: new Map([
@@ -53,6 +54,7 @@ const PUBLISHED_COPY = new Map<string, ModuleCopy>([
   [
     "hourleaf.local.youtube-focus",
     {
+      name: "moduleCopy.youtube.name",
       description: "moduleCopy.youtube.description",
       filters: new Map([
         [
@@ -116,6 +118,7 @@ const PUBLISHED_COPY = new Map<string, ModuleCopy>([
   [
     "hourleaf.local.x-focus",
     {
+      name: "moduleCopy.x.name",
       description: "moduleCopy.x.description",
       filters: new Map([
         [

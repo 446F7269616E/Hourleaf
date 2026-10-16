@@ -10,9 +10,10 @@ import {
 import type { FocusSettings } from "../shared/types";
 import { formatLocalDate } from "../shared/analytics";
 import { selectActiveTimePeriod } from "../shared/schedule";
+import { STORAGE_KEYS } from "../shared/storage-keys";
 import { createMathChallenge, randomSeed, verifyUnlock, sha256 } from "../shared/unlock-challenge";
 
-const STORAGE_KEY = "hourleaf.visit-confirmation.v1";
+const STORAGE_KEY = STORAGE_KEYS.visitConfirmation;
 const SCHEMA_VERSION = 1 as const;
 
 interface VisitGrant {

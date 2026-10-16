@@ -5,7 +5,7 @@
   "name": "X",
   "author": "Hourleaf contributors",
   "version": "1.0.1",
-  "description": "非官方本地模块：提供 X 网页版主页信息流的可选过滤。",
+  "description": "隐藏 X 网页主页时间线中的普通帖子。",
   "matches": ["https://x.com/*"],
   "domainPolicy": "timed",
   "hideSelectors": [],

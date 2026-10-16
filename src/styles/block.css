@@ -9,7 +9,7 @@
 
 .block-content {
   display: grid;
-  width: min(100%, 980px);
+  width: 100%;
   gap: var(--space-7);
   margin-inline: auto;
 }

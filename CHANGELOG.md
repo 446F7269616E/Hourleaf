@@ -6,11 +6,26 @@ All notable changes to Hourleaf will be documented in this file. The format foll
 
 ### Added
 
-- Scheduled tab-group whitelists allow unlimited access to configured, authorized websites in a bound browser group without consuming ordinary quotas; bindings last only for the browser session and require explicit rebinding after group removal, restart, or configuration restore.
+- An opt-in sidebar icon preference applies to Configuration, Block and Settings directories and is included in local configuration backups.
+
+- Scheduled tab-group whitelists allow unlimited access to configured, authorized websites in a bound browser group without consuming ordinary quotas; live IDs remain session-scoped, with local fingerprint recovery for uniquely matching restored groups. Group removal and configuration restore require rebinding.
 - Local-module content filters can select saved Configuration time periods and apply only during matching daily clock ranges, with separate normal/plan preferences and configuration-backup support.
 - Local configuration backup includes reusable custom presets, whitelist rules, plan items, and compatible installed-module preferences, excluding usage history, executable module files, active grants, and browser group bindings.
 
 ### Fixed
+
+- Tab-group access checks read current membership after resolving all bindings and fall back to browser member queries when tab metadata omits the group; access-change notifications reach standalone pause pages as well as website frames. New configurations suggest the selected browser group's name.
+
+- Ordinary pause pages now recheck shared flow/group grants and resume when access becomes available, including background tabs, embedded frames, shared confirmations and rule changes; existing deadlines, per-tab confirmation and plan-expiry pauses remain authoritative.
+- Concurrent pause-frame resume requests share one result instead of reporting a failed resume while another request is already restoring the same page.
+
+- New and reset configurations default to the blue Ocean theme, including the initial unconfigured palette; saved theme choices remain intact.
+- Website and general-target names use their configured hostname, while maintained blocking add-ons use website names and concise descriptions of the content they hide, including existing imports.
+
+- Shared configuration sidebars account for navigation height and page-bottom padding so scrolling long details to the end cannot push the directory behind the header; narrow or very short windows use normal document flow.
+
+- Tab-group whitelist configurations now manage multiple independently named, enabled weekday/time windows under one group; existing schedules and bindings remain readable.
+- Blocking and Settings now share Configuration’s sidebar/detail navigation, preserving selection and scroll position after saves.
 
 - Plan access now belongs to its confirmed tab and exact website origin; pagination, refreshes, and route changes keep the original deadline, while other tabs follow ordinary focus rules.
 - Ordinary website visits no longer redirect to the plan page when they do not match the active plan.

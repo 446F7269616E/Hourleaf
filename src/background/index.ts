@@ -1,5 +1,6 @@
 import {
   isTabGroupWhitelistActive,
+  tabGroupWhitelistPeriods,
   type TabGroupWhitelistRule
 } from "../shared/tab-group-whitelist";
 import { TabGroupWhitelistService } from "./tab-group-whitelist";
@@ -18,6 +19,7 @@ import {
   storageGet,
   storageSet,
   runtimeAddMessageListener,
+  runtimeSendMessage,
   storageAddChangeListener,
   tabsGet,
   tabsSendMessage,
@@ -200,18 +202,42 @@ if (api) {
   api.tabGroups?.onRemoved?.addListener((group) => {
     tabGroupWhitelist.markRemoved(group.id);
     const pending = stateChangeQueue.then(async () => {
-      await tracker.withSessionBoundary(() => tabGroupWhitelist.releaseGroup(group.id));
+      await tracker.withSessionBoundary(() =>
+        tabGroupWhitelist.releaseGroup(group.id, group.windowId)
+      );
       await notifyTabGroupAccessChange();
     });
     stateChangeQueue = pending.catch(() => undefined);
   });
+  api.windows?.onRemoved?.addListener((windowId) => tabGroupWhitelist.markWindowClosing(windowId));
+  let groupRefreshQueued = false;
+  let refreshAllGroups = false;
+  const groupRefreshTabs = new Set<number>();
+  const refreshGroupBindings = (tabId?: number) => {
+    if (tabId === undefined) refreshAllGroups = true;
+    else groupRefreshTabs.add(tabId);
+    if (groupRefreshQueued) return;
+    groupRefreshQueued = true;
+    const pending = stateChangeQueue.then(async () => {
+      const refreshAll = refreshAllGroups;
+      const tabIds = [...groupRefreshTabs];
+      refreshAllGroups = false;
+      groupRefreshTabs.clear();
+      groupRefreshQueued = false;
+      await tracker.flush();
+      await tabGroupWhitelist.getState();
+      if (refreshAll) await notifyTabGroupAccessChange();
+      else await Promise.allSettled(tabIds.map((id) => notifyTabGroupAccessChange(id)));
+    });
+    stateChangeQueue = pending.catch(() => undefined);
+  };
+  api.tabGroups?.onCreated?.addListener(() => refreshGroupBindings());
+  api.tabGroups?.onUpdated?.addListener(() => refreshGroupBindings());
+  // Capture existing v1 bindings while their original groups are still open.
+  refreshGroupBindings();
   api.tabs?.onUpdated?.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.groupId !== undefined) {
-      const pending = stateChangeQueue.then(async () => {
-        await tracker.flush();
-        await notifyTabGroupAccessChange(tabId);
-      });
-      stateChangeQueue = pending.catch(() => undefined);
+    if (changeInfo.groupId !== undefined || changeInfo.url || changeInfo.status === "complete") {
+      refreshGroupBindings(tabId);
     }
     if (changeInfo.url)
       void visitConfirmations
@@ -235,7 +261,8 @@ if (api) {
       .then((tab) => (tab ? refreshToolbarBadgeForTab(tab) : undefined))
       .catch(() => undefined);
   });
-  api.tabs?.onRemoved?.addListener((tabId) => {
+  api.tabs?.onRemoved?.addListener((tabId, removeInfo) => {
+    if (removeInfo?.isWindowClosing) tabGroupWhitelist.markWindowClosing(removeInfo.windowId);
     void visitConfirmations.revokeTab(tabId).catch(() => undefined);
     const pending = stateChangeQueue.then(async () => {
       if ((await planVisits.get())?.tabId !== tabId) return;
@@ -1047,7 +1074,9 @@ async function decideEffectiveFocus(
     };
   }
   const whitelistRules = whitelistSnapshot ?? (await tabGroupWhitelist.rulesForTab(tabId));
-  const nextAccessCheckAt = whitelistRules.some((rule) => rule.enabled)
+  const nextAccessCheckAt = whitelistRules.some((rule) =>
+    tabGroupWhitelistPeriods(rule).some((period) => period.enabled)
+  )
     ? now.getTime() + 60_000 - now.getSeconds() * 1000 - now.getMilliseconds()
     : undefined;
   if (whitelistRules.some((rule) => isTabGroupWhitelistActive(rule, now))) {
@@ -1079,16 +1108,19 @@ async function notifyTabGroupAccessChange(tabId?: number): Promise<void> {
     tabId === undefined
       ? await tabsQuery({})
       : [await tabsGet(tabId)].filter((tab): tab is ExtensionTab => tab !== null);
-  await Promise.allSettled(
-    tabs
+  await Promise.allSettled([
+    // tabs.sendMessage only reaches content scripts. Standalone end.html
+    // pages also need a signal after the binding transaction has completed.
+    runtimeSendMessage({ type: "HOURLEAF_TAB_GROUP_ACCESS_CHANGED", tabId }),
+    ...tabs
       .filter((tab) => tab.id !== undefined)
       .map(async (tab) => {
-        await refreshToolbarBadgeForTab(tab);
-        await tabsSendMessage(tab.id!, { type: "HOURLEAF_TAB_GROUP_ACCESS_CHANGED" }).catch(
-          () => undefined
-        );
+        await Promise.allSettled([
+          refreshToolbarBadgeForTab(tab),
+          tabsSendMessage(tab.id!, { type: "HOURLEAF_TAB_GROUP_ACCESS_CHANGED" })
+        ]);
       })
-  );
+  ]);
 }
 
 /** Plan > group whitelist > ordinary time rules; domain blocks remain explicit. */

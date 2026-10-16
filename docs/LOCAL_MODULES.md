@@ -23,6 +23,10 @@ Hourleaf 的商店包只包含通用专注核心和本地模块导入器。扩�
 
 用户脚本固定运行在浏览器的 `USER_SCRIPT` 隔离世界、`document_idle`、顶层 frame，不获得 Hourleaf 的 storage、permissions、tabs 或其他扩展 API。核心不使用 `eval`、`Function`、script 标签或 `scripting.executeScript({code})` 执行导入文本。
 
+## 显示名称与说明
+
+界面称“屏蔽插件”。仓库插件直接使用网站名称，不添加“专注模块”等后缀；`description` 简要描述隐藏哪些内容，不重复“非官方本地模块”前缀。非官方关系和导入风险由导入说明统一保留。五个仓库插件在界面通过稳定 ID 投影中英文名称与说明，旧安装不需要重新导入；未知第三方插件仍显示作者声明的名称与说明。网站时间配置独立使用域名，不采用插件名称。
+
 ## JSON 清单
 
 ```json

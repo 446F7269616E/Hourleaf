@@ -54,7 +54,7 @@ export class ManagedSiteService {
   }
 
   /** Persists only an origin already granted by a direct UI user gesture. */
-  async addAuthorized(url: string, label?: string, now = Date.now()): Promise<AddSiteResult> {
+  async addAuthorized(url: string, _label?: string, now = Date.now()): Promise<AddSiteResult> {
     const parsed = parseHttpUrl(url);
     if (!parsed) throw new Error("Only HTTP and HTTPS websites can be added");
     const scope = resolveSiteScope(parsed);
@@ -64,7 +64,7 @@ export class ManagedSiteService {
 
     const siteId = createOpaqueId("site");
     const targetId = createOpaqueId("target");
-    const cleanLabel = normalizeLabel(label, scope.displayHostname);
+    const cleanLabel = new URL(scope.canonicalOrigin).hostname;
     const site: ManagedSite = {
       id: siteId,
       origin: scope.canonicalOrigin,
@@ -133,7 +133,7 @@ export class ManagedSiteService {
       if (!site) throw new Error("Website is not configured");
       current.sites[siteId] = {
         ...site,
-        ...(patch.label !== undefined ? { label: normalizeLabel(patch.label, site.hostname) } : {}),
+        label: site.hostname,
         enabled: true,
         ...(patch.restrictionMode ? { restrictionMode: patch.restrictionMode } : {}),
         ...(patch.visitConfirmation ? { visitConfirmation: { ...patch.visitConfirmation } } : {}),
@@ -409,12 +409,6 @@ function createOpaqueId(prefix: "site" | "target"): string {
     globalThis.crypto?.randomUUID?.() ??
     `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   return `${prefix}:${value}`;
-}
-
-function normalizeLabel(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim()
-    ? value.trim().slice(0, 80)
-    : fallback.slice(0, 80);
 }
 
 function modulePatternMatches(pattern: string, origin: string): boolean {

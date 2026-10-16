@@ -2,14 +2,28 @@ import { configureLocale, localizeDocumentTitle, t, type MessageKey } from "../s
 import { sendRequest } from "../shared/messages";
 import { UI_THEMES, type DeepPartial, type FocusSettings, type UiTheme } from "../shared/types";
 import { assertAppRoot, describeError, element, toast } from "../styles/dom";
+import { createConfigurationDirectory } from "../ui/configuration-directory";
+import {
+  createConfigurationWorkspace,
+  preserveConfigurationPosition
+} from "../ui/configuration-workspace";
 import { createConfigurationBackupControls } from "../ui/configuration-backup";
 import { createPageNavigation } from "../ui/page-navigation";
 import { openProtectedAction } from "../ui/protected-action-dialog";
 import { sha256 } from "../shared/unlock-challenge";
-import { applyTheme } from "../ui/theme";
+import { applyTheme, applyAppearance } from "../ui/theme";
 const app = assertAppRoot();
 let settings: FocusSettings | null = null;
-const settingsGroupStates = new Map<string, boolean>();
+let selectedCategory = "general";
+let releaseSidebarSizing: (() => void) | undefined;
+const categories = [
+  ["general", "settings.runtime", "settings.runtimeDescription"],
+  ["appearance", "settings.appearance", "settings.appearanceDescription"],
+  ["plan", "settings.planCategory", "settings.planCategoryDescription"],
+  ["access", "settings.accessCategory", "settings.accessCategoryDescription"],
+  ["end-page", "settings.endPage", "settings.endPageDescription"],
+  ["data-management", "settings.dataManagement", "settings.dataManagementDescription"]
+] as const;
 let settingsWriteQueue: Promise<void> = Promise.resolve();
 
 document.body.classList.add("home-page");
@@ -21,7 +35,7 @@ async function loadSettings(): Promise<void> {
   try {
     settings = await sendRequest({ type: "GET_SETTINGS" });
     configureLocale((settings as FocusSettings & { locale?: string }).locale);
-    applyTheme(settings.theme);
+    applyAppearance(settings);
     localizeDocumentTitle("settings");
     renderSettings();
   } catch (error) {
@@ -30,6 +44,8 @@ async function loadSettings(): Promise<void> {
 }
 
 function renderLoading(): void {
+  releaseSidebarSizing?.();
+  releaseSidebarSizing = undefined;
   app.replaceChildren(
     createShell(
       element("section", {
@@ -42,6 +58,8 @@ function renderLoading(): void {
 }
 
 function renderError(message: string): void {
+  releaseSidebarSizing?.();
+  releaseSidebarSizing = undefined;
   const retry = element("button", {
     className: "btn btn--primary",
     text: t("common.retry"),
@@ -65,20 +83,50 @@ function renderError(message: string): void {
 
 function renderSettings(): void {
   if (!settings) return;
-  const content = element("div", {
-    className: "home-content",
-    children: [
-      element("header", {
-        className: "home-heading page-heading",
-        children: [element("h1", { className: "page-title", text: t("settings.title") })]
-      }),
-      element("div", {
-        className: "home-settings",
-        children: [createPluginSettingsPanel()]
-      })
-    ]
+  preserveConfigurationPosition(app, () => {
+    releaseSidebarSizing?.();
+    const workspace = createConfigurationWorkspace({
+      label: t("settings.title"),
+      editorId: "settings-editor",
+      directory: [
+        createConfigurationDirectory({
+          title: t("settings.title"),
+          label: t("settings.title"),
+          active: true,
+          editorId: "settings-editor",
+          emptyLabel: "",
+          onSelect: () => undefined,
+          items: categories.map(([id, title, description], index) => ({
+            id,
+            label: t(title),
+            detail: t(description),
+            mark: String(index + 1),
+            selected: selectedCategory === id,
+            onSelect: () => {
+              selectedCategory = id;
+              renderSettings();
+            }
+          }))
+        })
+      ],
+      content: [createPluginSettingsPanel()]
+    });
+    const content = element("div", {
+      className: "home-content",
+      children: [
+        element("header", {
+          className: "home-heading page-heading",
+          children: [element("h1", { className: "page-title", text: t("settings.title") })]
+        }),
+        element("div", {
+          className: "home-settings",
+          children: [workspace.workspace]
+        })
+      ]
+    });
+    app.replaceChildren(createShell(content));
+    releaseSidebarSizing = workspace.mount();
   });
-  app.replaceChildren(createShell(content));
 }
 
 function createPluginSettingsPanel(): HTMLElement {
@@ -112,6 +160,14 @@ function createPluginSettingsPanel(): HTMLElement {
     void updateSettings({ locale: locale.value as FocusSettings["locale"] }, locale);
   });
   const theme = createThemeControl(settings.theme);
+  const sidebarIcons = createToggle(
+    t("settings.showSidebarIcons"),
+    settings.showSidebarIcons,
+    "settings-sidebar-icons"
+  );
+  sidebarIcons.input.addEventListener("change", () => {
+    void updateSettings({ showSidebarIcons: sidebarIcons.input.checked }, sidebarIcons.input);
+  });
   const autoComplete = createToggle(
     t("settings.planAutoComplete"),
     settings.planMode.autoCompleteOnStart,
@@ -287,34 +343,22 @@ function createPluginSettingsPanel(): HTMLElement {
 
   return element("section", {
     className: "home-settings__panel",
-    attrs: { "aria-labelledby": "plugin-settings-title" },
     children: [
-      createPanelHeading(
-        "plugin-settings-title",
-        t("settings.other"),
-        t("settings.otherDescription")
-      ),
       element("div", {
         className: "home-settings-categories",
         children: [
-          createSettingsGroup(
-            "general",
-            t("settings.runtime"),
-            t("settings.runtimeDescription"),
-            [
-              createSettingRow(
-                t("settings.focusEnabled"),
-                t("settings.focusEnabledDescription"),
-                focusToggle.label
-              ),
-              createSettingRow(
-                t("pause.disableProtection"),
-                t("pause.disableHint"),
-                createDisableProtection()
-              )
-            ],
-            true
-          ),
+          createSettingsGroup("general", t("settings.runtime"), t("settings.runtimeDescription"), [
+            createSettingRow(
+              t("settings.focusEnabled"),
+              t("settings.focusEnabledDescription"),
+              focusToggle.label
+            ),
+            createSettingRow(
+              t("pause.disableProtection"),
+              t("pause.disableHint"),
+              createDisableProtection()
+            )
+          ]),
           createSettingsGroup(
             "appearance",
             t("settings.appearance"),
@@ -323,12 +367,16 @@ function createPluginSettingsPanel(): HTMLElement {
               createSettingRow(t("settings.language"), t("settings.languageDescription"), locale),
               createSettingRow(t("settings.theme"), t("settings.themeDescription"), theme),
               createSettingRow(
+                t("settings.showSidebarIcons"),
+                t("settings.showSidebarIconsDescription"),
+                sidebarIcons.label
+              ),
+              createSettingRow(
                 t("settings.showRemainingMinutesOnIcon"),
                 t("settings.showRemainingMinutesOnIconDescription"),
                 iconMinutes.label
               )
-            ],
-            true
+            ]
           ),
           createSettingsGroup(
             "plan",
@@ -345,8 +393,7 @@ function createPluginSettingsPanel(): HTMLElement {
                 t("settings.planEnableAllBlockingDescription"),
                 planBlocking.label
               )
-            ],
-            false
+            ]
           ),
           createSettingsGroup(
             "access",
@@ -379,23 +426,16 @@ function createPluginSettingsPanel(): HTMLElement {
                 repeatConfirmation.label
               ),
               createSettingRow(t("settings.password"), t("settings.passwordStored"), password)
-            ],
-            false
+            ]
           ),
-          createSettingsGroup(
-            "end-page",
-            t("settings.endPage"),
-            t("settings.endPageDescription"),
-            [
-              createSettingRow(
-                t("settings.motivation"),
-                t("settings.motivationDescription"),
-                motivation
-              ),
-              createSettingRow(t("pause.flowCharge"), t("pause.flowChargeHint"), flowCharge.label)
-            ],
-            false
-          ),
+          createSettingsGroup("end-page", t("settings.endPage"), t("settings.endPageDescription"), [
+            createSettingRow(
+              t("settings.motivation"),
+              t("settings.motivationDescription"),
+              motivation
+            ),
+            createSettingRow(t("pause.flowCharge"), t("pause.flowChargeHint"), flowCharge.label)
+          ]),
           createSettingsGroup(
             "data-management",
             t("settings.dataManagement"),
@@ -412,8 +452,7 @@ function createPluginSettingsPanel(): HTMLElement {
                 className: "home-settings__actions",
                 children: [resetSettings, clearUsage]
               })
-            ],
-            false
+            ]
           )
         ]
       })
@@ -425,36 +464,29 @@ function createSettingsGroup(
   id: string,
   title: string,
   description: string,
-  children: HTMLElement[],
-  open: boolean
-): HTMLDetailsElement {
-  const group = element("details", {
+  children: HTMLElement[]
+): HTMLElement {
+  return element("section", {
     className: "home-settings-group card",
-    attrs: { open: settingsGroupStates.get(id) ?? open, "data-settings-group": id },
+    attrs: {
+      hidden: selectedCategory !== id,
+      "data-settings-group": id,
+      "aria-labelledby": `settings-category-${id}`
+    },
     children: [
-      element("summary", {
+      element("header", {
         className: "home-settings-group__summary",
         children: [
           element("div", {
-            children: [element("h3", { text: title }), element("p", { text: description })]
-          }),
-          element("span", {
-            className: "home-settings-group__chevron",
-            attrs: { "aria-hidden": "true" }
+            children: [
+              element("h2", { text: title, attrs: { id: `settings-category-${id}` } }),
+              element("p", { text: description })
+            ]
           })
         ]
       }),
       element("div", { className: "home-settings-group__content", children })
     ]
-  });
-  group.addEventListener("toggle", () => settingsGroupStates.set(id, group.open));
-  return group;
-}
-
-function createPanelHeading(id: string, title: string, description: string): HTMLElement {
-  return element("header", {
-    className: "home-settings__panel-heading",
-    children: [element("h2", { text: title, attrs: { id } }), element("p", { text: description })]
   });
 }
 
@@ -479,7 +511,7 @@ async function updateSettings(
     try {
       settings = await sendRequest({ type: "UPDATE_SETTINGS", patch });
       configureLocale(settings.locale);
-      applyTheme(settings.theme);
+      applyAppearance(settings);
       localizeDocumentTitle("settings");
       toast(t("common.saved"));
       renderSettings();
@@ -563,7 +595,7 @@ function clampNumberInput(input: HTMLInputElement, min: number, max: number): nu
 function acceptSettings(next: FocusSettings): void {
   settings = next;
   configureLocale(next.locale);
-  applyTheme(next.theme);
+  applyAppearance(next);
   renderSettings();
   toast(t("common.saved"));
 }

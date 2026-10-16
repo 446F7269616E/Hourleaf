@@ -1,4 +1,9 @@
-import { STORAGE_KEYS } from "../shared/storage-keys";
+import {
+  createPauseRecheck,
+  nextPauseAccessCheckAt,
+  pauseAccessChanged,
+  planAllowsPauseResume
+} from "../shared/pause-access";
 import { getExtensionApi, storageAddChangeListener, tabsGetCurrent } from "../shared/browser";
 import { configureLocale, t } from "../shared/i18n";
 import { sendRequest } from "../shared/messages";
@@ -24,14 +29,17 @@ const periodId = params.get("periodId") ?? "";
 const siteId = params.get("siteId") ?? "";
 const itemId = params.get("itemId") ?? "";
 const embedded = window.parent !== window;
-void render();
-let groupResumePending = false;
-let groupCheckTimer: ReturnType<typeof setTimeout> | undefined;
-async function resumeWhitelistedVisit(): Promise<boolean> {
-  if (source === "plan" || groupResumePending) return false;
+let actionInFlight = false;
+let accessResumed = false;
+let resumePromise: Promise<void> | undefined;
+let accessCheckTimer: ReturnType<typeof setTimeout> | undefined;
+const recheckAccess = createPauseRecheck(resumeAvailableVisit);
+
+async function resumeAvailableVisit(): Promise<boolean> {
+  if (accessResumed) return true;
+  if (source === "plan" || actionInFlight || document.visibilityState !== "visible") return false;
   const url = params.get("returnUrl");
   if (!url) return false;
-  groupResumePending = true;
   try {
     const tabId = (await tabsGetCurrent())?.id;
     const decision = await sendRequest({
@@ -40,39 +48,55 @@ async function resumeWhitelistedVisit(): Promise<boolean> {
       tabId,
       ...(targetId ? { targetId } : {})
     });
-    clearTimeout(groupCheckTimer);
-    if (decision.nextAccessCheckAt !== undefined)
-      groupCheckTimer = setTimeout(
-        () => {
-          if (document.visibilityState === "visible") void resumeWhitelistedVisit();
-        },
-        Math.max(0, decision.nextAccessCheckAt - Date.now())
-      );
-    if (decision.reason !== "tab-group-whitelist") return false;
+    clearTimeout(accessCheckTimer);
+    const deadline = nextPauseAccessCheckAt(decision, true);
+    if (deadline !== undefined)
+      accessCheckTimer = setTimeout(() => void recheckAccess(), Math.max(1, deadline - Date.now()));
+    if (decision.blocked || actionInFlight) return false;
     const planDecision = await sendRequest({ type: "GET_PLAN_NAVIGATION_DECISION", url, tabId });
-    if (!planDecision.allowed || (planDecision.reason === "expired" && planDecision.itemId))
-      return false;
+    if (!planAllowsPauseResume(planDecision) || actionInFlight) return false;
+    // Extension previews omit the website's visit gate. A confirmation page
+    // must observe an existing grant, rather than bounce back into itself.
+    if (
+      source === "confirmation" &&
+      siteId &&
+      !["tab-group-whitelist", "plan-access", "focus-disabled", "not-managed"].includes(
+        decision.reason
+      )
+    ) {
+      const gate = await sendRequest({ type: "GET_VISIT_GATE", url, siteId, tabId });
+      if (!gate.alreadyGranted) return false;
+    }
+    if (actionInFlight) return false;
     await resume(url);
     return true;
   } catch {
     return false;
-  } finally {
-    groupResumePending = false;
   }
 }
 if (source !== "plan") {
+  // Notifications do not answer requests or reserve their response channel.
+  getExtensionApi()?.runtime.onMessage.addListener((message, sender) => {
+    if (sender.id !== getExtensionApi()?.runtime.id || !message || typeof message !== "object")
+      return;
+    if (!("type" in message) || message.type !== "HOURLEAF_TAB_GROUP_ACCESS_CHANGED") return;
+    // Recheck asynchronously: the sender may still own the background write queue.
+    void recheckAccess();
+  });
   storageAddChangeListener((changes) => {
-    if (changes[STORAGE_KEYS.settings] || changes[STORAGE_KEYS.tabGroupBindings])
-      void resumeWhitelistedVisit();
+    if (pauseAccessChanged(changes)) void recheckAccess();
   });
   getExtensionApi()?.tabs?.onUpdated?.addListener((_tabId, changeInfo) => {
-    if (changeInfo.groupId !== undefined) void resumeWhitelistedVisit();
+    if (changeInfo.groupId !== undefined) void recheckAccess();
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") void resumeWhitelistedVisit();
+    if (document.visibilityState === "visible") void recheckAccess();
   });
-  window.addEventListener("pagehide", () => clearTimeout(groupCheckTimer));
+  window.addEventListener("focus", () => void recheckAccess());
+  window.addEventListener("pageshow", () => void recheckAccess());
+  window.addEventListener("pagehide", () => clearTimeout(accessCheckTimer));
 }
+void render();
 
 async function render(): Promise<void> {
   try {
@@ -117,7 +141,8 @@ async function render(): Promise<void> {
 }
 
 async function renderFocus(card: HTMLElement, settings: FocusSettings): Promise<void> {
-  if (await resumeWhitelistedVisit()) return;
+  await recheckAccess();
+  if (accessResumed) return;
   const site = settings.sites[siteId];
   const target = settings.targets[targetId];
   const url = params.get("returnUrl");
@@ -306,7 +331,6 @@ function createFlowControls(
   });
 }
 
-let actionInFlight = false;
 async function withPauseAction(run: () => Promise<void>): Promise<void> {
   if (actionInFlight) throw new Error("A pause action is already running");
   actionInFlight = true;
@@ -317,6 +341,7 @@ async function withPauseAction(run: () => Promise<void>): Promise<void> {
   } finally {
     actionInFlight = false;
     if (controls) controls.disabled = false;
+    void recheckAccess();
   }
 }
 
@@ -366,6 +391,19 @@ function closeAction(kind: string | null): HTMLElement {
   );
 }
 async function resume(url: string): Promise<void> {
+  resumePromise ??= restorePausedVisit(url)
+    .then(() => {
+      accessResumed = true;
+      clearTimeout(accessCheckTimer);
+    })
+    .catch((error: unknown) => {
+      resumePromise = undefined;
+      throw error;
+    });
+  return resumePromise;
+}
+
+async function restorePausedVisit(url: string): Promise<void> {
   if (!embedded) {
     window.location.replace(url);
     return;
