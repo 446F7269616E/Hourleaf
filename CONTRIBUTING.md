@@ -16,7 +16,7 @@ npm run build
 
 以根 `package.json` 中实际脚本为准。不要绕过锁文件，不要提交 `dist`、测试 trace、浏览器 profile、签名证书、provisioning profile、`.env` 或任何 token。
 
-本地自动检查仅执行编译与构建，交互与浏览器效果留给人工；现有单元/E2E 脚本不作为本地自动必跑流程。GitHub Actions 仍执行格式、类型、Lint、单元覆盖、构建和打包，不因本地范围调整而移除远端检查。
+本地自动检查仅执行编译与构建，交互与浏览器效果留给人工；现有单元/E2E 脚本不作为本地自动必跑流程。GitHub Actions 使用 Ubuntu 24.04 ARM 和 Node.js 22，执行格式、类型、Lint、单元覆盖、构建和打包，不因本地范围调整而移除远端检查。
 
 ## 设计原则
 
