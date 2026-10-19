@@ -13,16 +13,24 @@ if (args.length !== 1 || !/^[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+){2,}$/.test(
 if (process.platform !== "darwin") throw new Error("Safari preparation requires macOS and Xcode");
 const bundleIdentifier = args[0];
 const source = path.join(root, "dist", "safari");
+/** @type {unknown} */
 const manifest = JSON.parse(await readFile(path.join(source, "manifest.json"), "utf8"));
-if (manifest.manifest_version !== 3 || manifest.version_name !== undefined) {
+if (!isRecord(manifest) || manifest.manifest_version !== 3 || manifest.version_name !== undefined) {
   throw new Error("Build the Safari release target before creating its Xcode project");
 }
-if ((manifest.permissions ?? []).includes("userScripts")) {
+const permissions = manifest.permissions ?? [];
+if (
+  !Array.isArray(permissions) ||
+  permissions.some((permission) => typeof permission !== "string")
+) {
+  throw new Error("Safari manifest permissions must be a list of strings");
+}
+if (permissions.includes("userScripts")) {
   throw new Error("Safari store candidates cannot execute imported user scripts");
 }
 const output = path.join(root, "safari");
 const entries = await readdir(output).catch((error) => {
-  if (error?.code === "ENOENT") return [];
+  if (isRecord(error) && error.code === "ENOENT") return [];
   throw error;
 });
 if (entries.length > 0) {
@@ -73,3 +81,8 @@ await writeFile(
 process.stdout.write(
   `Safari project created in ${output}. Complete signing and privacy target membership in Xcode.\n`
 );
+
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
