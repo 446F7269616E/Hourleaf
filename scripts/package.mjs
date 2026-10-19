@@ -117,8 +117,10 @@ async function packageReviewSource() {
       "eslint.config.mjs",
       "vitest.config.ts",
       "README.md",
+      "README.zh-CN.md",
       "LICENSE",
       "PRIVACY.md",
+      "PRIVACY.zh-CN.md",
       "CONTRIBUTING.md",
       "SECURITY.md",
       "CHANGELOG.md"
@@ -192,11 +194,13 @@ async function packageModuleArchive(sourceDir, slug, moduleVersion) {
         "",
         "Import only hourleaf-module.json and the CSS/user-script files it references.",
         "LICENSE and this README are distribution notices, not import inputs.",
-        "Verify the source and permissions before installation. This package is a third-party adaptation and is not endorsed by the website operator.",
+        "Verify the source, contents, permissions and release checksum before installation. Static validation does not guarantee safety; website changes may affect behavior.",
+        "This unofficial adaptation is for discussion, learning and productivity. It is not endorsed by the website operator. Respect applicable law, website rules and third-party rights.",
         "Firefox and Safari store builds accept packages without user scripts only.",
         "Documentation, downloads and disclaimer: https://github.com/446F7269616E/Hourleaf/tree/main/optional-modules",
         "",
-        "This package is distributed under the MIT license included in LICENSE.",
+        "Provided as is under the MIT license included in LICENSE, subject to liability that cannot lawfully be excluded.",
+        "Rights concerns: https://github.com/446F7269616E/Hourleaf/issues. Report security issues privately as described in the repository SECURITY.md.",
         ""
       ].join("\n"),
       "utf8"

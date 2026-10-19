@@ -1,33 +1,33 @@
-# Hourleaf 本地模块规范
+# Hourleaf local module specification
 
-当前协议及核心行为同步：2026-10-19。使用说明见 [FEATURES.md](./FEATURES.md#内容屏蔽与模块)，开发目录见 [docs/README.md](./README.md)。
+Protocol and core behavior synchronized: 2026-10-20. See the [component catalog](../optional-modules/README.md), [feature guide](./FEATURES.md), and [development index](./README.md).
 
-## 分发与信任边界
+## Distribution and trust boundary
 
-Hourleaf 的商店包只包含通用专注核心和本地模块导入器。扩展不会读取 GitHub 模块目录、远程更新清单或任意 URL 来获取逻辑。用户必须先在浏览器外下载文件，再通过文件选择器明确导入。
+Store packages contain the general focus core and local module importer. Hourleaf does not fetch logic from a GitHub directory, remote update manifest, or arbitrary URL. Users download files separately and explicitly select them for import.
 
-本地模块最多 32 个。每个模块最多声明 32 个精确 HTTP(S) 来源、128 个元素选择器、100 KB CSS 和 150 KB 用户脚本。通配主机、凭据 URL、远程文件引用、DNR 规则和跨 frame 脚本均会被拒绝。
+A maximum of 32 local modules is supported. Each module can declare up to 32 exact HTTP(S) origins, 128 element selectors, 100 KB of CSS, and 150 KB of user script. Wildcard hosts, credential-bearing URLs, remote file references, nonempty DNR rules, and scripts in subframes are rejected.
 
-仓库维护的模块源码位于 `optional-modules/<slug>/`。`npm run package` 会验证基础元数据和引用文件集合，再为每个目录生成独立的 `dist/modules/hourleaf-module-<slug>-<version>.zip` 与 SHA-256；这些资产只发布到 GitHub Release，不进入三平台扩展安装包。模块 ZIP 另附 MIT `LICENSE` 和说明文档；导入时只选择清单及其引用的 CSS/用户脚本文件。
+Repository modules live in `optional-modules/<slug>/`. `npm run package` validates basic metadata and the referenced file set, then creates `dist/modules/hourleaf-module-<slug>-<version>.zip` and SHA-256 checksums. These are separate GitHub Release assets and never enter browser installation packages. Each ZIP includes the MIT `LICENSE` and a README; only the manifest and its referenced CSS/script files are import inputs.
 
-所有可导入内容必须声明非空作者名称和固定格式标识 `hourleaf.local-module`。格式不从扩展名猜测，也不会为旧文件自动补全作者。
+Every import must declare a nonempty author and the exact format identifier `hourleaf.local-module`. The format is not inferred from an extension, and missing authors are not supplied for legacy files.
 
-## 能力矩阵
+## Platform capabilities
 
-| 能力               | Chromium 商店版                           | Firefox AMO 版             | Safari App Store 版              |
-| ------------------ | ----------------------------------------- | -------------------------- | -------------------------------- |
-| 精确域名计时与名单 | 支持                                      | 支持                       | 支持                             |
-| 元素隐藏与 CSS     | 支持                                      | 支持                       | 支持                             |
-| 本地 DNR 动态规则  | 禁用                                      | 禁用                       | 禁用                             |
-| 用户脚本           | 仅 User Scripts API，需用户在扩展详情启用 | 禁用；AMO 版不执行导入代码 | 禁用；Apple 商店包不执行导入代码 |
+| Capability                              | Chromium store build                                   | Firefox AMO build                       | Safari App Store build                  |
+| --------------------------------------- | ------------------------------------------------------ | --------------------------------------- | --------------------------------------- |
+| Exact-origin timing and domain policies | Supported                                              | Supported                               | Supported                               |
+| Element hiding and CSS                  | Supported                                              | Supported                               | Supported                               |
+| Local DNR rules                         | Disabled                                               | Disabled                                | Disabled                                |
+| User scripts                            | User Scripts API only; user must enable browser access | Disabled; imported code is not executed | Disabled; imported code is not executed |
 
-Chromium 用户脚本固定运行在浏览器的 `USER_SCRIPT` 隔离世界、`document_idle`、顶层 frame，不获得 Hourleaf 的 storage、permissions、tabs 或其他扩展 API。核心不使用 `eval`、`Function`、script 标签或 `scripting.executeScript({code})` 执行导入文本。
+Chromium scripts run in the browser's isolated `USER_SCRIPT` world at `document_idle`, in the top frame only. They receive no access to Hourleaf storage, permissions, tabs, or other extension APIs. Imported text is never executed using `eval`, `Function`, a script element, or `scripting.executeScript({code})`.
 
-## 显示名称与说明
+## Display names and descriptions
 
-界面称“屏蔽插件”。仓库插件直接使用网站名称，不添加“专注模块”等后缀；`description` 简要描述隐藏哪些内容，不重复“非官方本地模块”前缀。非官方关系和导入风险由导入说明统一保留。五个仓库插件在界面通过稳定 ID 投影中英文名称与说明，旧安装不需要重新导入；未知第三方插件仍显示作者声明的名称与说明。网站时间配置独立使用域名，不采用插件名称。
+The interface calls these blocking plugins. Repository components use website names without a “focus module” suffix. Descriptions state what is hidden; the shared import notice carries the unofficial status and source warning. Stable IDs map the five repository catalog entries to Chinese and English display text without requiring reimport. Unknown third-party entries retain author-provided names and descriptions. Website time settings use domains independently of component names.
 
-## JSON 清单
+## JSON manifest
 
 ```json
 {
@@ -37,15 +37,15 @@ Chromium 用户脚本固定运行在浏览器的 `USER_SCRIPT` 隔离世界、`d
   "name": "Example Focus",
   "author": "Example Author",
   "version": "1.0.0",
-  "description": "可选说明",
+  "description": "Optional description",
   "matches": ["https://example.com/*"],
   "domainPolicy": "timed",
   "hideSelectors": [],
   "filterGroups": [
     {
       "id": "home-recommendations",
-      "name": "首页推荐",
-      "description": "隐藏首页中的普通推荐卡片。",
+      "name": "Home recommendations",
+      "description": "Hide ordinary recommendation cards on the home page.",
       "selectors": [".recommendations > .card"]
     }
   ],
@@ -54,20 +54,20 @@ Chromium 用户脚本固定运行在浏览器的 `USER_SCRIPT` 隔离世界、`d
 }
 ```
 
-- `domainPolicy`：`timed`、`always-allow` 或 `always-block`。黑名单优先于白名单；插件总开关关闭时两者都暂停。
-- `format`：必须为 `hourleaf.local-module`；`author` 必须是 1–100 个字符的非空文本。
-- `hideSelectors`：只生成 `display: none !important` 规则；这些选择器在模块启用期间始终生效，适合少量不可配置的基础规则。
-- `filterGroups`：可选的用户级屏蔽分组，最多 24 组且总选择器数仍受 128 条上限约束。`id` 必须是稳定的小写 kebab-case；`name`、`description` 用于屏蔽页显示，`selectors` 非空。分组默认开启，用户关闭的组 ID 随安装记录保存；模块更新新增组时默认开启，删除的组会从设置中清理。
-- `shadowRoots`：可选数组，最多 8 项，格式为 `{ "hostSelector": "#site-root", "mountEvent": "siteMounted" }`。宿主选择器遵循普通选择器的 300 字符限制；可选事件名只接受字母开头、最多 64 字符的字母/数字/下划线/冒号/连字符。核心仅将该模块自身的 CSS 和已启用分组规则同步到声明宿主的开放 Shadow DOM，不混入其他模块规则，不穿透关闭的根或 iframe。挂载事件只触发本地根发现，不读取事件数据或执行代码；未声明时仅处理宿主插入及已有页面状态刷新。旧清单默认不进入任何 Shadow DOM。
-- `css` / `cssFiles`：内联 CSS 或同一次文件选择中按名称引用的本地 CSS；`@import` 和所有 `url()` 外部资源都会被拒绝。
-- `dnrRules`：为兼容 schema 可省略或保留空数组；任何非空规则都会被拒绝。浏览器 DNR 的 `initiatorDomains` 只能表达域名并会覆盖子域，无法兑现 Hourleaf 的精确协议、主机和端口来源契约。
-- `userScript` / `userScriptFiles`：仅通过 User Scripts API 注册。
+- `domainPolicy`: `timed`, `always-allow`, or `always-block`. Blocking takes precedence over allowing; both are suspended when the component is disabled.
+- `format`: must be `hourleaf.local-module`. `author` must contain 1–100 characters of nonempty text.
+- `hideSelectors`: generates only `display: none !important`. These selectors stay active whenever the module is enabled and suit a small set of fixed rules.
+- `filterGroups`: optional user-controlled groups, up to 24 within the total 128-selector limit. IDs must be stable lowercase kebab-case; `name` and `description` appear on the Blocking page, and `selectors` must be nonempty. Groups default to enabled. Disabled IDs are saved with the installation; new groups are enabled after an update, and removed IDs are cleaned up.
+- `shadowRoots`: optional array of up to eight entries such as `{ "hostSelector": "#site-root", "mountEvent": "siteMounted" }`. Host selectors retain the 300-character limit. Event names start with a letter and contain at most 64 letters, digits, underscores, colons, or hyphens. The core copies only this module's CSS and enabled group rules into declared open shadow roots. It does not mix modules, enter closed roots, or traverse iframes. Mount events trigger root discovery without reading their payload or executing code. Without an event, discovery follows inserted hosts and existing page-state refreshes. Legacy manifests do not enter shadow roots by default.
+- `css` / `cssFiles`: inline CSS or local CSS files selected in the same import. `@import` and external resources through `url()` are rejected.
+- `dnrRules`: may be omitted or an empty array for schema compatibility. Any nonempty rule is rejected. Browser DNR `initiatorDomains` includes subdomains and cannot enforce the exact scheme, host, and port boundary required here.
+- `userScript` / `userScriptFiles`: registered through the User Scripts API on Chromium only.
 
-清单不能引用网络 URL。引用文件必须与清单在同一次导入中由用户选择。
+Manifests cannot reference network URLs. All referenced files must be selected together with the manifest.
 
-## 独立 CSS / User Script
+## Standalone CSS and user scripts
 
-没有 JSON 清单时，文件头必须包含 `@format`、`@id`、`@name`、`@author`、`@version` 和至少一个精确 `@match`：
+Without a JSON manifest, file headers must include `@format`, `@id`, `@name`, `@author`, `@version`, and at least one exact `@match`:
 
 ```text
 // ==UserScript==
@@ -80,65 +80,71 @@ Chromium 用户脚本固定运行在浏览器的 `USER_SCRIPT` 隔离世界、`d
 // ==/UserScript==
 ```
 
-`.css` 可使用同样的元数据行。没有 JSON 清单时，每个所选文件都必须完整声明 `@format`、`@id`、`@name`、`@author`、`@version` 和至少一个 `@match`；同次文件的格式、ID、名称、作者与版本必须一致。多个文件一起导入时会合并为一个模块，但不会跟随任何外部引用。
+CSS can use the same metadata fields. Every selected standalone file needs the complete header. Format, ID, name, author, and version must match across the selection. Multiple selected files become one module; no external references are followed.
 
-## 导入确认与安全边界
+## Import confirmation and safety
 
-导入确认页必须显示模块名称、作者、格式、版本、精确网站范围和能力。用户必须明确确认：安全检测只是有限防线，不代表 Hourleaf 已审核或担保第三方内容安全；用户应先阅读来源并自行承担导入与运行风险。未确认时不得发起网站授权或导入。
+The confirmation view must show the module name, author, format, version, exact website scope, and capabilities. Users must acknowledge that static checks are limited, do not certify third-party content, and require them to review and trust the source. No website permission request or import may precede acknowledgement.
 
-`createLocalModuleImportPreview()` 提供不持久化的确认页数据：`author`、`format`、`version`、`matches`、`capabilities`、`hasUserScript` 以及 `riskDisclosure`。`riskDisclosure.code` 固定为 `review-content-and-assume-risk`，且 `acknowledgementRequired` 固定为 `true`；UI 应用本地化文案显示免责说明，不应把错误码或英文能力名直接呈现给用户。确认后，`IMPORT_LOCAL_MODULE` 还必须携带同一个固定 code，特权消息边界会拒绝缺失或伪造的确认值。
+`createLocalModuleImportPreview()` returns nonpersistent preview data: `author`, `format`, `version`, `matches`, `capabilities`, `hasUserScript`, and `riskDisclosure`. Its `code` is `review-content-and-assume-risk`, with `acknowledgementRequired: true`. Display localized text rather than internal codes or capability identifiers. `IMPORT_LOCAL_MODULE` must carry the same fixed acknowledgement code; the privileged boundary rejects missing or forged values.
 
-导入器对最多 150 KB 的脚本做一次线性、有限的静态检查，拒绝以下明显不符合专注模块边界的功能：
+A bounded linear scan of scripts up to 150 KB rejects obvious out-of-scope behavior:
 
-- `eval` / `Function`、字符串计时器、动态 `import`、`importScripts` 和 WebAssembly 代码生成；
-- `fetch`、`XMLHttpRequest`、`WebSocket`、`EventSource` 和 `sendBeacon` 直接外联；
-- 常见扩展特权 API 访问、动态 `<script>` 元素注入和 `document.cookie` 访问。
+- `eval`, `Function`, string timers, dynamic `import`, `importScripts`, and WebAssembly code generation;
+- direct networking through `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, or `sendBeacon`;
+- common privileged extension API access, dynamic `<script>` injection, and `document.cookie` access.
 
-扫描器以一次有界线性遍历识别字符串与注释边界，再检查点号、方括号成员和限定构造器等常见写法，避免字符串中的 `/*` / `*/` 吞掉后续危险代码。这不是通用 JavaScript 恶意代码扫描器，不解压、不解混淆、不追踪别名或数据流，也不保存扫描报告。代码仅在导入和特权边界做同样的归一化；通过后仍只能由浏览器 `USER_SCRIPT` 隔离世界执行。
+The scanner recognizes string and comment boundaries before checking common dot/bracket member and qualified constructor forms. Comment markers inside strings cannot hide later code. It is not a general malware scanner: it does not unpack, deobfuscate, track aliases or data flow, or save reports. The importer and privileged boundary apply the same normalization. Accepted scripts still execute only in the browser's `USER_SCRIPT` world.
 
-## 错误码与恢复
+## Errors and recovery
 
-`LocalModuleImportError` 提供稳定 `code`、简短默认消息和 `recoverable: true`。UI 可按错误码做多语言映射：
+`LocalModuleImportError` exposes a stable `code`, a short default message, and `recoverable: true`. The UI maps codes to localized guidance.
 
-| 错误码                                                       | 用户恢复方向                       |
-| ------------------------------------------------------------ | ---------------------------------- |
-| `selection-required` / `file-limit-exceeded`                 | 重新选择 1–16 个文件               |
-| `invalid-file` / `duplicate-file` / `unsupported-file-type`  | 修正文件名、大小、重名或类型       |
-| `multiple-manifests` / `invalid-json` / `invalid-manifest`   | 只保留一个有效 JSON 清单并修正字段 |
-| `invalid-reference` / `missing-reference`                    | 修正清单引用或同时选择被引用文件   |
-| `metadata-required` / `metadata-conflict`                    | 补全并统一独立文件头               |
-| `author-required` / `format-required` / `unsupported-format` | 填写作者并改用标准格式标识         |
-| `unsupported-dnr`                                            | 移除所有非空 DNR 规则              |
-| `unsafe-css` / `unsafe-user-script`                          | 移除外联资源或被禁高风险功能       |
+| Code                                                         | Recovery                                         |
+| ------------------------------------------------------------ | ------------------------------------------------ |
+| `selection-required` / `file-limit-exceeded`                 | Select 1–16 files again                          |
+| `invalid-file` / `duplicate-file` / `unsupported-file-type`  | Fix names, sizes, duplicates, or types           |
+| `multiple-manifests` / `invalid-json` / `invalid-manifest`   | Keep one valid manifest and correct its fields   |
+| `invalid-reference` / `missing-reference`                    | Correct references or select the missing files   |
+| `metadata-required` / `metadata-conflict`                    | Complete and align standalone headers            |
+| `author-required` / `format-required` / `unsupported-format` | Supply an author and the canonical format        |
+| `unsupported-dnr`                                            | Remove all nonempty DNR rules                    |
+| `unsafe-css` / `unsafe-user-script`                          | Remove external resources or prohibited behavior |
 
-## 迁移影响
+## Migration
 
-作者、格式标识和空 DNR 是 schema v1 的安全收紧。升级后，本地存储中缺少 `author`、缺少 `format: "hourleaf.local-module"` 或包含非空 DNR 的旧安装不再进入运行时；初始化会清理 Hourleaf 旧版本注册的本地模块 DNR ID 区间。作者需要先更新原始文件，用户再手动重新导入；Hourleaf 不会猜测作者或自动将旧文件标记为已信任。
+Required authors, the fixed format, and empty DNR rules tighten schema v1. Legacy installations missing `author` or `format: "hourleaf.local-module"`, or containing nonempty DNR rules, no longer run. Initialization clears the legacy Hourleaf DNR rule ID range. Authors must update source files and users must reimport them; Hourleaf does not invent authors or mark old files as trusted.
 
-## 内容分组的启用时间段
+## Filter-group schedules
 
-每个分组使用统一卡片，上方显示说明和开关，下方提供“启用时间段”摘要；展开后可多选配置页已经保存的对应网站时间段，不会列出其他网站的时段。模块精确来源与配置网站通过共用的网站范围规则匹配；Bilibili 的已审核子域名家族共用时段，其他网站仍按精确来源匹配。默认“不限时间”；选择后，采用每日黑名单：只有当前时间处于任一所选时段的起止范围时才屏蔽。仅借用起止时间，忽略配置时段的星期、启停、访问策略、额度及分组设置；例如选择 12:00–18:00 后，每天从 12:00 开始屏蔽，18:00 恢复，即便此配置时段已停用。取消“不限时间”且没有选择时间段时，该项不屏蔽。模块总开关和分组开关关闭时，时间选择不会越过开关。
+Each group card contains its description, switch, and active-period summary. Expanding the summary allows selection of saved periods for the matching website only. The shared site-scope rules match exact module origins to configured websites; the reviewed Bilibili domain family shares periods, while other websites use exact origins.
 
-停用网站全部配置时间段后，网站时间限制解除；屏蔽设置和引用的每日时间范围继续生效。停用保留时间段引用，删除被引用的时间段则按原规则使引用失效。
+“All times” is the default. Selecting periods applies filtering during their daily start/end ranges only. Weekdays, enabled state, access policy, quota, and grouping are ignored. For example, 12:00–18:00 filters every day during that interval even if the source period is disabled. Turning off “All times” without selecting a period disables that filter. Schedules never override component or group switches.
 
-安装偏好使用可选 `filterGroupSchedules`，格式为 `{ "group-id": [{ "targetId": "...", "periodId": "..." }] }`，每组最多 64 个引用。缺少组键表示不限时间，空数组表示未选择。此字段是核心保存的用户偏好，不能通过模块清单定义；普通与计划偏好独立，并随配置备份保存。旧安装/备份不含此字段时保持原行为。
+Disabling every website period removes its time limit but preserves filter schedules. Deleting a referenced period invalidates that reference.
 
-修改配置中的起止时间立即影响绑定；修改星期或停用原配置时段不影响屏蔽。删除时间段、删除网站或引用不再属于此模块对应网站后均不再生效；旧的跨站引用显示为失效项供取消，全部失效不会回退为不限时间；规则不受额度或访问策略影响，起止相同表示全天，跨午夜按每天的两侧时间匹配，结束边界不包含。Document 与开放 Shadow DOM 使用相同的有效分组选择器；重新导入模块保留时间绑定。
+Installation preferences may contain `filterGroupSchedules`, shaped as `{ "group-id": [{ "targetId": "...", "periodId": "..." }] }`, with at most 64 references per group. A missing group key means all times; an empty array means no active times. This is a core-owned preference, not a manifest field. Normal and plan preferences remain separate and are included in configuration backups. Older installations or backups without this field retain their existing behavior.
 
-## 计划期间的屏蔽偏好
+Start/end edits take effect immediately. Weekday or enabled-state edits do not change filtering. Deleting a period or website, or changing a reference so it no longer belongs to the module's website, makes it inactive. Old cross-site references remain visible as invalid items that users can remove. All-invalid selections never fall back to all times. Equal start and end means the whole day; overnight intervals match both sides of midnight; end boundaries are exclusive. Documents and declared open shadow roots share the same effective selectors. Reimport preserves schedule references.
 
-设置项 `planMode.enableAllBlocking` 默认开启。有效计划期间，已安装模块的 `planPreferences` 默认 `{ enabled: true, disabledFilterGroupIds: [] }`；屏蔽页现有开关只修改当前普通或计划偏好，不额外添加配置入口。停止/完成/到期及关闭此设置后恢复普通偏好；再次开始计划保留之前的计划调整。导入新版模块保留两组偏好，只清理已经删除的分组 ID。配置备份包含两组纯数据偏好，不包含脚本源码。内容屏蔽受已有网站权限约束；不自动安装模块、申请权限或覆盖普通域名策略。
+## Plan preferences
 
-## 界面语言
+`planMode.enableAllBlocking` defaults to enabled. During a valid plan, installed modules default to `planPreferences: { enabled: true, disabledFilterGroupIds: [] }`. The existing Blocking controls edit only the current normal or plan context. Stopping, completing, or expiring a plan, or disabling this setting, restores normal preferences. Later plans retain previous plan adjustments.
 
-仓库维护的五个网站模块通过 `src/ui/local-module-copy.ts` 的稳定模块/分组 ID 映射到 `src/shared/i18n.ts` 中的简体中文与英文文案。屏蔽页卡片、过滤选项、可访问名称、删除确认及导入预览复用同一只读投影；已导入记录无需重新安装，也不重写模块名称、脚本或选择器。未登记的第三方模块与未知组仍展示作者提供的原文。新增或变更仓库模块文案时，同步维护两种语言和 ID 映射。
+Component updates preserve both preference sets and remove only deleted group IDs. Configuration backups include both sets of data, without script source. Existing website permissions and group schedules still apply. Plans do not install modules, request permissions, or override normal domain policies.
 
-## 与访问授权的关系
+## Interface localization
 
-普通时间配置、标签页组白名单和独立计划只决定访问与计时资格，不覆盖模块的显式域名黑名单或内容规则。计划固定独立计时，白名单不延长计划截止；两者均不扩展清单来源权限。网站无启用时间段可以无限使用，但屏蔽分组及每日定时仍保留。
+`src/ui/local-module-copy.ts` maps stable module/group IDs to Chinese and English keys in `src/shared/i18n.ts`. Cards, filters, accessible names, deletion confirmation, and import previews use the same read-only display projection. Existing imports need no reinstall, and stored names, scripts, and selectors are unchanged. Unknown modules and groups retain the author's text. Update both languages and the ID map when catalog text changes.
 
-配置备份包含普通/计划偏好及分组时段引用，恢复只应用本机已安装且版本一致的模块；不包含 CSS、脚本或执行状态。网站时段删除后引用失效，不回退为不限时间。Firefox 与 Safari 商店构建在导入预览和后台服务中拒绝含用户脚本的模块，不执行升级前已存储的用户脚本；支持纯 JSON/CSS 模块。含脚本模块应由作者另外提供不含脚本的兼容版本，不应让用户任意删改已校验的文件集合。平台策略统一位于 `src/modules/local/capabilities.ts`，UI、授权入口及后台共用。
+## Access authorization and platform policy
 
-AMO 的 [User Scripts 政策](https://extensionworkshop.com/documentation/publish/add-on-policies/#user-scripts) 将该 API 限于用户脚本管理器；Hourleaf 的单一用途是专注与网站时间管理，因此 Firefox 商店构建不申请该权限。Chrome 通过 [User Scripts API](https://developer.chrome.com/docs/extensions/reference/api/userScripts) 处理用户明确导入的脚本；审核说明必须披露完整能力。Apple 包保持自包含，参见 [App Review Guidelines 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements)。
+Website periods, tab-group allowlists, and independent plans govern access and timing; they do not override explicit module domain blocking or content rules. Plans always use their own timer, and allowlists do not extend their deadlines. Neither expands manifest origins. A website without enabled time periods is unrestricted by its timer, while filtering and daily schedules remain active.
 
-升级后，若旧 User Scripts API 权限仍可用，后台会尽力注销 Hourleaf 自有注册，不重新申请该权限。注销只影响后续注入，不能撤销已在页面执行的脚本效果；升级后应刷新原先打开的页面。
+Backup restoration applies preferences only to locally installed modules at the same version. It contains no CSS, scripts, or execution state. Deleted website periods stay invalid rather than becoming all-times filters.
+
+Firefox and Safari store builds reject script-bearing modules in both preview and the background service, and do not execute scripts stored before an upgrade. Authors must provide a separate script-free JSON/CSS edition for these platforms; users should not remove files from a verified package. The shared policy lives in `src/modules/local/capabilities.ts` and is used by the UI, permission entry points, and background.
+
+AMO's [User Scripts policy](https://extensionworkshop.com/documentation/publish/add-on-policies/#user-scripts) reserves this API for script managers. Hourleaf's purpose is focus and website time management, so its Firefox store build does not request that permission. Chromium uses the [User Scripts API](https://developer.chrome.com/docs/extensions/reference/api/userScripts) for files explicitly imported by users; review notes must disclose the full capability. Apple packages remain self-contained under [App Review Guidelines 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements).
+
+After an upgrade, the background makes a best-effort attempt to unregister Hourleaf's existing user-script registrations if the old permission remains available; it does not request the permission again. Unregistration stops future injection but cannot undo scripts already executed in a page. Refresh previously open pages after upgrading.

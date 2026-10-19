@@ -1,21 +1,25 @@
-# Hourleaf 商店提交
+# Hourleaf store submissions
 
-准备日期：2026-10-19。当前版本：1.0.0。发布状态以对应商店后台为准；构建产物不表示已经审核、签名或上架。
+Prepared: 2026-10-19. Current version: 1.0.0. Store dashboards determine publication status; generated artifacts do not imply review, signing, or availability.
 
-## 材料目录
+<a id="材料目录"></a>
 
-| 材料                        | 文件                                           |
-| --------------------------- | ---------------------------------------------- |
-| 中英文产品介绍              | [LISTING.md](./store/LISTING.md)               |
-| Chrome 字段、权限与审核备注 | [CHROME.md](./store/CHROME.md)                 |
-| Firefox 字段、源码与签名    | [FIREFOX.md](./store/FIREFOX.md)               |
-| Safari 承载 App、隐私与签名 | [SAFARI.md](./store/SAFARI.md)                 |
-| 可复现源码构建说明          | [SOURCE_BUILD.md](./store/SOURCE_BUILD.md)     |
-| 逐项发布记录                | [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) |
+## Materials
 
-## 构建与打包
+| Material                                   | File                                           |
+| ------------------------------------------ | ---------------------------------------------- |
+| English/Chinese product descriptions       | [LISTING.md](./store/LISTING.md)               |
+| Chrome metadata, permissions, review notes | [CHROME.md](./store/CHROME.md)                 |
+| Firefox metadata, source, signing          | [FIREFOX.md](./store/FIREFOX.md)               |
+| Safari host app, privacy, signing          | [SAFARI.md](./store/SAFARI.md)                 |
+| Reproducible source instructions           | [SOURCE_BUILD.md](./store/SOURCE_BUILD.md)     |
+| Release gates                              | [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) |
 
-要求 Node.js 22 或更新版本、npm，以及系统 `zip`。在仓库根目录执行：
+<a id="构建与打包"></a>
+
+## Build and package
+
+Requirements: Node.js 22 or newer, npm, and system `zip`. From the repository root:
 
 ```sh
 npm ci
@@ -24,32 +28,36 @@ npm run build
 npm run package
 ```
 
-| 产物                                             | 用途                                                  |
-| ------------------------------------------------ | ----------------------------------------------------- |
-| `dist/packages/hourleaf-1.0.0-chromium.zip`      | Chrome Web Store 上传包                               |
-| `dist/packages/hourleaf-1.0.0-firefox.zip`       | AMO 上传包，签名后由 AMO 提供 XPI                     |
-| `dist/packages/hourleaf-1.0.0-safari.zip`        | Safari Web Extension 转换输入，不能直接上传 App Store |
-| `dist/packages/hourleaf-1.0.0-review-source.zip` | 本版本可审计源码、条款、锁文件与构建说明              |
-| `dist/packages/SHA256SUMS`                       | 上述文件的校验值                                      |
-| `dist/modules/`                                  | 单独分发的模块文件与校验值                            |
+| Artifact                                         | Purpose                                                                              |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `dist/packages/hourleaf-1.0.0-chromium.zip`      | Chrome Web Store upload                                                              |
+| `dist/packages/hourleaf-1.0.0-firefox.zip`       | AMO upload; AMO supplies the signed XPI                                              |
+| `dist/packages/hourleaf-1.0.0-safari.zip`        | Safari converter input, not an App Store upload                                      |
+| `dist/packages/hourleaf-1.0.0-review-source.zip` | Matching source, MIT license, bilingual README/privacy, lockfile, build instructions |
+| `dist/packages/SHA256SUMS`                       | Checksums of the files above                                                         |
+| `dist/modules/`                                  | Separately distributed modules and checksums                                         |
 
-源码包记录打包机器的 Node/npm 版本及系统架构，不包含依赖目录、Git 数据、签名资料或本机数据。每次提交应使用同一次构建与打包产生的扩展包和源码包。
+Review source records the packaging machine's Node/npm versions and architecture, excludes dependencies/Git/signing/user data, and must match the submitted candidate. Browser packages retain the MIT license and English/Chinese privacy notices; source additionally includes `README.md` and `README.zh-CN.md`. Independent module ZIPs include their own README/disclaimer and MIT notice.
 
-## 链接与账户资料
+<a id="链接与账户资料"></a>
 
-- 项目和支持：`https://github.com/446F7269616E/Hourleaf`、`https://github.com/446F7269616E/Hourleaf/issues`。
-- 隐私：`https://github.com/446F7269616E/Hourleaf/blob/main/PRIVACY.md`。
-- 源码许可：`https://github.com/446F7269616E/Hourleaf/blob/main/LICENSE`。
-- 模块说明、下载与免责声明：`https://github.com/446F7269616E/Hourleaf/tree/main/optional-modules`。
+## Public links and account details
 
-提交前确认这些链接已随 GitHub 默认分支发布且无需登录。商店联系邮箱、开发者法定身份、地区、税务/收款资料、Apple Team、Bundle ID 和商店条目 ID 由发布者填写。仓库不预设这些值。
+- [Project](https://github.com/446F7269616E/Hourleaf) · [Support](https://github.com/446F7269616E/Hourleaf/issues).
+- [Privacy policy](https://github.com/446F7269616E/Hourleaf/blob/main/PRIVACY.md) · [隐私政策](https://github.com/446F7269616E/Hourleaf/blob/main/PRIVACY.zh-CN.md).
+- [MIT license](https://github.com/446F7269616E/Hourleaf/blob/main/LICENSE).
+- [Module descriptions, downloads, and disclaimer](https://github.com/446F7269616E/Hourleaf/tree/main/optional-modules).
 
-## 仍需发布者完成
+Verify default-branch links are public without sign-in. The publisher supplies store email, legal identity, regions, tax/payment details, Apple Team, Bundle ID, and listing IDs. Do not invent these values or introduce a separate project user agreement; source licensing remains MIT.
 
-- 使用开发者账户创建三家商店条目，完成身份及联系信息核验。
-- 使用最终候选版本截取产品画面，检查授权素材、图标和商店展示。
-- 在目标浏览器、设备及实际操作系统上完成人工验收。
-- Firefox 执行商店验证并取得 AMO 签名；Apple 填写真实 Bundle ID、团队和签名，再归档上传。
-- 在各商店填写数据、权限、年龄、内容分级、地区和加密等问卷，确认最终预览后提交审核。
+<a id="仍需发布者完成"></a>
 
-公开产品简介聚焦专注功能。权限表、完整行为说明和审核备注仍须如实披露所有可选能力；不能通过单独链接隐去商店要求披露的信息。
+## Publisher actions still required
+
+- Create listings through developer accounts and complete identity/contact verification.
+- Capture final-candidate screenshots and review authorized imagery/icons/store previews.
+- Manually accept the target browsers, devices, and OS versions.
+- Complete Firefox validation/signing; supply real Apple identifiers/team/signatures, archive, and upload.
+- Complete store data, permissions, age/content, region, and encryption questionnaires; verify final preview and submit for review.
+
+Main introductions describe the focus product. Permission fields, full behavior disclosures, and review notes must still disclose every optional capability wherever required; separate documentation cannot conceal required information.

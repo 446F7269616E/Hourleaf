@@ -1,48 +1,56 @@
-# Hourleaf 屏蔽组件
+# Hourleaf blocking components
 
-当前目录版本与核心行为同步：2026-10-19。功能全览见 [功能说明](../docs/FEATURES.md#内容屏蔽与模块)。
+English · [简体中文](./README.zh-CN.md)
 
-这里的文件不会进入浏览器商店包，也不会被已安装的 Hourleaf 自动下载或更新。
+These optional website adaptations are distributed separately from Hourleaf. They are not included in browser store packages and are never downloaded or updated automatically.
 
-## 下载与导入
+## Downloads
 
-从 [GitHub Releases](https://github.com/446F7269616E/Hourleaf/releases) 下载所需版本的单个模块 ZIP，或使用本目录源码。当前 `main` 不保证与最新 Release 资产一致；本地执行 `npm run build` 和 `npm run package` 可生成 `dist/modules/` ZIP 与 `MODULE-SHA256SUMS`。模块资产与扩展包分开，不会预装或自动更新。
+The following files belong to [Hourleaf v1.0.0](https://github.com/446F7269616E/Hourleaf/releases/tag/v1.0.0). Component versions are independent of the extension version. While the release is a draft, the public download links become available only after publication.
 
-使用步骤：
+| Component   | Version | Files to import        | Supported store builds    | Download                                                                                                       |
+| ----------- | ------- | ---------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Bilibili    | 1.2.5   | JSON, CSS, user script | Chromium                  | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-bilibili-1.2.5.zip)    |
+| Xiaohongshu | 1.0.1   | JSON, user script      | Chromium                  | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-xiaohongshu-1.0.1.zip) |
+| X           | 1.0.1   | JSON                   | Chromium, Firefox, Safari | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-x-1.0.1.zip)           |
+| YouTube     | 1.0.1   | JSON                   | Chromium, Firefox, Safari | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-youtube-1.0.1.zip)     |
+| Baidu Tieba | 1.0.1   | JSON                   | Chromium, Firefox, Safari | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-baidu-tieba-1.0.1.zip) |
 
-1. 下载并解压所需模块的 ZIP；
-2. 阅读模块的 JSON 清单及其引用的 CSS / `.user.js` 文件；
-3. 在 Hourleaf“屏蔽”页面中选择这些本地文件；
-4. 核对网站范围与能力后，由你主动授权并启用。
+Check each archive against [MODULE-SHA256SUMS](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/MODULE-SHA256SUMS) from the same release. The `main` branch may differ from released files. Source files are available in this directory; `npm run build` followed by `npm run package` produces separate archives in `dist/modules/`.
 
-## 组件介绍
+## Features
 
-当前组件均为非官方网站适配：
+- **Bilibili:** hides home recommendations, dynamic feeds and hover panels, trending lists, update and message badges, related videos in the sidebar and ending panel, and comments including comment previews on dynamic cards. The script focuses search with `/` and temporarily disables related-video autoplay while that filter is active. Declared websites: `www.bilibili.com`, `live.bilibili.com`, `t.bilibili.com`, and `search.bilibili.com` over HTTPS.
+- **Xiaohongshu:** hides recommended notes on the web home and explore landing pages. The script marks the current page scope. Declared website: `www.xiaohongshu.com` over HTTPS.
+- **X:** hides ordinary posts in the web home timeline. Declared website: `x.com` over HTTPS.
+- **YouTube:** separate controls for home recommendations, Shorts, related videos, and comments. Declared website: `www.youtube.com` over HTTPS.
+- **Baidu Tieba:** hides recommended posts on the web home page. Declared website: `tieba.baidu.com` over HTTPS.
 
-- `Bilibili` 1.2.5：首页推荐、动态、相关视频、评论过滤和 `/` 聚焦搜索；动态联动悬停弹窗、热搜榜与提醒标识，相关视频联动侧栏/片尾推荐及用户脚本自动连播抑制，评论覆盖动态卡片精选评论；需要同时选择清单、CSS 和脚本文件。
-- `小红书` 1.0.1：网页版首页推荐流过滤，包含清单与脚本。
-- `X` 1.0.1：网页版主页时间线过滤，使用清单选择器。
-- `YouTube` 1.0.1：首页推荐、Shorts、相关视频与评论过滤，使用清单选择器。
-- `百度贴吧` 1.0.1：网页版首页推荐流过滤，使用清单选择器。
+The five component names, descriptions, and filter groups follow Hourleaf's interface language. Unknown third-party components retain their authors' text. Website time settings use domain names independently of component names.
 
-界面将这些内容称为“屏蔽插件”，名称直接使用网站名，说明描述具体隐藏内容，不添加“模块”后缀。五个插件的名称、说明和过滤组文字随 Hourleaf 中英文切换，已导入记录无需重新安装；未知插件仍保留作者文案。网站时间配置始终显示域名，不采用插件名称。
+## Import
 
-## 开关、时间与计划
+1. Download and extract the chosen ZIP.
+2. Read `hourleaf-module.json` and every referenced CSS or `.user.js` file.
+3. In Hourleaf's **Blocking** page, select the manifest and all referenced files together. Do not select `LICENSE` or `README.md`; they are distribution notices.
+4. Confirm the author, version, website scope, and capabilities, then grant the requested website access and enable the component.
 
-模块和内容分组可独立启停。每组默认不限时间，可选择对应网站已有配置时段，只读取起止时间并每天应用，忽略普通配置的星期、时段启停和额度；删除引用使其失效，全部失效时不屏蔽。网站全部时间段停用后仍可执行内容屏蔽及每日定时。
+Chromium runs user scripts only through its isolated User Scripts API and requires browser support and user permission. Firefox and Safari store builds reject entire components containing scripts. Bilibili and Xiaohongshu packages cannot be imported unchanged on those platforms; do not remove files from a verified archive to bypass this restriction.
 
-普通和计划偏好独立保存，计划默认使用已安装模块的计划偏好；生效仍需网站权限及分组时间匹配。结束后恢复普通偏好，再次开始保留计划中的调整。重新导入新版保留有效偏好，配置备份只携带同版本偏好，不包含脚本或 CSS 文件。
+## Controls and schedules
 
-用户脚本仅使用 Chromium 隔离 User Scripts API，需要平台能力及用户授权。Firefox 与 Safari 商店候选拒绝脚本导入，仅接受不含脚本的 JSON/CSS 组件；含脚本组件不能原样导入。域名策略与组白名单互不替代，显式域名阻断仍有效。
+Components and filter groups can be enabled separately. Groups are active at all times by default. Optionally select saved time periods for the same website: only their start and end times apply, every day, regardless of weekdays, enabled state, quotas, or access mode. Deleted references become inactive; if every reference is invalid, filtering does not resume at all times. Disabling all website time periods removes its time limit while component schedules remain effective.
 
-作者开发新模块前请阅读 [模块开发准则](../docs/MODULE_DEVELOPMENT.md)；完整协议见 [本地模块规范](../docs/LOCAL_MODULES.md)。
+Normal and plan preferences are stored separately. Plans use the installed components' plan preferences by default, subject to website permission and group schedules. Ending a plan restores normal preferences; later plans retain previous adjustments. Reimporting a newer component preserves valid preferences. Configuration backups contain compatible preferences, not CSS or script files. Explicit domain blocking remains effective independently of tab-group allowlists.
 
-## 免责声明
+For authoring, see the [development guidelines](../docs/MODULE_DEVELOPMENT.md) and [local module specification](../docs/LOCAL_MODULES.md).
 
-安装前请自行确认来源可靠，并核对发布者、版本、文件内容和校验值。文件校验不保证安全；网站更新可能使组件失效或影响页面功能。
+## Disclaimer
 
-组件供交流、学习和提升效率使用，与所适配网站及运营者无隶属或授权关系，相关名称和商标归原权利人所有。使用时应遵守适用法律和网站规则，不得侵害他人合法权益。
+Before installation, confirm that the source is reliable and check the publisher, version, contents, and checksum. Static validation does not guarantee safety. Website changes may break components or affect page behavior.
 
-组件按现状提供，责任限制适用 [MIT 许可证](../LICENSE)，依法不能免除的责任除外。涉及合法权益问题，请[联系开发者](https://github.com/446F7269616E/Hourleaf/issues)；安全问题使用[私密报告渠道](../SECURITY.md)。
+These unofficial adaptations are provided for discussion, learning, and productivity. They are not affiliated with or endorsed by the website operators; names and trademarks belong to their owners. Use must comply with applicable law, website rules, and third-party rights.
 
-[隐私政策](../PRIVACY.md) · [MIT 许可证](../LICENSE)
+Components are provided as is under the [MIT license](../LICENSE). Its liability limits do not exclude liability that cannot lawfully be excluded. For rights concerns, [contact the developer](https://github.com/446F7269616E/Hourleaf/issues); report security issues through the [private reporting channel](../SECURITY.md). Do not post sensitive material publicly.
+
+[Privacy policy](../PRIVACY.md) · [MIT license](../LICENSE)

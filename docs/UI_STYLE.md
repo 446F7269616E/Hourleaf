@@ -1,70 +1,92 @@
-# 界面样式与排版
+# Interface style and layout
 
-界面与源码同步：2026-10-19。页面职责及规则见 [FEATURES.md](./FEATURES.md)，开发入口见 [文档目录](./README.md)。
+UI/source synchronized: 2026-10-19. See [features](./FEATURES.md) for behavior and the [documentation index](./README.md) for entry points.
 
-Hourleaf 使用现有的浅灰背景、白色卡片、居中胶囊导航和五套主题色。界面精修集中在阅读层级、间距、控件尺寸和窄屏适配。时间摘要仍是仪表盘和工具栏的视觉重点，计划仍使用自适应卡片网格，配置、屏蔽和设置共用左侧目录与右侧详情，设置详情继续使用字段卡片。
+Retain the pale gray canvas, white cards, centered pill navigation, and five palettes. Refine hierarchy, spacing, control sizes, and responsiveness within that identity. Time summaries lead the dashboard/popup; plans use an adaptive card grid; configuration, filtering, and settings share directory/detail layouts.
 
-## 开发目录
+<a id="开发目录"></a>
 
-| 模块                                                          | 职责                                                             |
-| ------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `src/styles/tokens.css`                                       | 明暗配色、字体、共享字号、控件高度、面板内边距和阴影             |
-| `src/styles/base.css`                                         | 标题、基础控件、焦点滚动留白、长文本、弹窗与公共状态             |
-| `src/styles/navigation.css`                                   | 居中导航、页面选中状态、帮助弹窗和窄屏导航                       |
-| `src/styles/dashboard.css`                                    | 统计卡片、日期范围、趋势图、网站占比及计划概览                   |
-| `src/styles/usage-charts.css`、`src/ui/hourly-usage-chart.ts` | 仪表盘与暂停页共用小时图、刻度、峰值选择及键盘操作               |
-| `src/ui/viewport-scroll-panel.ts`                             | 按导航高度、网格起点和页面底部留白维护侧栏可见范围，清理视口监听 |
-| `src/ui/clock-input.ts`                                       | 强制 24 小时制 HH:mm 输入及跨午夜/全天提示                       |
-| `src/ui/configuration-directory.ts`                           | 配置、屏蔽、设置共用的左侧目录、数量摘要及选中样式               |
-| `src/ui/configuration-controls.ts`                            | 网站与白名单共用的字段、开关、星期选择及日期摘要                 |
-| `src/ui/configuration-workspace.ts`                           | 三页共用的双栏布局、视口高度挂载、重绘滚动与目录焦点保持         |
-| `src/styles/configuration.css`                                | 三页共用的目录、详情布局和 860px 响应式规则                      |
-| `src/ui/time-period-controls.ts`                              | 网站与白名单共用的名称、星期、起止时刻和启停字段                 |
-| `src/styles/options.css`                                      | 网站目录、独立配置卡片、时间段和配置弹窗                         |
-| `src/styles/home.css`                                         | 选中设置分类、说明列与控件列、字段卡片                           |
-| `src/styles/plan.css`                                         | 计划卡片、按钮区、思维导图与事项编辑                             |
-| `src/styles/block.css`                                        | 网站模块、过滤选项与适用时间段                                   |
-| `src/styles/popup.css`、`src/styles/end.css`                  | 工具栏摘要与暂停页的紧凑排版                                     |
+## Implementation map
 
-共享尺寸先修改 token，再由组件引用。页面样式只负责自身的信息密度和响应式，不修改业务消息、权限、存储和计时行为。
+| Module                                                        | Responsibility                                                              |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `src/styles/tokens.css`                                       | Light/dark colors, fonts, shared type/control sizes, padding, shadows       |
+| `src/styles/base.css`                                         | Headings, controls, focus scroll spacing, long text, dialogs, shared states |
+| `src/styles/navigation.css`                                   | Centered navigation, current page, help, narrow layout                      |
+| `src/styles/dashboard.css`                                    | Summary cards, dates, trends, site shares, plan overview                    |
+| `src/styles/usage-charts.css`, `src/ui/hourly-usage-chart.ts` | Shared hourly charts, scales, peak selection, keyboard access               |
+| `src/ui/viewport-scroll-panel.ts`                             | Sidebar visibility from navigation/grid/shell bounds; listener cleanup      |
+| `src/ui/clock-input.ts`                                       | 24-hour HH:mm input, overnight/all-day hints                                |
+| `src/ui/configuration-directory.ts`                           | Shared directories, counts, selected states                                 |
+| `src/ui/configuration-controls.ts`                            | Site/whitelist fields, switches, weekdays, date summaries                   |
+| `src/ui/configuration-workspace.ts`                           | Two-column shell, viewport mounting, scroll/focus restoration               |
+| `src/styles/configuration.css`                                | Shared directory/detail styles and 860px breakpoint                         |
+| `src/ui/time-period-controls.ts`                              | Shared period name, weekdays, start/end, enabled fields                     |
+| `src/styles/options.css`                                      | Site cards, periods, configuration dialogs                                  |
+| `src/styles/home.css`                                         | Selected settings category, description/control columns                     |
+| `src/styles/plan.css`                                         | Plan cards, actions, mind map, editor                                       |
+| `src/styles/block.css`                                        | Module/filter/schedule presentation                                         |
+| `src/styles/popup.css`, `src/styles/end.css`                  | Compact toolbar and pause layouts                                           |
 
-## 视觉基线
+Change shared dimensions in tokens first. Page styles own density and responsiveness, not messages, permissions, storage, or timing.
 
-浅色基础色为：画布 `#f6f7fb`、内容面 `#ffffff`、正文 `#202333`、辅助文字 `#676b7d`、边框 `#e4e6ee`、默认海洋蓝 `#006fe6`。首次使用、缺失/无效主题配置和恢复默认均采用蓝色，已有明确主题选择继续保留；未加载设置时的首帧也使用同一蓝色。其余主题色、深色模式、字体栈和圆角体系继续使用。
+<a id="视觉基线"></a>
 
-字体沿用 Inter / 系统无衬线字体，中文沿用 PingFang SC / Hiragino Sans GB / Microsoft YaHei。正文保持 14px；桌面页面标题为 30px，窄屏最低 26px；分区标题为 18px，计划事项标题为 15px，模块标题为 16px，主要辅助说明为 12px。紧凑标签和图表坐标按各自空间使用较小字号。时间与数量沿用等宽数字。
+## Visual baseline
 
-页面内容左对齐，暂停页主要操作居中。卡片内边距默认 20px，640px 以下为 16px；页标题下方留白默认 32px，窄屏为 24px。常规按钮和输入框高 42px，紧凑操作高 40px；粗指针设备通过相同 token 提升至 44px。强调按钮保留主题填充色，辅助操作保留现有浅色或边框样式，阴影适度减轻。
+Light colors: canvas `#f6f7fb`, surface `#ffffff`, text `#202333`, secondary `#676b7d`, border `#e4e6ee`, default ocean blue `#006fe6`. New installs, missing/invalid themes, resets, and the pre-settings first frame use blue. Preserve saved valid themes. Keep the existing dark palettes, font stacks, and radii.
 
-```text
-           [ 品牌   仪表盘 / 计划 / 配置 / 屏蔽 / 设置   帮助 ]
+Use Inter/system sans serif and PingFang SC/Hiragino Sans GB/Microsoft YaHei for Chinese. Body: 14px; desktop title: 30px, at least 26px on narrow screens; section: 18px; plan item: 15px; module: 16px; primary supporting text: 12px. Compact labels/chart axes may be smaller. Use tabular numerals for time/counts.
 
-页面标题                                           范围 / 视图
+Content aligns left; pause actions center. Card padding is 20px, falling to 16px below 640px. Title spacing is 32px, or 24px on narrow screens. Regular controls are 42px high; compact actions 40px; coarse pointers raise the shared size to 44px. Primary buttons use filled theme colors; secondary actions use pale/bordered styles. Keep shadows restrained.
 
-[ 主要统计 ] [ 辅助统计 ] [ 辅助统计 ] [ 辅助统计 ]
-[ 趋势图                         ] [ 网站分布           ]
-```
+<a id="页面约束"></a>
 
-本次方向采用用户确认的原风格精修方案，保留现有视觉身份，通过字段关系、数字对齐和卡片内容层级改善使用效率。
+## Page constraints
 
-## 页面约束
+### Dashboard
 
-- 仪表盘保留四张独立统计卡片，依次呈现区间总时长、日均用时、最多使用的网站及有记录天数；卡片按标签、数字、说明三行布局，数字垂直居中并允许长值换行。日期范围与统计区间隔 24px，统计卡片最小高 160px；980px 以下为两列，640px 以下为单列。总用时卡由 `dashboard/total-time-card.ts` 单独组织，使用主题顶线、细边框、浅色图标和分离的时间数字/单位；计时状态放在底部，不再使用深色渐变或装饰圆环。其余使用共享内容面。
-- 仪表盘上排为趋势与网站分布，下排为小时分布与计划概览。今日趋势使用 24 小时图，不再重复单根每日柱；周/月按日、年按月展示趋势，带纵轴刻度及单日峰值、心流延时摘要。周/月/年下方将相同钟点的用时合并为小时分布。零用量不画正高度柱；无记录、缺失小时明细分别显示对应说明。网站排行使用名次、时长、百分比和占比条，可展开来源；移除配置后的历史统计单列保留。计划卡展示待办时长、完成数和完成进度，标题使用“当前计划”明确范围。仪表盘不再显示区块副标题、日均口径说明、模块身份提示和页面最底部说明，只保留数据标题、数值、状态及缺失数据提示。
-- 仪表盘与暂停页共用主题化小时图，默认选中峰值小时；左右键和 Home/End 可选择钟点，24 小时制午夜显示 00:00。网站筛选前后共用同一纵轴；小时缺失不影响总用时。暂停页网站排行同时显示时长与百分比，暂停卡最大宽度 1180px，固定为左侧用量、中间操作、右侧统计三栏，三列等宽、三个框等高，操作列始终位于正中；不得通过两行布局或把统计区移到底部来消除留白。窗口不足时三栏整体横向滚动，首次显示居中操作列，手机分区导航只用于定位。左侧分组条下补充当前时段名称、起止时间、总额度、本组额度、本组剩余和已开启分组；中间上方为本站今日用时，有激励话语或自定义提示时提供至少 88px 的文字区，显示完整文字并支持分页；两者都为空时隐藏文字区，由本站分布区及其数据行弹性填补空间；本站占比和峰值信息置于按钮上方，确认、心流、下一组和关闭按钮统一位于中间框下方。数据均从既有配置和统计计算。分组条保留空心/实心外观、已用及剩余数量，删除“空心：已用 / 实心：未用完”的图例文字。矮窗口只收紧间距，始终保留进度条和操作。今日本站用时采用紧凑横向标记与数值排版，保留菱形时钟；操作按钮在中间框底部居中。左侧完全未命中启用时段时，显示下一个可用时段名称及包含日期、星期的起止时间；没有可用配置时明确显示暂无可用时间段。
-- 配置页左侧统一放置“网站”和“标签页组白名单”两个同级目录模块，各自显示配置数量；右侧只展示当前选中的网站或白名单配置。三个页面的目录默认纯文字，不为隐藏的图标保留空列；“设置 → 界面与显示 → 显示侧栏图标”可统一开启图标/首字母标记，已经打开的页面同步生效。目录共用 `src/ui/configuration-directory.ts`，统一名称、摘要、选中高亮、键盘入口及空状态；切换类型保留各自上次选择，切换项目保留侧栏滚动位置。删除选中白名单后选中剩余首项，删空后显示对应空状态；网站为空时白名单仍独立可用。桌面侧栏整体吸附，目录网格使用 `max-content` 行高禁止内容压缩；侧栏按实际可见空间设定独立高度、仅自身纵向滚动并阻断滚动链，滚动左侧不带动右侧详情。侧栏顶部按导航实际高度及其吸附位置留出间距，底部预留至少页面外壳的底部内边距，避免右侧滚至文档底端时被网格边界向上推入导航。高度计算以网格的自然起点为准，不以侧栏被吸附/挤压后的位置反算；导航、网格、外壳和可视视口变化合并到动画帧内更新，组件重绘清理全部旧监听。860px 以下或窗口高度不超过 360px 时取消独立高度和内部滚动，在详情上方按原顺序堆叠目录。
-- 配置页白名单以组配置为主体：顶部单独编辑名称和浏览器组绑定，下方管理最多 64 个独立时间段；新建配置带一个每天全天时段，旧规则以原名称、星期、起止和启停状态作为首个时段。时段逐项添加、编辑、启停和删除，删空后保留组配置。白名单沿用普通时间段的卡片标题栏、浅灰规则行、状态点、开关和图标按钮；新增/编辑弹窗统一使用 `.input`、`.field`、`.day-picker` 与起止时间布局。网站与白名单的字段、开关及星期选择由 `src/ui/configuration-controls.ts` 复用。白名单区块底部不放通用功能、优先级或生命周期长说明，只保留精简空状态和对应规则的绑定失效标记；跨午夜及全天提示仅在表单命中该情况时显示。同名组使用用户可读的顺序区分，不显示浏览器内部组 ID。
-- 配置页左侧目录列宽 240px，与编辑区间隔 24px；网站显示名称直接使用规范来源的域名，目录摘要使用完整来源区分协议和端口；已有导入、备份及调试数据中的插件名称不再作为网站名称。普通整站目标同样使用域名，专用目标仍保留板块名称。网站详情按身份、限制模式、时间段、访问前确认排列。限制模式采用 12×16px 内边距、14px 标题、紧凑选择框，说明放在标题旁的宽列，避免挤在下拉框下面增高。访问前确认位于详情底部，自定义提示语开关开启时才显示输入区；关闭保留文字但确认页不显示。860px 以下改为单栏，目录以自适应网格排列，限制模式和提示字段同步堆叠。时间段说明允许换行，开关与编辑操作保持一组。
-- 设置页左侧按“运行与保护 / 界面与显示 / 计划访问 / 访问确认与解锁 / 暂停与结束页面 / 数据管理 / 关于”列出七类，右侧只显示当前类别；保存、主题及语言切换后保留分类、侧栏滚动和目录键盘焦点。宽屏控件列为 220–320px，与说明列间隔 24px；主要说明限制阅读宽度，字段卡片内边距 16px。700px 以下使用单栏，主题选项与其他控件统一左对齐。“关于”沿用字段卡片，提供条款与开发者联系的外链按钮。
-- 计划固定使用独立计时，设置页不提供与普通额度耦合的旧切换项；普通暂停页的关闭按钮明确标注只关闭组外相关页，保留组内暂停页时提供关闭数量反馈。
-- 计划页保持现有自适应卡片网格；同一行的列表卡片使用弹性内容列，使操作位于底部。长标题完整换行，链接保留省略行为；按钮组允许换行。思维导图继续使用原有节点测量与交互。
-- 屏蔽页左侧列出已安装模块与模块下载入口，右侧只显示选中模块的开关、内容分组与时间段，或下载与使用说明。导入按钮保留在页头；导入成功选中新模块，删除当前模块后选中剩余首项或显示空状态；保存和计划上下文刷新保留选择与滚动位置。屏蔽、设置与配置共用 240px 侧栏、24px 间距、独立滚动及 860px 以下单栏规则。
-- 工具栏维持 380px 宽、600px 高上限及两张摘要卡片；主要时间字号为 22px，多组为 16px，长时间值可换行。暂停页保留三分区、时长圆环、分组条及菱形时钟标记，主要优化说明文字、分页与按钮间距；心流暂停前存在正在播放的视频时默认选择“视频播放完毕后停止”，初始隐藏分钟字段，切换“指定时长”后恢复原 1–15 分钟选项；没有播放视频时默认指定时长。
+- Four summary cards: total, daily average, most-used site, recorded days. Label/value/detail rows; vertically centered values with wrapping. Minimum height 160px; two columns below 980px, one below 640px; 24px after the date range.
+- `dashboard/total-time-card.ts` uses a theme top border, thin outline, pale icon, separate number/unit spans, and a bottom timing state. No dark gradient or decorative circle.
+- Trends/site shares form the upper row; hourly distribution/current plan form the lower row. Today uses one 24-hour chart; week/month use daily trends, year monthly trends. Longer ranges aggregate matching clock hours. Include scales, peak-day and flow-extra summaries; zero usage must not produce positive-height bars.
+- Distinguish no records from missing hourly detail. Site ranking includes rank, time, percentage, share bar, and expandable origins. Retain removed-site history. The current plan card uses the whole queue, showing pending duration, completion count, and progress independently of the selected statistics range.
+- Omit explanatory subtitles, average-method notes, module-identity notices, and footer essays. Retain names, dates, numbers, state, and necessary missing-data text.
 
-所有时钟、时间段及计划时间戳统一显示 24 小时制，午夜为 `00:00`。时间输入使用共享 HH:mm 文本控件，以保证中文、英文和系统 12 小时偏好下的一致性；支持输入 `0900` 自动转为 `09:00`，浏览器表单校验拒绝无效小时/分钟。全天与跨午夜提示只对合法起止时间显示。时长单位仍按秒、分钟和小时展示。
+### Pause page
 
-## 交互细节与验收
+- Share themed hourly charts with the dashboard. Default to the peak hour; support arrows/Home/End; midnight is `00:00`. Keep a common vertical scale across site filters, and retain totals when hourly details are missing.
+- Maximum card width: 1180px. Fixed equal-width columns: usage, actions, statistics; equal-height frames, centered action column. Narrow windows scroll the whole minimum-width three-column layout horizontally and initially center actions. Section navigation only scrolls; it never hides/recreates controls. Do not move statistics below the other columns to fill space.
+- Preserve the balance ring, hollow/solid group segments, used/remaining summaries, and diamond-clock site total. Omit the visible hollow/solid legend. Short windows tighten spacing without removing progress/actions.
+- Below group progress show active period name/range, total budget, current group budget/remaining, and opened groups, computed from authoritative configuration and usage.
+- The middle column contains site summary, optional messages, site distribution, and bottom-aligned actions. When encouragement/custom prompts exist, reserve at least 88px for text and support complete Unicode pagination. Hide an empty message slot; let distribution/data rows flex into the space. Long content raises all frames naturally.
+- Site share and peak-hour information sit above confirmation/flow/next-group/close actions. When no enabled period matches, show the next usable period's name, date, weekday, and 24-hour range, or a clear empty state. This grants no access.
+- Embedded flow pauses default to video end only when a real video was playing before intervention. Hide minute fields initially; switching to minutes restores 1–15 minutes. Without that context default to minutes. Plan pauses retain their separate duration/goal/actions without ordinary-site charts.
 
-公共控件保留可见焦点；星期和规则选择的隐藏输入框在其 label 上显示焦点；弹窗采用独立滚动边界；公共加载动画响应减少动态效果设置。吸附导航下的聚焦控件留出滚动空间，长文本使用 CSS 换行处理。
+### Configuration, filtering, and settings
 
-按用户要求，仅执行 TypeScript 编译、CSS 编译、三浏览器正式构建与本机 Debug 构建。单元测试、E2E、浏览器截图和自动交互验收不在本次范围。人工检查应覆盖五个主页面、弹窗、暂停页、中英文、五套主题、深色模式、窄屏、200% 缩放、长标题及键盘操作。
+- Share a 240px directory, 24px gap, independent desktop sidebar scroll, and one-column layout below 860px or at viewport heights at most 360px. Sidebars return to normal document flow above details on small screens.
+- Directory rows use natural content height, not compressed grid tracks. Compute sticky top from actual navigation height/offset and bottom clearance from shell padding. Compute height from the grid's natural origin, not the moved sidebar position. Coalesce navigation/grid/shell/visual-viewport/scroll updates into animation frames; clean all listeners during redraw. Stop scroll chaining into details.
+- Directories are text-only by default, with no empty icon column. Appearance settings can enable sidebar icons for all three pages; existing pages update immediately.
+- Configuration has peer Sites and Tab-group whitelist directories with separate counts. Show only the selected detail; preserve each directory's last selection, scroll, and keyboard focus. Newly saved items select themselves; deletion selects the first remaining item or the relevant empty state. Whitelists work even without configured sites.
+- Whitelist identity/binding is edited separately from its maximum 64 periods. New rules have one all-day period; migrate old single-period fields without losing identity/binding. Removing the final period preserves the rule. Reuse ordinary period cards, switches, weekdays, `.input`, `.field`, `.day-picker`, and time fields. No long lifecycle/priority explanation beneath the section; show only relevant empty/invalid-binding states. Distinguish same-name groups by readable ordering, not internal IDs.
+- Site names and ordinary whole-site targets use the canonical hostname; directory summaries retain full origins to distinguish scheme/port. Module/debug labels cannot replace site names. Dedicated targets retain section names. Detail order: identity, mode, periods, optional pre-visit prompt.
+- Mode cards use 12×16px padding, 14px titles, compact selects, and a broad adjacent description column. Period creation emphasizes presets; manual add remains secondary. Period text wraps while switch/edit actions stay together.
+- Settings has seven categories: operation/protection, appearance, plan access, confirmation/unlock, pause/end pages, data management, About. Show only the selected category and retain it through saves/theme/language changes. Wide control columns are 220–320px with a 24px gap; field cards have 16px padding; stack below 700px. About uses the same field cards for privacy/license/contact links.
+- Plans always use independent timing; do not restore the obsolete coupling switch. Ordinary close copy specifies related ungrouped tabs and reports preserved grouped pages.
+- Filtering lists modules and downloads on the left; show only the selected module or download instructions on the right. Import remains a header action. Successful imports select the new module; deletion and plan-context refresh preserve sensible selection/scroll.
+
+### Plans and popup
+
+Plan cards keep adaptive columns and flex content so actions align at the bottom. Long titles wrap, links truncate, action groups wrap. Keep measured mind-map layout and interactions.
+
+The popup is 380px wide, at most 600px high, with natural vertical scrolling and two summary cards. Main time is 22px, multi-group values 16px; long values wrap.
+
+All clocks, periods, and plan timestamps use 24-hour time. Shared HH:mm text inputs normalize `0900` to `09:00`; invalid hours/minutes fail form validation. Show overnight/all-day hints only for valid values. Durations still use seconds/minutes/hours.
+
+<a id="交互细节与验收"></a>
+
+## Interaction and acceptance
+
+Keep visible focus, including hidden weekday/rule inputs through their labels. Dialogs have their own scroll boundaries; shared loading animation respects reduced motion. Focused controls clear sticky navigation; long text wraps in CSS.
+
+Historical local validation covered TypeScript/CSS compilation and three release targets plus Debug builds. It did not include unit/E2E tests, browser captures, or automated interaction acceptance. Manual review still covers five pages, popup, pauses, both languages, five themes, dark mode, narrow windows, 200% zoom, long titles, and keyboard access.

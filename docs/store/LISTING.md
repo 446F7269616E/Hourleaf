@@ -1,8 +1,8 @@
-# Hourleaf 产品介绍
+# Hourleaf store listing
 
-用于商店产品主介绍与 GitHub 项目介绍。权限、数据和审核字段分别见各平台提交说明。
+English and Simplified Chinese product copy for store listings and GitHub. Permission, data, and review fields are documented separately for each platform.
 
-## 简体中文
+## Simplified Chinese / 简体中文
 
 名称：Hourleaf
 
@@ -46,8 +46,8 @@ No account is required. Rules, plans, and statistics stay on your device. Hourle
 
 Availability depends on your browser. Safari does not support tab-group whitelists.
 
-## 分类与截图
+## Categories and screenshots
 
-建议分类：Chrome「Productivity」、AMO「Tabs」或「Other」、App Store「Productivity」。在后台核对当前可用分类后选择最符合产品用途的一项。
+Suggested categories: Chrome Productivity, AMO Tabs or Other, App Store Productivity. Verify the available dashboard choices and select the closest match.
 
-截图依次展示仪表盘、网站时段与额度、独立计划和设置。使用演示数据；不得包含真实账号、浏览记录或第三方未授权素材。截图应与实际版本一致，不能把未完成的平台写成已支持。
+Show the dashboard, site periods/budgets, independent plans, and settings using demo data. Exclude real accounts/history and unauthorized third-party imagery. Screenshots must match the actual candidate and must not imply unverified platform support.

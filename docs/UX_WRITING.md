@@ -1,46 +1,50 @@
-# Hourleaf 界面文案规范
+# Hourleaf interface writing
 
-> 状态：发布门禁
+> Status: release gate
 
-文案只说明当前状态、必要原因和可执行动作。保持短、自然、具体，不承担教程、劝导或内部技术说明。
+Copy states the current condition, necessary reason, and available action. Keep it brief, natural, and concrete. Do not turn controls into tutorials, persuasion, or implementation notes.
 
-## 规则
+<a id="规则"></a>
 
-1. 五个页面标题统一为“仪表盘”“计划”“配置”“屏蔽”“设置”。
-2. 控件使用直接动作：“添加网站”“添加时间段”“开始”“开启下一组”“删除”；配置页实时保存，不显示重复的“保存”按钮。
-3. 不使用口号、反问、鼓励、拟人或内疚表达。
-4. 不使用“第一步、下一步、首次使用”等教程结构；删除引导卡片。
-5. 错误只写结果与恢复动作，不展示异常栈、schema、provider、模块协议或维护建议。
-6. 权限文案明确对象和范围，例如“允许 Hourleaf 在 example.com 计时和执行规则”。
-7. 屏蔽页模块状态统一为“启用 / 停用 / 删除”，本地文件操作使用“导入”；外部模块目录可说明下载步骤，不能暗示扩展会自动下载或更新。
-8. 隐私文案使用可核验事实，不写“绝对安全”“安心守护”。
-9. 状态不只靠颜色；可见文字、`aria-label` 和控件状态一致。
-10. 删除、清空和恢复设置明确对象并二次确认。
-11. 宽容、心流、严格等模式在选项中只显示模式名；作用说明放在控件下方并随选择更新，不把说明塞进选项。
-12. 导入弹窗只写当前动作、文件范围和用户需要确认的安全责任；格式校验失败时再给出对应错误，不展示内部“规范化风险”标题。
-13. 心流分钟选择器只显示规范化时长；“再用 / Use”作为选择器外的可见标签。结束页无法继续时使用完整动作“关闭当前所有相关标签页”。
-14. 仪表盘和计划的视图切换使用可见标题“视图 / View”，每个选项只显示对应范围或布局名称。
-15. 白名单与网站在配置目录同级，名称和摘要不显示浏览器内部 groupId；失效绑定直接说明需要重新绑定，不暗示按名称自动恢复。
-16. 普通关闭按钮明确只关闭组外相关标签；计划按事项来源关闭，不能复用普通组内保护说明。计划始终独立计时，不展示旧独立计时开关。
-17. 时间段及时间戳统一 24 小时制，午夜为 00:00；时长仍按秒、分钟、小时表达。提示语开关只表示文案显示，不称作访问确认启停。
-18. 网站配置名称始终使用规范来源的域名，不使用插件名称或“xx 模块”；普通整站目标同样使用域名。仓库屏蔽插件直接使用网站名称，描述具体隐藏内容，避免在名称和描述前重复“模块”身份；导入声明仍保留来源和非官方关系提示。
-19. 侧栏图标默认隐藏，在“设置 → 界面与显示”提供“显示侧栏图标”，文案明确覆盖配置、屏蔽、设置三页。
+## Rules
 
-## 统一术语
+1. The five page titles are Dashboard/Plans/Configuration/Filtering/Settings, using the matching stable translation keys. Chinese labels: 仪表盘/计划/配置/屏蔽/设置.
+2. Use direct actions: Add website, Add period, Start, Open next group, Delete. Configuration autosaves; no duplicate Save button.
+3. Avoid slogans, rhetorical questions, personification, guilt, and unsolicited encouragement.
+4. Do not add first-use steps or tutorial cards.
+5. Errors give the result and recovery action, not stacks, schemas, providers, protocols, or maintenance advice.
+6. Permission text names the site and scope, for example allowing Hourleaf to time and apply rules on example.com.
+7. Module states use Enable/Disable/Delete; local files use Import. External directories may describe downloading but must not imply automatic fetching/updating.
+8. Privacy claims must be verifiable; no absolute-safety promises.
+9. Do not rely on color alone. Visible text, accessible name, and control state agree.
+10. Delete, clear, and reset identify the object and require confirmation.
+11. Mode options contain only short names; persistent explanatory text below the control updates with selection.
+12. Import dialogs describe the action, files, and responsibility to acknowledge. Show format-specific errors only when validation fails; no internal risk-normalization headings.
+13. Flow minute options contain durations only. Keep “Use / 再用” outside the select. Use a complete close action when continuation is unavailable.
+14. Dashboard and plan selectors have a visible View label; each option names its range/layout only.
+15. Whitelists are peers of sites. Do not expose browser group IDs. Explain invalid binding directly; do not imply name-only restoration.
+16. Ordinary close explicitly preserves grouped pages; plan close uses the item origin and must not reuse ordinary group-protection copy. Plans remain independent, without the old toggle.
+17. Periods/timestamps use 24-hour time and `00:00`; durations use units. The prompt switch controls text visibility, not access confirmation.
+18. Sites and whole-site targets use canonical domains. Repository modules use site names and specific content descriptions, without repeated module prefixes; import disclosures retain source/unofficial status.
+19. Sidebar icons default off. Appearance copy states that the option covers configuration, filtering, and settings.
 
-| 含义               | 使用                             |
-| ------------------ | -------------------------------- |
-| 用户授权的来源     | 网站                             |
-| 网站内独立规则范围 | 目标                             |
-| 隐藏推荐、评论等   | 内容屏蔽                         |
-| 指定时间允许访问   | 可用时段                         |
-| 指定时间限制访问   | 不可用时段                       |
-| 时间段内的等分额度 | 使用分组                         |
-| 到期后短暂继续     | 心流延时                         |
-| 网站访问结束的页面 | 结束页面                         |
-| 可选站点能力       | 屏蔽插件（源码与协议称本地模块） |
-| 浏览器组内定时放行 | 标签页组白名单                   |
+<a id="统一术语"></a>
 
-简体中文是源文案，英文必须使用同一稳定 i18n key，不在业务代码内通过整句中文判断或替换。日期、时间和时长使用当前解析语言的 `Intl` 格式；缺少翻译在发布前视为门禁失败。
+## Terminology
 
-加载、成功、错误和空状态优先使用“正在加载”“已保存”“加载失败 / 重试”“暂无记录”。人工评审检查五页名称一致、无导航死路、窄屏/200% 缩放不截断、读屏可理解，并与 [功能说明](./FEATURES.md)、`PRIVACY.md` 及实际权限一致。
+| Meaning                                | Term                                                      |
+| -------------------------------------- | --------------------------------------------------------- |
+| User-authorized origin                 | Website / 网站                                            |
+| Separate rule scope inside a site      | Target / 目标                                             |
+| Hiding recommendations, comments, etc. | Content filtering / 内容屏蔽                              |
+| Scheduled access window                | Available period / 可用时段                               |
+| Scheduled denial window                | Unavailable period / 不可用时段                           |
+| Equal share of a period budget         | Usage group / 使用分组                                    |
+| Brief continuation after expiry        | Flow extension / 心流延时                                 |
+| Website-access end screen              | End page / 结束页面                                       |
+| Optional site adaptation               | Local add-on / 屏蔽插件; local module in source/protocols |
+| Scheduled access for a browser group   | Tab-group whitelist / 标签页组白名单                      |
+
+Simplified Chinese is the source copy. English uses the same stable i18n keys; business logic must not match or replace whole Chinese sentences. Use `Intl` with the resolved language for dates/durations, enforcing the product's 24-hour clock contract. Missing translations block release.
+
+Prefer Loading, Saved, Could not load / Retry, and No records for shared states. Manual review checks consistent page names, reachable navigation, wrapping at narrow widths/200% zoom, understandable accessible names, and agreement with [features](./FEATURES.md), `PRIVACY.md`, and actual permissions.

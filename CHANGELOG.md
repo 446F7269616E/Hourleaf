@@ -4,7 +4,7 @@ All notable changes to Hourleaf will be documented in this file. The format foll
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-10-19
+## [1.0.0] - 2026-10-20
 
 ### Added
 
@@ -19,6 +19,8 @@ All notable changes to Hourleaf will be documented in this file. The format foll
 
 ### Changed
 
+- English documentation is the default, with Simplified Chinese README and privacy-policy editions. Component downloads, compatibility limits, and disclaimers have a separate bilingual page.
+- Browser packages include both privacy-policy editions; review sources include both README editions.
 - Firefox store builds reject user scripts to meet AMO policy; JSON and self-contained CSS remain available.
 - GitHub product descriptions focus on website time management, plans, and local statistics.
 - Keep three equal-sized pause panels, center the actions near the bottom, and show the configured motivational message in the middle; empty messages collapse so site statistics expand into the available space. Show period/group quotas and site usage above the actions; keep horizontal scrolling in narrow windows and remove the hollow/filled legend text.
