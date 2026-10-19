@@ -7,7 +7,7 @@
 - 扩展包：`dist/packages/hourleaf-0.6.0-firefox.zip`。
 - 同版本源码：`dist/packages/hourleaf-0.6.0-review-source.zip`；包根的 `BUILDING.md` 给出重建步骤，`BUILD_ENVIRONMENT.json` 记录打包环境。
 - 简介和详情：[LISTING.md](./LISTING.md)。
-- 许可证选择与根 `LICENSE` 一致的自定义许可，附完整文本；不得选择与非商业限制相冲突的标准开源许可。
+- 许可证选择 MIT，与根 `LICENSE` 保持一致。
 - 隐私链接：[PRIVACY.md](https://github.com/446F7269616E/Hourleaf/blob/main/PRIVACY.md)。
 
 保留已存在的 Gecko ID `bilifocus@opensource.local`。该值是扩展稳定身份，不是联系邮箱；已有安装不能通过改名生成新身份。

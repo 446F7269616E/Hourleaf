@@ -1,6 +1,6 @@
 # Hourleaf review-source build instructions
 
-This archive contains the matching extension source, license notices, privacy policy, terms, manifest templates, assets, scripts, and lockfile for the submitted version. `BUILD_ENVIRONMENT.json` records the Node.js/npm versions, operating system, and architecture of the packaging machine.
+This archive contains the matching extension source, license notices, privacy policy, manifest templates, assets, scripts, and lockfile for the submitted version. `BUILD_ENVIRONMENT.json` records the Node.js/npm versions, operating system, and architecture of the packaging machine.
 
 Requirements: Node.js 22 or later, npm, and an internet connection to install the development dependencies pinned in `package-lock.json`. The extension itself does not contact the npm registry. Use a clean extracted directory with no pre-existing `node_modules` or `dist`.
 

@@ -22,7 +22,7 @@ npm run prepare:safari -- <开发者自有的反向域名BundleID>
 3. 检查各 target 的签名和 entitlements；macOS App Store 使用 App Sandbox。保留生成器要求的扩展配置，只申请实际需要的能力。
 4. 确认隐私文件的 target membership，并在归档中查看聚合隐私报告。
 5. 用自有 1024 像素品牌原图完善各 App Icon 槽位；现有 128 像素扩展图标不能替代完整 App 图标素材。
-6. 将承载 App 的默认模板文字替换为实际启用步骤、支持及隐私/协议链接，不包含占位公司名称。
+6. 将承载 App 的默认模板文字替换为实际启用步骤、支持及隐私链接，不包含占位公司名称。
 7. 先执行无签名编译检查；再用真实团队归档、验证并上传 App Store Connect。证书、profile 和签名密钥不进入仓库。
 
 无签名编译可在 Xcode 的目标列表选择 macOS scheme，或使用以下命令并填写实际工程和 scheme：
@@ -37,14 +37,14 @@ xcodebuild -project <生成工程路径> -scheme <macOS方案名> -configuration
 - 名称、中文/英文副标题与主介绍：[LISTING.md](./LISTING.md)；App 名称和副标题均应符合后台长度限制。
 - 支持 URL：`https://github.com/446F7269616E/Hourleaf/issues`。
 - 隐私 URL：`https://github.com/446F7269616E/Hourleaf/blob/main/PRIVACY.md`。
-- 使用协议 URL：`https://github.com/446F7269616E/Hourleaf/blob/main/TERMS.md`；除非已提交适用的自定义 EULA，App Store 的标准 EULA 仍按 Apple 的适用规则处理。
+- 应用分发使用 Apple 标准 EULA；源码采用 MIT 许可证。
 - App Privacy：按 Apple 对“收集”的定义填写 Data Not Collected；在设备上处理且不传出本机的统计不作为开发者收集。模板、归档隐私报告和后台回答必须一致。
 - 发布者填写版权主体、联系邮箱、审核联系人、年龄分级、内容权利、地区、价格和出口合规问卷。第三方框架和加密的实际使用情况决定答案，不预填免责选项。
 - 在对应 macOS/iOS 设备制作符合后台当前槽位尺寸的截图；仅提交实际支持且经过人工验收的平台。
 
 ## 审核备注
 
-Hourleaf is a Safari web extension for website schedules, usage budgets, focus plans, and on-device usage statistics. No account or sign-in is required. Enable the extension in Safari settings, add a test website, and grant access to that site. Settings > About contains privacy and terms links. Data stays on the device and is not sent to a developer server.
+Hourleaf is a Safari web extension for website schedules, usage budgets, focus plans, and on-device usage statistics. No account or sign-in is required. Enable the extension in Safari settings, add a test website, and grant access to that site. Settings > About contains privacy and MIT license links. Data stays on the device and is not sent to a developer server.
 
 The Safari build does not import or execute user-provided scripts and does not request `userScripts`, `tabGroups`, or `idle`. Optional local customization accepts only declarative JSON/CSS, with no remote resource references or automatic downloads. Core code is contained in the submitted bundle. The containing app provides enablement instructions and support. Tab-group whitelist controls are unavailable in Safari.
 

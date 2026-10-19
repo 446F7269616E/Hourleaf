@@ -39,7 +39,6 @@ npm run package
 
 - 项目和支持：`https://github.com/446F7269616E/Hourleaf`、`https://github.com/446F7269616E/Hourleaf/issues`。
 - 隐私：`https://github.com/446F7269616E/Hourleaf/blob/main/PRIVACY.md`。
-- 使用协议：`https://github.com/446F7269616E/Hourleaf/blob/main/TERMS.md`。
 - 源码许可：`https://github.com/446F7269616E/Hourleaf/blob/main/LICENSE`。
 - 模块说明、下载与免责声明：`https://github.com/446F7269616E/Hourleaf/tree/main/optional-modules`。
 

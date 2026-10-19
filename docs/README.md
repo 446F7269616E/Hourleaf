@@ -37,5 +37,5 @@
 
 ## 条款与上架材料
 
-- [隐私政策](../PRIVACY.md)、[用户使用协议](../TERMS.md)、[源码使用许可](../LICENSE)、[历史 MIT 许可](../LICENSE-MIT)。
-- [条款维护](./LEGAL.md)、[商店提交材料](./STORE_SUBMISSION.md)、[独立组件介绍与下载](../optional-modules/README.md)。
+- [隐私政策](../PRIVACY.md)、[MIT 许可证](../LICENSE)。
+- [商店提交材料](./STORE_SUBMISSION.md)、[独立组件介绍与下载](../optional-modules/README.md)。
