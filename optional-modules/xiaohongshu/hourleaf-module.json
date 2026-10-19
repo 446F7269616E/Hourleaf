@@ -5,7 +5,7 @@
   "name": "小红书",
   "author": "Hourleaf contributors",
   "version": "1.0.1",
-  "description": "非官方本地模块：提供小红书网页版首页推荐流的可选过滤。",
+  "description": "隐藏小红书网页首页和探索页中的推荐笔记。",
   "matches": ["https://www.xiaohongshu.com/*"],
   "domainPolicy": "timed",
   "hideSelectors": [],

@@ -4,7 +4,7 @@ import type { Weekday } from "./types";
 export const MAX_TAB_GROUP_WHITELIST_RULES = 64;
 
 /** Portable settings deliberately contain no browser group ID. */
-export interface TabGroupWhitelistRule {
+export interface TabGroupWhitelistPeriod {
   id: string;
   name: string;
   enabled: boolean;
@@ -13,13 +13,43 @@ export interface TabGroupWhitelistRule {
   endTime: string;
 }
 
+export const MAX_TAB_GROUP_WHITELIST_PERIODS = 64;
+
+/** Legacy schedule fields remain readable; timePeriods, when present, is authoritative. */
+export interface TabGroupWhitelistRule extends TabGroupWhitelistPeriod {
+  timePeriods?: TabGroupWhitelistPeriod[];
+}
+
 export interface TabGroupWhitelistState {
   supported: boolean;
   groups: Array<{ id: number; title: string; windowId: number }>;
-  rules: Array<{ rule: TabGroupWhitelistRule; groupId: number | null }>;
+  rules: Array<{
+    rule: TabGroupWhitelistRule;
+    groupId: number | null;
+    bindingStatus: "bound" | "waiting" | "unbound";
+  }>;
 }
 
 export function parseTabGroupWhitelistRule(value: unknown): TabGroupWhitelistRule | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const { timePeriods, ...legacy } = value as Record<string, unknown>;
+  const rule = parseTabGroupWhitelistPeriod(legacy);
+  if (!rule) return null;
+  if (timePeriods === undefined) return rule;
+  if (!Array.isArray(timePeriods) || timePeriods.length > MAX_TAB_GROUP_WHITELIST_PERIODS)
+    return null;
+  const periods: TabGroupWhitelistPeriod[] = [];
+  const ids = new Set<string>();
+  for (const raw of timePeriods) {
+    const period = parseTabGroupWhitelistPeriod(raw);
+    if (!period || ids.has(period.id)) return null;
+    periods.push(period);
+    ids.add(period.id);
+  }
+  return { ...rule, timePeriods: periods };
+}
+
+export function parseTabGroupWhitelistPeriod(value: unknown): TabGroupWhitelistPeriod | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
   if (
@@ -69,5 +99,23 @@ export function normalizeTabGroupWhitelistRules(value: unknown): TabGroupWhiteli
 }
 
 export function isTabGroupWhitelistActive(rule: TabGroupWhitelistRule, now: Date): boolean {
-  return isScheduleActive({ ...rule, effect: "allow" }, now);
+  return tabGroupWhitelistPeriods(rule).some((period) =>
+    isScheduleActive({ ...period, effect: "allow" }, now)
+  );
+}
+
+/** Old single-window rules become one period without changing their identity or binding. */
+export function tabGroupWhitelistPeriods(rule: TabGroupWhitelistRule): TabGroupWhitelistPeriod[] {
+  return (
+    rule.timePeriods ?? [
+      {
+        id: rule.id,
+        name: rule.name,
+        enabled: rule.enabled,
+        days: [...rule.days],
+        startTime: rule.startTime,
+        endTime: rule.endTime
+      }
+    ]
+  );
 }

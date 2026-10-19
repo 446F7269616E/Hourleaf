@@ -58,8 +58,9 @@ export const DEFAULT_SETTINGS: Readonly<FocusSettings> = Object.freeze({
   schemaVersion: SETTINGS_SCHEMA_VERSION,
   enabled: true,
   showRemainingMinutesOnIcon: true,
+  showSidebarIcons: false,
   locale: "system",
-  theme: "verdant",
+  theme: "ocean",
   disableProtection: Object.freeze({ method: "none", waitMinutes: 1, passwordVerifier: "" }),
   endPage: Object.freeze({
     view: "dashboard",
@@ -142,6 +143,7 @@ export function mergeSettings(
     schemaVersion: SETTINGS_SCHEMA_VERSION,
     enabled: patch.enabled ?? base.enabled,
     showRemainingMinutesOnIcon: patch.showRemainingMinutesOnIcon ?? base.showRemainingMinutesOnIcon,
+    showSidebarIcons: patch.showSidebarIcons ?? base.showSidebarIcons,
     locale: patch.locale ?? base.locale,
     theme: patch.theme ?? base.theme,
     disableProtection: { ...base.disableProtection, ...patch.disableProtection },
@@ -383,6 +385,7 @@ export function normalizeSettings(value: unknown): FocusSettings {
       typeof value.showRemainingMinutesOnIcon === "boolean"
         ? value.showRemainingMinutesOnIcon
         : defaults.showRemainingMinutesOnIcon,
+    showSidebarIcons: typeof value.showSidebarIcons === "boolean" ? value.showSidebarIcons : false,
     locale: value.locale === "zh-CN" || value.locale === "en" ? value.locale : ("system" as const),
     theme: isUiTheme(value.theme) ? value.theme : defaults.theme,
     endPage,
@@ -422,7 +425,7 @@ function normalizeManagedConfiguration(
       origin,
       ...(matchPatterns ? { matchPatterns } : {}),
       hostname: new URL(origin).hostname,
-      label: normalizeLabel(rawValue.label, new URL(origin).hostname),
+      label: new URL(origin).hostname,
       // Schema v4.1 removes the hidden website master switch. Keep the field
       // true as a storage compatibility mirror so an old disabled value cannot
       // silently override the visible per-period switches.
@@ -457,7 +460,9 @@ function normalizeManagedConfiguration(
     const target: SiteTargetSettings = {
       id: targetId,
       siteId: site.id,
-      label: normalizeLabel(rawValue.label, site.label),
+      label: isStableId(rawValue.moduleId)
+        ? normalizeLabel(rawValue.label, site.hostname)
+        : site.hostname,
       // Availability is now exclusively controlled by timePeriods[].enabled.
       enabled: true,
       // Schema v4 evaluates availability exclusively through time periods. The
@@ -720,6 +725,7 @@ function cloneSettings(settings: Readonly<FocusSettings>): FocusSettings {
     schemaVersion: SETTINGS_SCHEMA_VERSION,
     enabled: settings.enabled,
     showRemainingMinutesOnIcon: settings.showRemainingMinutesOnIcon,
+    showSidebarIcons: settings.showSidebarIcons,
     locale: settings.locale,
     theme: settings.theme,
     disableProtection: { ...settings.disableProtection },
@@ -790,8 +796,9 @@ function createUnsafeDefaultSettings(): FocusSettings {
     enabled: true,
     disableProtection: { method: "none", waitMinutes: 1, passwordVerifier: "" },
     showRemainingMinutesOnIcon: true,
+    showSidebarIcons: false,
     locale: "system",
-    theme: "verdant",
+    theme: "ocean",
     endPage: {
       view: "dashboard",
       motivationalMessage: "",

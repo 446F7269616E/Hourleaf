@@ -1,7 +1,7 @@
 # Hourleaf 质量与商店合规基线
 
 > 状态：发布门禁
-> 源码与文档同步：2026-10-14；平台人工验收另行记录
+> 源码与文档同步：2026-10-19；平台人工验收另行记录
 
 ## 单一用途
 
@@ -14,15 +14,15 @@ Hourleaf 的单一用途是：帮助用户按自己的规则管理网站使用�
 
 ## 权限预算
 
-| 能力             | 权限                            | 约束                                                                           |
-| ---------------- | ------------------------------- | ------------------------------------------------------------------------------ |
-| 本地设置与统计   | `storage`                       | 不使用云同步或遥测                                                             |
-| 工具栏当前页预览 | `activeTab`                     | 仅在用户点击工具栏后读取当前页来源，不保存页面 URL                             |
-| 排除设备离开时间 | `idle`（平台支持时）            | 只判断 active/idle/locked                                                      |
-| 标签页组白名单   | `tabGroups`（Chromium/Firefox） | 只读取组元数据与所属关系，当前会话绑定；无 API/会话存储时不放行，Safari 不声明 |
-| 注册已授权网站   | `scripting`                     | 只注册到配置中且仍获授权的精确来源                                             |
-| 用户选择的网站   | `optional_host_permissions`     | `http://*/*`/`https://*/*` 只是请求上限；每次只申请精确 `${origin}/*`          |
-| 用户本地脚本     | `userScripts`                   | Chromium 必需/用户另行开启；Firefox 可选；Safari 不声明                        |
+| 能力             | 权限                            | 约束                                                                                           |
+| ---------------- | ------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 本地设置与统计   | `storage`                       | 不使用云同步或遥测                                                                             |
+| 工具栏当前页预览 | `activeTab`                     | 仅在用户点击工具栏后读取当前页来源，不保存页面 URL                                             |
+| 排除设备离开时间 | `idle`（平台支持时）            | 只判断 active/idle/locked                                                                      |
+| 标签页组白名单   | `tabGroups`（Chromium/Firefox） | 只读组元数据与所属关系；本地摘要恢复、会话标记验证编号；无 API/会话存储时不放行，Safari 不声明 |
+| 注册已授权网站   | `scripting`                     | 只注册到配置中且仍获授权的精确来源                                                             |
+| 用户选择的网站   | `optional_host_permissions`     | `http://*/*`/`https://*/*` 只是请求上限；每次只申请精确 `${origin}/*`                          |
+| 用户本地脚本     | `userScripts`                   | 仅 Chromium 声明且用户另行开启；Firefox/Safari 不声明                                          |
 
 默认禁止持续的 `tabs`、`history`、`cookies`、`identity`、`webRequest`、`downloads`、`management`、`nativeMessaging`、`debugger` 与 `unlimitedStorage`。`activeTab` 只允许用户点击工具栏后的单页临时预览。新增权限必须有已实现功能、产品内说明和三平台兼容评审，不能只为未来预留。
 
@@ -35,7 +35,9 @@ Hourleaf 的单一用途是：帮助用户按自己的规则管理网站使用�
 - 本地模块只能通过文件选择器进入，禁止 URL 安装、远程更新与后台下载；
 - CSS 必须自包含；非空 DNR 规则因无法表达精确 origin 而拒绝；
 - 用户脚本只能使用浏览器 User Scripts API 的隔离 world，禁止 `eval`、`Function` 与通用脚本注入；
-- Safari 商店版拒绝用户脚本，平台不支持的能力必须显式降级。
+- Firefox AMO 与 Safari 商店版在 UI 和后台拒绝含用户脚本的导入，不执行已存储的脚本；平台不支持的能力必须显式降级。
+- 平台能力策略位于 `src/modules/local/capabilities.ts`，导入、运行、UI 和权限请求共用；不能通过导入来源、旧存储或恢复设置绕过。
+- 主介绍聚焦专注功能；完整权限理由和审核备注必须披露本地模块能力及平台限制，不能以分开文档替代商店要求的披露。
 
 参考官方边界：[Chrome MV3 远程代码](https://developer.chrome.com/docs/extensions/develop/migrate/remote-hosted-code)、[Chrome 分发](https://developer.chrome.com/docs/extensions/how-to/distribute)、[Firefox 签名](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/)、[Safari 分发](https://developer.apple.com/documentation/safariservices/distributing-your-safari-web-extension)。
 
@@ -73,7 +75,7 @@ Hourleaf 的单一用途是：帮助用户按自己的规则管理网站使用�
 - [ ] 多时段重叠优先级、独立额度、0 点刷新和跨午夜符合领域规则；
 - [ ] 无启用时间段可无限使用并记录实际用时，屏蔽定时及显式域名阻断仍有效；
 - [ ] 有效计划始终独立，跨来源/关标签/重启与到期后重入清理旧授权，来源切换不污染普通额度；
-- [ ] 白名单只放行绑定组内已授权受管网站，窗口结束恢复原普通状态，组销毁/重启/恢复不自动重绑，不延长计划；
+- [ ] 白名单只放行绑定组内已授权受管网站，窗口结束恢复原普通状态，窗口关闭/重启后按唯一联合特征恢复，明确解散和备份恢复清理绑定，不延长计划；
 - [ ] 普通关闭操作保留全部组内页面，归属无法确认的候选也保留；计划关闭仍按自身来源处理；
 - [ ] 宽容 / 心流 / 严格到期语义正确；心流延时只有一次且不超过 15 分钟；
 - [ ] 分组等待、数学题、密码校验和结束页返回路径不会绕过目标/时段边界；

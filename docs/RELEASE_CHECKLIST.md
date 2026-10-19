@@ -65,7 +65,8 @@
 
 ## GitHub 与发布
 
-- [ ] 默认分支保护、必需 CI、最小维护权限和私密漏洞报告启用。
+- [x] `main` 已启用 PR、必需 `quality` 检查、最新分支、讨论解决、线性历史及管理员保护，禁止强推和删除。
+- [ ] 最小维护权限和私密漏洞报告已核对。
 - [ ] CI 先执行 `npm run package`，再上传 `dist/packages`；缺失产物时任务失败。
 - [ ] 创建受保护 tag 和 GitHub Release，上传 Chromium/Firefox 商店候选包、Safari 转换输入 ZIP、可复现审核源码包、`dist/packages/SHA256SUMS`，以及与扩展包分离的 `dist/modules/` 模块 ZIP 和 `MODULE-SHA256SUMS`。
 - [ ] Release 只记录产品变更、已知限制与平台状态，不包含内部协作说明或面向单个用户的建议。

@@ -1,10 +1,13 @@
+import { createTimePeriodControls } from "../ui/time-period-controls";
 import { createClockInput, clockRangeHint } from "../ui/clock-input";
-import { mountViewportScrollPanel } from "../ui/viewport-scroll-panel";
+import {
+  createConfigurationWorkspace,
+  preserveConfigurationPosition
+} from "../ui/configuration-workspace";
 import { createConfigurationDirectory } from "../ui/configuration-directory";
 import {
   createConfigurationField as createField,
   createConfigurationToggle as createToggle,
-  createConfigurationDayPicker,
   formatConfigurationDays as formatDays
 } from "../ui/configuration-controls";
 import { createTabGroupWhitelist } from "../ui/tab-group-whitelist";
@@ -45,7 +48,7 @@ import {
   toast
 } from "../styles/dom";
 import { createPageNavigation } from "../ui/page-navigation";
-import { applyTheme } from "../ui/theme";
+import { applyAppearance } from "../ui/theme";
 import {
   addManagedSite,
   normalizeWebsiteInput,
@@ -83,7 +86,7 @@ async function loadOptions(preferredOrigin?: string): Promise<void> {
   try {
     draft = clone(await sendRequest({ type: "GET_SETTINGS" }));
     configureLocale(draft.locale);
-    applyTheme(draft.theme);
+    applyAppearance(draft);
     localizeDocumentTitle("configuration");
     selectedSiteId =
       (preferredOrigin
@@ -178,33 +181,23 @@ function renderOptions(): void {
     }
   });
   const site = selectedSiteId ? draft.sites[selectedSiteId] : undefined;
-  const content = element("div", {
-    className: "settings-content options-workspace",
-    children: [
-      element("aside", {
-        className: "options-sidebar",
-        attrs: { "aria-label": t("options.configurationDirectory") },
-        children: [createSiteDirectory(), groupWhitelist.directory]
-      }),
-      element("div", {
-        className: "options-detail-editor",
-        attrs: { id: "configuration-editor" },
-        children: [
-          selectedConfigurationKind === "tab-group"
-            ? groupWhitelist.editor
-            : site
-              ? element("div", {
-                  className: "options-site-editor",
-                  children: [
-                    createSiteContext(site),
-                    createRestrictionModeCard(site),
-                    createTimePeriodWorkspace(site),
-                    createVisitConfirmationCard(site)
-                  ]
-                })
-              : createEmptyState()
-        ]
-      })
+  const workspace = createConfigurationWorkspace({
+    label: t("options.configurationDirectory"),
+    directory: [createSiteDirectory(), groupWhitelist.directory],
+    content: [
+      selectedConfigurationKind === "tab-group"
+        ? groupWhitelist.editor
+        : site
+          ? element("div", {
+              className: "options-site-editor",
+              children: [
+                createSiteContext(site),
+                createRestrictionModeCard(site),
+                createTimePeriodWorkspace(site),
+                createVisitConfirmationCard(site)
+              ]
+            })
+          : createEmptyState()
     ]
   });
 
@@ -225,12 +218,11 @@ function renderOptions(): void {
             })
           ]
         }),
-        content
+        workspace.workspace
       ]
     })
   );
-  const sidebar = document.querySelector<HTMLElement>(".options-sidebar");
-  if (sidebar) releaseSidebarSizing = mountViewportScrollPanel(sidebar);
+  releaseSidebarSizing = workspace.mount();
   updateSaveState();
 }
 
@@ -260,9 +252,9 @@ function createSiteDirectory(): HTMLElement {
     onSelect: () => selectSite(selectedSiteId ?? sites[0]?.id ?? null),
     items: sites.map((site) => ({
       id: site.id,
-      label: site.label || site.hostname,
-      detail: site.hostname,
-      mark: (site.label || site.hostname).slice(0, 1).toUpperCase(),
+      label: site.hostname,
+      detail: site.origin,
+      mark: site.hostname.slice(0, 1).toUpperCase(),
       selected: selectedConfigurationKind === "site" && site.id === selectedSiteId,
       onSelect: () => selectSite(site.id)
     }))
@@ -283,7 +275,7 @@ function createSiteContext(site: ManagedSite): HTMLElement {
       element("div", {
         children: [
           element("span", { className: "site-context__eyebrow", text: t("options.currentSite") }),
-          element("h2", { text: site.label || site.hostname }),
+          element("h2", { text: site.hostname }),
           element("p", { text: site.origin })
         ]
       }),
@@ -1215,10 +1207,8 @@ function createPeriodItem(target: SiteTargetSettings, period: TimePeriodSettings
 function openPeriodDialog(target: SiteTargetSettings, existing?: TimePeriodSettings): void {
   const period = existing ? clone(existing) : createDefaultTimePeriod(45);
   const systemName = t("options.defaultPeriodName");
-  const name = element("input", {
-    className: "input",
-    attrs: { type: "text", value: period.name || systemName, maxlength: 60, required: true }
-  });
+  const controls = createTimePeriodControls(period);
+  const { name, start, end, dayPicker, enabled } = controls;
   const behavior = element("select", {
     className: "input",
     children: (["timed", "always-allow", "always-block"] satisfies TimePeriodBehavior[]).map(
@@ -1250,11 +1240,7 @@ function openPeriodDialog(target: SiteTargetSettings, existing?: TimePeriodSetti
     className: "input",
     attrs: { type: "number", min: 1, max: 24, step: 1, value: period.groupCount, required: true }
   });
-  const start = createClockInput(period.startTime);
-  const end = createClockInput(period.endTime);
-  const dayPicker = createConfigurationDayPicker(t("options.periodDays"), period.days);
   const note = element("p", { className: "schedule-note", attrs: { role: "status" } });
-  const enabled = createToggle(t("common.enabled"), period.enabled);
   const close = element("button", {
     className: "btn btn--icon",
     attrs: { type: "button", "aria-label": t("common.close") },
@@ -1291,22 +1277,12 @@ function openPeriodDialog(target: SiteTargetSettings, existing?: TimePeriodSetti
           close
         ]
       }),
-      createField(t("options.periodName"), name),
+      controls.nameField,
       createField(t("options.periodBehavior"), behavior),
       timedFields,
       dayPicker.field,
-      element("div", {
-        className: "time-fields",
-        children: [
-          createField(t("options.periodStart"), start),
-          element("span", { className: "time-fields__dash", text: t("options.periodTo") }),
-          createField(t("options.periodEnd"), end)
-        ]
-      }),
-      element("div", {
-        className: "access-toggle-row",
-        children: [element("strong", { text: t("common.enabled") }), enabled.label]
-      }),
+      controls.timeFields,
+      controls.enabledField,
       note,
       element("footer", { className: "dialog__footer", children: [cancel, submit] })
     ]
@@ -1476,7 +1452,7 @@ function openRemoveSiteDialog(site: ManagedSite): void {
     className: "dialog options-site-dialog",
     children: [
       element("h2", {
-        text: t("options.removeSiteQuestion", { site: site.label || site.hostname })
+        text: t("options.removeSiteQuestion", { site: site.hostname })
       }),
       element("p", { text: t("options.removeSiteDetail") }),
       element("div", { className: "dialog__actions", children: [cancel, confirm] })
@@ -1677,12 +1653,7 @@ function updateSaveState(): void {
 }
 
 function renderOptionsPreservingScroll(): void {
-  const scrollY = window.scrollY;
-  const sidebarScroll = document.querySelector<HTMLElement>(".options-sidebar")?.scrollTop ?? 0;
-  renderOptions();
-  const sidebar = document.querySelector<HTMLElement>(".options-sidebar");
-  if (sidebar) sidebar.scrollTop = sidebarScroll;
-  window.scrollTo({ top: scrollY });
+  preserveConfigurationPosition(app, renderOptions);
 }
 
 function formatGroupMinutes(minutes: number): string {

@@ -5,7 +5,7 @@
   "name": "百度贴吧",
   "author": "Hourleaf contributors",
   "version": "1.0.1",
-  "description": "非官方本地模块：提供百度贴吧网页版首页推荐流的可选过滤。",
+  "description": "隐藏百度贴吧网页首页中的推荐帖子。",
   "matches": ["https://tieba.baidu.com/*"],
   "domainPolicy": "timed",
   "hideSelectors": [],

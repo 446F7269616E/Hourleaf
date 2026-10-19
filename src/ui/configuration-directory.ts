@@ -10,10 +10,11 @@ export interface ConfigurationDirectoryItem {
   onSelect(): void;
 }
 
-/** Both configuration categories share layout, selection and accessibility. */
+/** Configuration pages share layout, selection and accessibility. */
 export function createConfigurationDirectory(options: {
   title: string;
   label: string;
+  editorId?: string;
   items: ConfigurationDirectoryItem[];
   emptyLabel: string;
   active: boolean;
@@ -22,7 +23,7 @@ export function createConfigurationDirectory(options: {
   const heading = element("button", {
     className: "options-directory__heading",
     text: options.title,
-    attrs: { type: "button", "aria-controls": "configuration-editor" }
+    attrs: { type: "button", "aria-controls": options.editorId ?? "configuration-editor" }
   });
   heading.addEventListener("click", () => options.onSelect());
   return element("section", {
@@ -49,7 +50,7 @@ export function createConfigurationDirectory(options: {
                   attrs: {
                     type: "button",
                     "aria-current": item.selected ? "page" : undefined,
-                    "aria-controls": "configuration-editor",
+                    "aria-controls": options.editorId ?? "configuration-editor",
                     title: `${item.label} · ${item.detail}`
                   },
                   dataset: { selected: String(item.selected), id: item.id },
@@ -76,7 +77,10 @@ export function createConfigurationDirectory(options: {
                   const empty = element("button", {
                     className: "options-directory__empty",
                     text: options.emptyLabel,
-                    attrs: { type: "button", "aria-controls": "configuration-editor" }
+                    attrs: {
+                      type: "button",
+                      "aria-controls": options.editorId ?? "configuration-editor"
+                    }
                   });
                   empty.addEventListener("click", () => options.onSelect());
                   return empty;

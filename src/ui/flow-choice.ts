@@ -22,6 +22,7 @@ export function createFlowChoice(options: {
         : [])
     ]
   });
+  method.value = options.videoAvailable ? "video-end" : "minutes";
   const minutes = element("select", {
     className: "select",
     attrs: { "aria-label": t("end.extensionDuration") },
@@ -36,9 +37,11 @@ export function createFlowChoice(options: {
     className: "field",
     children: [element("span", { text: t("end.extendPrefix") }), minutes]
   });
-  method.onchange = () => {
+  const updateMethod = () => {
     minuteField.hidden = method.value !== "minutes";
   };
+  method.onchange = updateMethod;
+  updateMethod();
   const choices = element("fieldset", {
     className: "flow-choice__fields",
     children: [

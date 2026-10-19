@@ -1,4 +1,6 @@
-import { createClockInput, clockRangeHint } from "./clock-input";
+import { clockRangeHint } from "./clock-input";
+import { createTimePeriodControls } from "./time-period-controls";
+import { preserveConfigurationPosition } from "./configuration-workspace";
 import { createConfigurationDirectory } from "./configuration-directory";
 import { storageAddChangeListener } from "../shared/browser";
 import { STORAGE_KEYS } from "../shared/storage-keys";
@@ -6,6 +8,10 @@ import { sendRequest } from "../shared/messages";
 import { t } from "../shared/i18n";
 import {
   MAX_TAB_GROUP_WHITELIST_RULES,
+  MAX_TAB_GROUP_WHITELIST_PERIODS,
+  tabGroupWhitelistPeriods,
+  parseTabGroupWhitelistPeriod,
+  type TabGroupWhitelistPeriod,
   parseTabGroupWhitelistRule,
   type TabGroupWhitelistRule,
   type TabGroupWhitelistState
@@ -14,12 +20,14 @@ import { describeError, element, icon, setButtonBusy, toast, type IconName } fro
 import {
   createConfigurationField as field,
   createConfigurationToggle,
-  createConfigurationDayPicker,
   formatConfigurationDays
 } from "./configuration-controls";
 
 const refreshers = new Set<() => boolean>();
 let watchingStorage = false;
+let cachedState: TabGroupWhitelistState | undefined;
+let writeQueue: Promise<void> = Promise.resolve();
+let pendingWrites = 0;
 
 /** Owns its own writes; ordinary website autosave cannot overwrite group rules. */
 export function createTabGroupWhitelist(options: {
@@ -37,12 +45,14 @@ export function createTabGroupWhitelist(options: {
   });
   const addButton = button(t("groups.add"), () => void openEditor());
   addButton.prepend(icon("plus"));
-  let state: TabGroupWhitelistState | undefined;
+  let state = cachedState;
   let generation = 0;
 
   async function refresh(): Promise<void> {
     const current = ++generation;
     try {
+      if (pendingWrites > 0) await writeQueue;
+      if (current !== generation) return;
       const next = await sendRequest({ type: "GET_TAB_GROUP_WHITELIST" });
       if (current !== generation || !directory.isConnected) return;
       state = next;
@@ -73,7 +83,13 @@ export function createTabGroupWhitelist(options: {
   }
 
   function render(): void {
+    cachedState = state;
+    if (directory.isConnected) preserveConfigurationPosition(document.body, renderContent);
+  }
+
+  function renderContent(): void {
     if (!state) return;
+    cachedState = state;
     addButton.disabled = !state.supported || state.rules.length >= MAX_TAB_GROUP_WHITELIST_RULES;
     if (!state.rules.some(({ rule }) => rule.id === selectedRuleId)) {
       selectedRuleId = state.rules[0]?.rule.id ?? null;
@@ -86,10 +102,13 @@ export function createTabGroupWhitelist(options: {
         emptyLabel: t("groups.empty"),
         active: options.active,
         onSelect: () => options.onSelect(selectedRuleId),
-        items: state.rules.map(({ rule, groupId }) => ({
+        items: state.rules.map(({ rule, groupId, bindingStatus }) => ({
           id: rule.id,
           label: rule.name,
-          detail: groupId === null ? t("groups.bindingExpired") : periodSummary(rule),
+          detail:
+            groupId === null
+              ? unboundLabel(bindingStatus)
+              : t("groups.periodCount", { count: tabGroupWhitelistPeriods(rule).length }),
           mark: icon("focus"),
           selected: options.active && rule.id === selectedRuleId,
           onSelect: () => options.onSelect(rule.id)
@@ -124,16 +143,25 @@ export function createTabGroupWhitelist(options: {
               element("span", { className: "site-context__eyebrow", text: t("groups.current") }),
               element("h2", { text: selected.rule.name }),
               element("p", {
-                text: group ? groupLabel(group, state.groups) : t("groups.bindingExpired"),
+                text: group
+                  ? groupLabel(group, state.groups)
+                  : unboundLabel(selected.bindingStatus),
                 className: group ? "" : "tab-group-whitelist__unbound"
               })
             ]
           }),
-          element("div", { className: "site-context__meta", children: [remove] })
+          element("div", {
+            className: "site-context__meta",
+            children: [button(t("groups.edit"), () => void openEditor(selected.rule)), remove]
+          })
         ]
       }),
       section
     );
+    const periods = tabGroupWhitelistPeriods(selected.rule);
+    const addPeriod = button(t("options.addPeriod"), () => openPeriodEditor(selected.rule.id));
+    addPeriod.prepend(icon("plus"));
+    addPeriod.disabled = periods.length >= MAX_TAB_GROUP_WHITELIST_PERIODS;
     section.replaceChildren(
       element("header", {
         className: "period-target__header",
@@ -141,10 +169,13 @@ export function createTabGroupWhitelist(options: {
           element("div", {
             children: [
               element("h3", { text: t("options.timePeriods") }),
-              element("p", { text: t("common.itemCount", { count: 1 }) })
+              element("p", { text: t("groups.periodCount", { count: periods.length }) })
             ]
           }),
-          iconButton("refresh", t("groups.refresh"), () => void refresh())
+          element("div", {
+            className: "period-target__actions",
+            children: [addPeriod, iconButton("refresh", t("groups.refresh"), () => void refresh())]
+          })
         ]
       }),
       ...(!state.supported
@@ -156,28 +187,28 @@ export function createTabGroupWhitelist(options: {
             })
           ]
         : []),
-      element("ul", {
-        className: "period-list",
-        children: [createRuleItem(selected)]
-      })
+      periods.length > 0
+        ? element("ul", {
+            className: "period-list",
+            children: periods.map((period) => createPeriodItem(selected.rule.id, period))
+          })
+        : element("p", { className: "schedule-empty", text: t("options.noPeriods") })
     );
   }
 
-  function createRuleItem({ rule, groupId }: TabGroupWhitelistState["rules"][number]): HTMLElement {
-    const group = state?.groups.find((entry) => entry.id === groupId);
-    const toggle = createConfigurationToggle(`${t("common.enabled")} ${rule.name}`, rule.enabled);
+  function createPeriodItem(ruleId: string, period: TabGroupWhitelistPeriod): HTMLElement {
+    const toggle = createConfigurationToggle(
+      `${t("common.enabled")} ${period.name}`,
+      period.enabled
+    );
     toggle.input.addEventListener("change", () => {
+      const checked = toggle.input.checked;
       toggle.input.disabled = true;
-      void sendRequest({
-        type: "SAVE_TAB_GROUP_WHITELIST",
-        rule: { ...rule, enabled: toggle.input.checked }
-      })
-        .then((next) => {
-          state = next;
-          render();
-        })
+      void updatePeriods(ruleId, (periods) =>
+        periods.map((entry) => (entry.id === period.id ? { ...entry, enabled: checked } : entry))
+      )
         .catch((error) => {
-          toggle.input.checked = rule.enabled;
+          toggle.input.checked = period.enabled;
           toast(describeError(error), "error");
         })
         .finally(() => {
@@ -185,30 +216,18 @@ export function createTabGroupWhitelist(options: {
         });
     });
     return element("li", {
-      className: "period-item tab-group-whitelist__rule",
-      dataset: {
-        enabled: String(rule.enabled),
-        behavior: "always-allow",
-        bound: String(Boolean(group))
-      },
+      className: "period-item",
+      dataset: { enabled: String(period.enabled), behavior: "always-allow" },
       children: [
         element("div", {
           className: "period-item__identity",
           children: [
-            element("span", {
-              className: "period-item__status",
-              attrs: { "aria-hidden": true }
-            }),
+            element("span", { className: "period-item__status", attrs: { "aria-hidden": true } }),
             element("div", {
               children: [
-                element("strong", { text: rule.name }),
-                element("span", {
-                  text: periodSummary(rule)
-                }),
-                element("small", {
-                  text: group ? groupLabel(group, state?.groups) : t("groups.bindingExpired"),
-                  className: group ? "" : "tab-group-whitelist__unbound"
-                })
+                element("strong", { text: period.name }),
+                element("span", { text: periodSummary(period) }),
+                element("small", { text: t("options.period.alwaysAllow") })
               ]
             })
           ]
@@ -217,11 +236,20 @@ export function createTabGroupWhitelist(options: {
           className: "period-item__actions",
           children: [
             toggle.label,
-            iconButton("edit", `${t("common.edit")} ${rule.name}`, () => void openEditor(rule)),
+            iconButton("edit", `${t("common.edit")} ${period.name}`, () =>
+              openPeriodEditor(ruleId, period)
+            ),
             iconButton(
               "trash",
-              `${t("common.delete")} ${rule.name}`,
-              (control) => removeRule(rule.id, control),
+              `${t("common.delete")} ${period.name}`,
+              (control) => {
+                setButtonBusy(control, true);
+                return updatePeriods(ruleId, (periods) =>
+                  periods.filter(({ id }) => id !== period.id)
+                )
+                  .catch((error) => toast(describeError(error), "error"))
+                  .finally(() => setButtonBusy(control, false));
+              },
               true
             )
           ]
@@ -230,11 +258,134 @@ export function createTabGroupWhitelist(options: {
     });
   }
 
+  function enqueueWrite(action: () => Promise<void>): Promise<void> {
+    pendingWrites++;
+    generation++;
+    const write = writeQueue.then(action).finally(() => {
+      pendingWrites--;
+    });
+    writeQueue = write.catch(() => undefined);
+    return write;
+  }
+
+  function updatePeriods(
+    ruleId: string,
+    update: (periods: TabGroupWhitelistPeriod[]) => TabGroupWhitelistPeriod[]
+  ): Promise<void> {
+    return enqueueWrite(async () => {
+      state = await sendRequest({ type: "GET_TAB_GROUP_WHITELIST" });
+      const current = state.rules.find(({ rule }) => rule.id === ruleId)?.rule;
+      if (!current) throw new Error(t("common.actionFailed"));
+      const periods = update(tabGroupWhitelistPeriods(current));
+      if (periods.length > MAX_TAB_GROUP_WHITELIST_PERIODS)
+        throw new Error(t("options.periodLimitReached"));
+      state = await sendRequest({
+        type: "SAVE_TAB_GROUP_WHITELIST",
+        rule: { ...current, enabled: true, timePeriods: periods }
+      });
+      render();
+    });
+  }
+
+  function openPeriodEditor(ruleId: string, existing?: TabGroupWhitelistPeriod): void {
+    const current = state?.rules.find(({ rule }) => rule.id === ruleId)?.rule;
+    if (!current) return;
+    const initial = existing ?? {
+      id: crypto.randomUUID(),
+      name: t("options.defaultPeriodName"),
+      enabled: true,
+      days: [0, 1, 2, 3, 4, 5, 6] as const,
+      startTime: "00:00",
+      endTime: "00:00"
+    };
+    const controls = createTimePeriodControls({ ...initial, days: [...initial.days] }, 80);
+    const { name, start, end, dayPicker, enabled } = controls;
+    const note = element("p", { className: "schedule-note", attrs: { role: "status" } });
+    const updateNote = () => {
+      note.textContent = clockRangeHint(start.value, end.value);
+    };
+    start.addEventListener("input", updateNote);
+    end.addEventListener("input", updateNote);
+    updateNote();
+    const save = button(existing ? t("common.save") : t("common.add"), () => undefined);
+    save.type = "submit";
+    save.classList.add("btn--primary");
+    const dialog = element("dialog", {
+      className: "dialog tab-group-whitelist__dialog",
+      attrs: { "aria-labelledby": "tab-group-period-title" }
+    });
+    const form = element("form", {
+      children: [
+        element("header", {
+          className: "dialog__header",
+          children: [
+            element("h2", {
+              text: existing ? t("options.editPeriod") : t("options.addPeriod"),
+              attrs: { id: "tab-group-period-title" }
+            }),
+            iconButton("close", t("common.close"), () => dialog.close())
+          ]
+        }),
+        controls.nameField,
+        dayPicker.field,
+        controls.timeFields,
+        controls.enabledField,
+        note,
+        element("footer", {
+          className: "dialog__footer",
+          children: [button(t("common.cancel"), () => dialog.close()), save]
+        })
+      ]
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const days = dayPicker.selectedDays();
+      if (!days.length) {
+        note.textContent = t("options.selectOneDay");
+        dayPicker.inputs[0]?.input.focus();
+        return;
+      }
+      const period = parseTabGroupWhitelistPeriod({
+        id: initial.id,
+        name: name.value.trim(),
+        enabled: enabled.input.checked,
+        days,
+        startTime: start.value,
+        endTime: end.value
+      });
+      if (!period) {
+        note.textContent = t("groups.invalid");
+        return;
+      }
+      setButtonBusy(save, true);
+      void updatePeriods(ruleId, (periods) => {
+        if (existing && !periods.some(({ id }) => id === existing.id))
+          throw new Error(t("common.actionFailed"));
+        return existing
+          ? periods.map((entry) => (entry.id === existing.id ? period : entry))
+          : [...periods, period];
+      })
+        .then(() => dialog.close())
+        .catch((error) => {
+          note.textContent = describeError(error);
+        })
+        .finally(() => setButtonBusy(save, false));
+    });
+    dialog.append(form);
+    dialog.addEventListener("close", () => dialog.remove());
+    document.body.append(dialog);
+    dialog.showModal();
+    name.focus();
+  }
+
   async function removeRule(id: string, control: HTMLButtonElement): Promise<void> {
+    if (!window.confirm(t("groups.removeConfirm"))) return;
     setButtonBusy(control, true);
     try {
-      state = await sendRequest({ type: "REMOVE_TAB_GROUP_WHITELIST", id });
-      render();
+      await enqueueWrite(async () => {
+        state = await sendRequest({ type: "REMOVE_TAB_GROUP_WHITELIST", id });
+        render();
+      });
     } catch (error) {
       toast(describeError(error), "error");
     } finally {
@@ -247,6 +398,8 @@ export function createTabGroupWhitelist(options: {
       await refresh();
       if (!state) return;
       const binding = state.rules.find(({ rule }) => rule.id === existing?.id)?.groupId;
+      const waiting =
+        state.rules.find(({ rule }) => rule.id === existing?.id)?.bindingStatus === "waiting";
       const name = element("input", {
         className: "input",
         attrs: { type: "text", required: true, maxlength: 80, value: existing?.name ?? "" }
@@ -268,24 +421,19 @@ export function createTabGroupWhitelist(options: {
       });
       select.required = !existing;
       select.disabled = !state.supported;
-      const start = createClockInput(existing?.startTime ?? "09:00");
-      const end = createClockInput(existing?.endTime ?? "18:00");
-      const dayPicker = createConfigurationDayPicker(
-        t("groups.days"),
-        existing?.days ?? [0, 1, 2, 3, 4, 5, 6]
-      );
+      let suggestedName = "";
+      select.addEventListener("change", () => {
+        if (existing) return;
+        const group = state?.groups.find((entry) => String(entry.id) === select.value);
+        const next = group ? (group.title.trim() || t("groups.untitled")).slice(0, 80) : "";
+        // Follow the selected group until the user chooses a custom name.
+        if (!name.value.trim() || name.value === suggestedName) name.value = next;
+        suggestedName = next;
+      });
       const note = element("p", {
         className: "schedule-note",
         attrs: { role: "status", "aria-live": "polite" }
       });
-      const timeNote = element("p", { className: "field__hint", attrs: { "aria-live": "polite" } });
-      const updateTimeNote = () => {
-        timeNote.textContent = clockRangeHint(start.value, end.value);
-        timeNote.hidden = !timeNote.textContent;
-      };
-      start.addEventListener("input", updateTimeNote);
-      end.addEventListener("input", updateTimeNote);
-      updateTimeNote();
       const save = button(t("common.save"), () => undefined);
       save.type = "submit";
       save.classList.add("btn--primary");
@@ -306,26 +454,20 @@ export function createTabGroupWhitelist(options: {
               close
             ]
           }),
-          field(t("groups.name"), name),
           field(t("groups.group"), select),
+          field(t("groups.name"), name),
           ...(existing
             ? [
                 element("p", {
                   className: "field__hint",
-                  text: binding === null ? t("groups.unbound") : t("groups.keepBindingHint")
+                  text: waiting
+                    ? t("groups.waitingHint")
+                    : binding === null
+                      ? t("groups.unbound")
+                      : t("groups.keepBindingHint")
                 })
               ]
             : []),
-          dayPicker.field,
-          element("div", {
-            className: "time-fields",
-            children: [
-              field(t("groups.start"), start),
-              element("span", { className: "time-fields__dash", text: t("options.periodTo") }),
-              field(t("groups.end"), end)
-            ]
-          }),
-          timeNote,
           note,
           element("footer", {
             className: "dialog__footer",
@@ -341,22 +483,43 @@ export function createTabGroupWhitelist(options: {
           id: existing?.id ?? crypto.randomUUID(),
           name: name.value.trim() || group?.title || t("groups.title"),
           enabled: existing?.enabled ?? true,
-          days: dayPicker.selectedDays(),
-          startTime: start.value,
-          endTime: end.value
+          days: existing?.days ?? [0, 1, 2, 3, 4, 5, 6],
+          startTime: existing?.startTime ?? "00:00",
+          endTime: existing?.endTime ?? "00:00",
+          ...(existing
+            ? { timePeriods: tabGroupWhitelistPeriods(existing) }
+            : {
+                timePeriods: [
+                  {
+                    id: crypto.randomUUID(),
+                    name: t("options.defaultPeriodName"),
+                    enabled: true,
+                    days: [0, 1, 2, 3, 4, 5, 6],
+                    startTime: "00:00",
+                    endTime: "00:00"
+                  }
+                ]
+              })
         });
         if (!rule) {
           note.textContent = t("groups.invalid");
           return;
         }
         setButtonBusy(save, true);
-        void sendRequest({
-          type: "SAVE_TAB_GROUP_WHITELIST",
-          rule,
-          ...(groupId !== undefined ? { groupId } : {})
+        void enqueueWrite(async () => {
+          state = await sendRequest({ type: "GET_TAB_GROUP_WHITELIST" });
+          const latest = state.rules.find(({ rule: candidate }) => candidate.id === rule.id)?.rule;
+          if (existing && !latest) throw new Error(t("common.actionFailed"));
+          state = await sendRequest({
+            type: "SAVE_TAB_GROUP_WHITELIST",
+            rule: latest
+              ? { ...latest, name: rule.name, timePeriods: tabGroupWhitelistPeriods(latest) }
+              : rule,
+            ...(groupId !== undefined ? { groupId } : {})
+          });
         })
-          .then((next) => {
-            state = next;
+          .then(() => {
+            selectedRuleId = rule.id;
             render();
             dialog.close();
             options.onSelect(rule.id);
@@ -371,7 +534,8 @@ export function createTabGroupWhitelist(options: {
       dialog.addEventListener("close", () => dialog.remove());
       document.body.append(dialog);
       dialog.showModal();
-      name.focus();
+      if (existing) name.focus();
+      else select.focus();
     } catch (error) {
       toast(describeError(error), "error");
     }
@@ -384,7 +548,11 @@ export function createTabGroupWhitelist(options: {
         if (!refreshIfConnected()) refreshers.delete(refreshIfConnected);
     };
     storageAddChangeListener((changes) => {
-      if (changes[STORAGE_KEYS.settings] || changes[STORAGE_KEYS.tabGroupBindings])
+      if (
+        changes[STORAGE_KEYS.settings] ||
+        changes[STORAGE_KEYS.tabGroupBindings] ||
+        changes[STORAGE_KEYS.tabGroupBindingRecords]
+      )
         refreshConnected();
     });
     window.addEventListener("focus", refreshConnected);
@@ -411,8 +579,13 @@ export function createTabGroupWhitelist(options: {
       children: [element("p", { text: t("options.loading") })]
     })
   );
+  if (state) renderContent();
   void refresh();
   return { directory, editor, addButton };
+}
+
+function unboundLabel(status: TabGroupWhitelistState["rules"][number]["bindingStatus"]): string {
+  return t(status === "waiting" ? "groups.waiting" : "groups.bindingExpired");
 }
 
 function button(text: string, action: (control: HTMLButtonElement) => unknown): HTMLButtonElement {
@@ -458,6 +631,6 @@ function groupLabel(
   return labels.join(" · ");
 }
 
-function periodSummary(rule: TabGroupWhitelistRule): string {
+function periodSummary(rule: TabGroupWhitelistPeriod): string {
   return `${formatConfigurationDays(rule.days)} · ${rule.startTime}–${rule.endTime}${rule.startTime === rule.endTime ? ` (${t("groups.allDay")})` : rule.startTime > rule.endTime ? ` (${t("options.nextDay")})` : ""}`;
 }

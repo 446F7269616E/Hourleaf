@@ -1,6 +1,6 @@
 # Hourleaf 商店提交
 
-准备日期：2026-10-19。当前版本：0.6.0。发布状态以对应商店后台为准；构建产物不表示已经审核、签名或上架。
+准备日期：2026-10-19。当前版本：1.0.0。发布状态以对应商店后台为准；构建产物不表示已经审核、签名或上架。
 
 ## 材料目录
 
@@ -26,10 +26,10 @@ npm run package
 
 | 产物                                             | 用途                                                  |
 | ------------------------------------------------ | ----------------------------------------------------- |
-| `dist/packages/hourleaf-0.6.0-chromium.zip`      | Chrome Web Store 上传包                               |
-| `dist/packages/hourleaf-0.6.0-firefox.zip`       | AMO 上传包，签名后由 AMO 提供 XPI                     |
-| `dist/packages/hourleaf-0.6.0-safari.zip`        | Safari Web Extension 转换输入，不能直接上传 App Store |
-| `dist/packages/hourleaf-0.6.0-review-source.zip` | 本版本可审计源码、条款、锁文件与构建说明              |
+| `dist/packages/hourleaf-1.0.0-chromium.zip`      | Chrome Web Store 上传包                               |
+| `dist/packages/hourleaf-1.0.0-firefox.zip`       | AMO 上传包，签名后由 AMO 提供 XPI                     |
+| `dist/packages/hourleaf-1.0.0-safari.zip`        | Safari Web Extension 转换输入，不能直接上传 App Store |
+| `dist/packages/hourleaf-1.0.0-review-source.zip` | 本版本可审计源码、条款、锁文件与构建说明              |
 | `dist/packages/SHA256SUMS`                       | 上述文件的校验值                                      |
 | `dist/modules/`                                  | 单独分发的模块文件与校验值                            |
 

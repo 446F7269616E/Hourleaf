@@ -102,6 +102,9 @@ async function buildExtension(target, flavor, outdir, preset) {
     }
   }
   await cp(path.join(root, "_locales"), path.join(outdir, "_locales"), { recursive: true });
+  for (const filename of ["LICENSE", "PRIVACY.md"]) {
+    await cp(path.join(root, filename), path.join(outdir, filename));
+  }
   const rawManifest = /** @type {unknown} */ (
     JSON.parse(await readFile(path.join(root, "manifests", `${target}.json`), "utf8"))
   );

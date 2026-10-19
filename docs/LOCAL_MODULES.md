@@ -1,6 +1,6 @@
 # Hourleaf 本地模块规范
 
-当前协议及核心行为同步：2026-10-14。使用说明见 [FEATURES.md](./FEATURES.md#内容屏蔽与模块)，开发目录见 [docs/README.md](./README.md)。
+当前协议及核心行为同步：2026-10-19。使用说明见 [FEATURES.md](./FEATURES.md#内容屏蔽与模块)，开发目录见 [docs/README.md](./README.md)。
 
 ## 分发与信任边界
 
@@ -8,20 +8,24 @@ Hourleaf 的商店包只包含通用专注核心和本地模块导入器。扩�
 
 本地模块最多 32 个。每个模块最多声明 32 个精确 HTTP(S) 来源、128 个元素选择器、100 KB CSS 和 150 KB 用户脚本。通配主机、凭据 URL、远程文件引用、DNR 规则和跨 frame 脚本均会被拒绝。
 
-仓库维护的模块源码位于 `optional-modules/<slug>/`。`npm run package` 会验证基础元数据和引用文件集合，再为每个目录生成独立的 `dist/modules/hourleaf-module-<slug>-<version>.zip` 与 SHA-256；这些资产只发布到 GitHub Release，不进入三平台扩展安装包。
+仓库维护的模块源码位于 `optional-modules/<slug>/`。`npm run package` 会验证基础元数据和引用文件集合，再为每个目录生成独立的 `dist/modules/hourleaf-module-<slug>-<version>.zip` 与 SHA-256；这些资产只发布到 GitHub Release，不进入三平台扩展安装包。模块 ZIP 另附 MIT `LICENSE` 和说明文档；导入时只选择清单及其引用的 CSS/用户脚本文件。
 
 所有可导入内容必须声明非空作者名称和固定格式标识 `hourleaf.local-module`。格式不从扩展名猜测，也不会为旧文件自动补全作者。
 
 ## 能力矩阵
 
-| 能力               | Chromium 商店版                           | Firefox AMO 版                  | Safari App Store 版              |
-| ------------------ | ----------------------------------------- | ------------------------------- | -------------------------------- |
-| 精确域名计时与名单 | 支持                                      | 支持                            | 支持                             |
-| 元素隐藏与 CSS     | 支持                                      | 支持                            | 支持                             |
-| 本地 DNR 动态规则  | 禁用                                      | 禁用                            | 禁用                             |
-| 用户脚本           | 仅 User Scripts API，需用户在扩展详情启用 | 仅 User Scripts API，需可选权限 | 禁用；Apple 商店包不执行导入代码 |
+| 能力               | Chromium 商店版                           | Firefox AMO 版             | Safari App Store 版              |
+| ------------------ | ----------------------------------------- | -------------------------- | -------------------------------- |
+| 精确域名计时与名单 | 支持                                      | 支持                       | 支持                             |
+| 元素隐藏与 CSS     | 支持                                      | 支持                       | 支持                             |
+| 本地 DNR 动态规则  | 禁用                                      | 禁用                       | 禁用                             |
+| 用户脚本           | 仅 User Scripts API，需用户在扩展详情启用 | 禁用；AMO 版不执行导入代码 | 禁用；Apple 商店包不执行导入代码 |
 
-用户脚本固定运行在浏览器的 `USER_SCRIPT` 隔离世界、`document_idle`、顶层 frame，不获得 Hourleaf 的 storage、permissions、tabs 或其他扩展 API。核心不使用 `eval`、`Function`、script 标签或 `scripting.executeScript({code})` 执行导入文本。
+Chromium 用户脚本固定运行在浏览器的 `USER_SCRIPT` 隔离世界、`document_idle`、顶层 frame，不获得 Hourleaf 的 storage、permissions、tabs 或其他扩展 API。核心不使用 `eval`、`Function`、script 标签或 `scripting.executeScript({code})` 执行导入文本。
+
+## 显示名称与说明
+
+界面称“屏蔽插件”。仓库插件直接使用网站名称，不添加“专注模块”等后缀；`description` 简要描述隐藏哪些内容，不重复“非官方本地模块”前缀。非官方关系和导入风险由导入说明统一保留。五个仓库插件在界面通过稳定 ID 投影中英文名称与说明，旧安装不需要重新导入；未知第三方插件仍显示作者声明的名称与说明。网站时间配置独立使用域名，不采用插件名称。
 
 ## JSON 清单
 
@@ -133,4 +137,8 @@ Hourleaf 的商店包只包含通用专注核心和本地模块导入器。扩�
 
 普通时间配置、标签页组白名单和独立计划只决定访问与计时资格，不覆盖模块的显式域名黑名单或内容规则。计划固定独立计时，白名单不延长计划截止；两者均不扩展清单来源权限。网站无启用时间段可以无限使用，但屏蔽分组及每日定时仍保留。
 
-配置备份包含普通/计划偏好及分组时段引用，恢复只应用本机已安装且版本一致的模块；不包含 CSS、脚本或执行状态。网站时段删除后引用失效，不回退为不限时间。Safari 构建拒绝用户脚本文件，不把含脚本模块的原样导入描述为跨平台能力。
+配置备份包含普通/计划偏好及分组时段引用，恢复只应用本机已安装且版本一致的模块；不包含 CSS、脚本或执行状态。网站时段删除后引用失效，不回退为不限时间。Firefox 与 Safari 商店构建在导入预览和后台服务中拒绝含用户脚本的模块，不执行升级前已存储的用户脚本；支持纯 JSON/CSS 模块。含脚本模块应由作者另外提供不含脚本的兼容版本，不应让用户任意删改已校验的文件集合。平台策略统一位于 `src/modules/local/capabilities.ts`，UI、授权入口及后台共用。
+
+AMO 的 [User Scripts 政策](https://extensionworkshop.com/documentation/publish/add-on-policies/#user-scripts) 将该 API 限于用户脚本管理器；Hourleaf 的单一用途是专注与网站时间管理，因此 Firefox 商店构建不申请该权限。Chrome 通过 [User Scripts API](https://developer.chrome.com/docs/extensions/reference/api/userScripts) 处理用户明确导入的脚本；审核说明必须披露完整能力。Apple 包保持自包含，参见 [App Review Guidelines 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements)。
+
+升级后，若旧 User Scripts API 权限仍可用，后台会尽力注销 Hourleaf 自有注册，不重新申请该权限。注销只影响后续注入，不能撤销已在页面执行的脚本效果；升级后应刷新原先打开的页面。

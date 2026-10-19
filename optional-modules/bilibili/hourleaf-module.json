@@ -5,7 +5,7 @@
   "name": "Bilibili",
   "author": "Hourleaf contributors",
   "version": "1.2.5",
-  "description": "非官方本地模块：提供首页推荐、动态、相关视频与评论的可选过滤，并支持按斜杠键聚焦搜索。",
+  "description": "隐藏 Bilibili 首页推荐、动态、相关视频和评论，支持按 / 聚焦搜索。",
   "matches": [
     "https://www.bilibili.com/*",
     "https://live.bilibili.com/*",

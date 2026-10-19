@@ -28,11 +28,14 @@ export interface ExtensionTab {
   windowId?: number;
   groupId?: number;
   url?: string;
+  pendingUrl?: string;
+  incognito?: boolean;
 }
 
 export interface ExtensionTabGroup {
   id: number;
   title?: string;
+  color?: string;
   windowId: number;
 }
 
@@ -95,7 +98,9 @@ export interface ExtensionApi {
         tab: ExtensionTab
       ) => void
     >;
-    onRemoved?: ExtensionEvent<(tabId: number) => void>;
+    onRemoved?: ExtensionEvent<
+      (tabId: number, removeInfo?: { windowId: number; isWindowClosing: boolean }) => void
+    >;
   };
   tabGroups?: {
     query(
@@ -104,9 +109,12 @@ export interface ExtensionApi {
     ): unknown;
     onRemoved?: ExtensionEvent<(group: ExtensionTabGroup) => void>;
     onUpdated?: ExtensionEvent<(group: ExtensionTabGroup) => void>;
+    onCreated?: ExtensionEvent<(group: ExtensionTabGroup) => void>;
   };
   windows?: {
     WINDOW_ID_NONE?: number;
+    get?(windowId: number, callback?: (window: { id?: number }) => void): unknown;
+    onRemoved?: ExtensionEvent<(windowId: number) => void>;
     onFocusChanged?: ExtensionEvent<(windowId: number) => void>;
   };
   idle?: {
@@ -655,4 +663,19 @@ export async function tabGroupsQuery(): Promise<ExtensionTabGroup[] | null> {
   if (!groups?.query || !context.api.storage.session) return null;
   if (context.mode === "promise") return (await groups.query({})) as ExtensionTabGroup[];
   return callbackResult<ExtensionTabGroup[]>((resolve) => groups.query({}, resolve));
+}
+
+/** Distinguishes a closed window from a group removed in a still-open window. */
+export async function windowExists(windowId: number): Promise<boolean | null> {
+  const context = requireContext();
+  const windows = context.api.windows;
+  if (!windows?.get) return null;
+  try {
+    if (context.mode === "promise") return Boolean(await windows.get(windowId));
+    return Boolean(
+      await callbackResult<{ id?: number }>((resolve) => windows.get?.(windowId, resolve))
+    );
+  } catch {
+    return false;
+  }
 }

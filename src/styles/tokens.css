@@ -61,6 +61,7 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+:root:not([data-theme]),
 :root[data-theme="ocean"] {
   --color-brand: var(--palette-ocean);
   --color-brand-strong: #0055b8;
@@ -123,6 +124,7 @@
     --shadow-lg: 0 18px 48px rgb(0 0 0 / 32%);
   }
 
+  :root:not([data-theme]),
   :root[data-theme="ocean"] {
     --color-brand: #36b5ff;
     --color-brand-strong: #8bd5ff;

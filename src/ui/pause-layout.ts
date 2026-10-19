@@ -1,12 +1,12 @@
 import { t } from "../shared/i18n";
 import { element } from "../styles/dom";
 
-/** All regions are side-by-side on wide screens; compact screens switch regions. */
+/** Equal side columns keep actions in the center at every viewport size. */
 export function createPauseLayout() {
   const sections = [
     { id: "overview", label: t("pause.overview") },
-    { id: "statistics", label: t("pause.todayTotal") },
-    { id: "actions", label: t("pause.nextAction") }
+    { id: "actions", label: t("pause.nextAction") },
+    { id: "statistics", label: t("pause.todayTotal") }
   ];
   const panels = sections.map(({ id, label }) =>
     element("section", {
@@ -28,11 +28,16 @@ export function createPauseLayout() {
       panels.forEach((panel, position) => {
         panel.dataset.selected = String(position === index);
       });
+      panels[index]?.scrollIntoView({ block: "start" });
     };
     return button;
   });
   const actionSet = element("fieldset", { className: "end-action-set" });
-  panels[2]!.append(actionSet);
+  const messages = element("div", {
+    className: "pause-message-slot",
+    attrs: { "aria-label": t("settings.endView.message") }
+  });
+  panels[1]!.append(messages, actionSet);
   return {
     navigation: element("nav", {
       className: "pause-navigation",
@@ -40,13 +45,20 @@ export function createPauseLayout() {
       children: controls
     }),
     layout: element("div", {
-      className: "pause-layout",
-      children: [panels[0], panels[2], panels[1]]
+      className: "pause-layout-viewport",
+      children: [element("div", { className: "pause-layout", children: panels })]
     }),
     overview: panels[0]!,
-    statistics: panels[1]!,
-    actions: actionSet
+    statistics: panels[2]!,
+    actions: actionSet,
+    messages
   };
+}
+
+/** Center the action column when a narrow viewport needs horizontal scrolling. */
+export function centerPauseActions(root: ParentNode): void {
+  const viewport = root.querySelector<HTMLElement>(".pause-layout-viewport");
+  if (viewport) viewport.scrollLeft = (viewport.scrollWidth - viewport.clientWidth) / 2;
 }
 
 /** Preserve complete user notes without letting arbitrarily long text stretch the page. */

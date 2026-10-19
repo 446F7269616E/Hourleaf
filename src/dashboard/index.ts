@@ -3,7 +3,6 @@ import { getPrimaryDomain } from "../shared/domain";
 import { configureLocale, getResolvedLocale, localizeDocumentTitle, t } from "../shared/i18n";
 import {
   SECTION_IDS,
-  type DailyUsage,
   type FocusSettings,
   type ManagedSite,
   type PlanState,
@@ -18,6 +17,11 @@ import { assertAppRoot, describeError, element, formatDuration, icon } from "../
 import { createPageNavigation } from "../ui/page-navigation";
 import { enableRadioButtonGroup } from "../ui/radio-button-group";
 import { applyTheme } from "../ui/theme";
+import { buildScreenTimeSeries } from "../shared/screen-time";
+import { summarizeUsageInsights, totalUsageForDay } from "../shared/usage-insights";
+import { createHourlyChart } from "../ui/hourly-usage-chart";
+import { createHourlyDistribution, createPlanOverview } from "./usage-panels";
+import { createTotalTimeCard } from "./total-time-card";
 
 const SECTION_COLORS: Readonly<Record<SectionId, string>> = {
   home: "#e94983",
@@ -45,10 +49,15 @@ const app = assertAppRoot();
 let currentPeriod: UsagePeriod = "week";
 let loadSequence = 0;
 let currentUsage: UsageSummary | null = null;
+let dashboardState: {
+  settings: FocusSettings;
+  planState: PlanState | null;
+  moduleStore: SiteModuleStore | null;
+} | null = null;
+let refreshInFlight = false;
 
 interface SiteUsageStat {
   id: string;
-  label: string;
   hostname: string;
   origin: string;
   seconds: number;
@@ -67,6 +76,7 @@ window.setInterval(() => void refreshLiveDashboard(), 5_000);
 
 async function loadDashboard(period: UsagePeriod, focusPeriodControl = false): Promise<void> {
   currentPeriod = period;
+  currentUsage = null;
   const sequence = ++loadSequence;
   renderLoading(period);
   try {
@@ -95,19 +105,67 @@ async function loadDashboard(period: UsagePeriod, focusPeriodControl = false): P
 }
 
 async function refreshLiveDashboard(): Promise<void> {
-  if (!currentUsage || document.visibilityState !== "visible") return;
+  if (!currentUsage || !dashboardState || refreshInFlight || document.visibilityState !== "visible")
+    return;
+  const sequence = loadSequence;
+  const period = currentPeriod;
+  refreshInFlight = true;
   try {
-    const [usage, tracking] = await Promise.all([
-      sendRequest({ type: "GET_USAGE", period: currentPeriod }),
-      sendRequest({ type: "GET_TRACKING_STATUS" })
+    const [usage, tracking, planState] = await Promise.all([
+      sendRequest({ type: "GET_USAGE", period }),
+      sendRequest({ type: "GET_TRACKING_STATUS" }),
+      sendRequest({ type: "GET_PLAN_STATE" }).catch(() => dashboardState?.planState ?? null)
     ]);
+    if (sequence !== loadSequence || !dashboardState) return;
     currentUsage = usage;
-    const total = document.querySelector<HTMLElement>("[data-testid='dashboard-total-time']");
-    if (total) total.textContent = formatDuration(usage.totalSeconds, true);
-    const live = document.querySelector<HTMLElement>("[data-testid='dashboard-live-status']");
-    if (live) live.textContent = liveTrackingLabel(tracking);
+    dashboardState.planState = planState;
+    const { settings, moduleStore } = dashboardState;
+    const groups = buildDomainUsageGroups(usage, settings);
+    const regions: Array<[string, () => HTMLElement]> = [
+      ["range", () => createCurrentRange(usage)],
+      ["overview", () => createOverview(usage, tracking, groups)],
+      ["trend", () => createTrendCard(usage, settings)],
+      ["websites", () => createWebsiteBreakdown(groups, usage.totalSeconds)],
+      ["hourly", () => createHourlyDistribution(settings, usage)],
+      ["plan", () => createPlanOverview(planState)]
+    ];
+    for (const installation of Object.values(moduleStore?.installations ?? {})) {
+      if (installation.enabled && installation.manifest.capabilities.includes("usage-tracking"))
+        regions.push([
+          `module-${installation.manifest.id}`,
+          () => createModuleBreakdown(installation, usage, settings)
+        ]);
+    }
+    for (const [name, create] of regions) {
+      const previous = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-dashboard-region]")
+      ).find((region) => region.dataset.dashboardRegion === name);
+      // Preserve an active keyboard target, chart selection and expanded source lists.
+      if (!previous || previous.contains(document.activeElement)) continue;
+      const expanded = new Set(
+        Array.from(previous.querySelectorAll<HTMLDetailsElement>("details[open]")).map(
+          (detail) => detail.dataset.domain
+        )
+      );
+      const scrollTop = previous.querySelector(".site-groups")?.scrollTop ?? 0;
+      const selectedHour = previous.querySelector<HTMLElement>(
+        ".hour-chart__hour[aria-pressed='true']"
+      )?.dataset.hour;
+      const next = create();
+      if (selectedHour !== undefined)
+        next
+          .querySelector<HTMLButtonElement>(`.hour-chart__hour[data-hour='${selectedHour}']`)
+          ?.click();
+      for (const detail of next.querySelectorAll<HTMLDetailsElement>("details"))
+        detail.open = expanded.has(detail.dataset.domain);
+      previous.replaceWith(next);
+      const list = next.querySelector(".site-groups");
+      if (list) list.scrollTop = scrollTop;
+    }
   } catch {
     // Preserve the last confirmed summary while a background page wakes up.
+  } finally {
+    refreshInFlight = false;
   }
 }
 
@@ -161,6 +219,7 @@ function renderDashboard(
   planState: PlanState | null,
   moduleStore: SiteModuleStore | null
 ): void {
+  dashboardState = { settings, planState, moduleStore };
   const siteGroups = buildDomainUsageGroups(usage, settings);
   const enabledModules = Object.values(moduleStore?.installations ?? {}).filter(
     (installation) =>
@@ -170,41 +229,26 @@ function renderDashboard(
     children: [
       element("section", {
         className: "dashboard-general",
-        attrs: { "aria-labelledby": "general-statistics-title" },
+        attrs: { "aria-label": t("dashboard.general") },
         children: [
-          element("header", {
-            className: "dashboard-section-heading",
-            children: [
-              element("div", {
-                children: [
-                  element("h2", {
-                    text: t("dashboard.general"),
-                    attrs: { id: "general-statistics-title" }
-                  }),
-                  element("p", { text: t("dashboard.generalDescription") })
-                ]
-              })
-            ]
-          }),
-          createOverview(usage, tracking, siteGroups, planState),
-          element("p", {
-            className: "dashboard-extra-time",
-            text: t("pause.extraTime", {
-              time: formatDuration(
-                Object.entries(usage.byPeriod)
-                  .filter(([key]) => key.startsWith("extra:") && !/:g\d+$/.test(key))
-                  .reduce((sum, [, seconds]) => sum + seconds, 0)
-              )
-            })
-          }),
+          createOverview(usage, tracking, siteGroups),
           element("div", {
             className: "dashboard-grid",
-            children: [createTrendCard(usage), createWebsiteBreakdown(siteGroups)]
+            children: [
+              createTrendCard(usage, settings),
+              createWebsiteBreakdown(siteGroups, usage.totalSeconds)
+            ]
+          }),
+          element("div", {
+            className: `dashboard-grid dashboard-grid--secondary${usage.period === "day" ? " dashboard-grid--single" : ""}`,
+            children: [
+              ...(usage.period !== "day" ? [createHourlyDistribution(settings, usage)] : []),
+              createPlanOverview(planState)
+            ]
           })
         ]
       }),
-      ...enabledModules.map((installation) => createModuleBreakdown(installation, usage, settings)),
-      createFooter()
+      ...enabledModules.map((installation) => createModuleBreakdown(installation, usage, settings))
     ]
   });
   app.replaceChildren(createShell(usage.period, content, usage));
@@ -264,71 +308,42 @@ function createPeriodControl(selected: UsagePeriod): HTMLElement {
 function createCurrentRange(usage: UsageSummary): HTMLElement {
   return element("section", {
     className: "dashboard-current-range",
+    dataset: { dashboardRegion: "range" },
     attrs: {
       "aria-label": t("dashboard.currentRange"),
       "data-testid": "dashboard-current-range"
     },
-    children: [
-      element("span", { text: t("dashboard.currentRange") }),
-      element("strong", { text: formatDateRange(usage) })
-    ]
+    children: [element("strong", { text: formatDateRange(usage) })]
   });
 }
 
 function createOverview(
   usage: UsageSummary,
   tracking: TrackingStatus,
-  siteGroups: readonly DomainUsageGroup[],
-  planState: PlanState | null
+  siteGroups: readonly DomainUsageGroup[]
 ): HTMLElement {
-  const topSite = siteGroups.find((group) => group.seconds > 0);
-  const planStats = summarizePlan(planState);
+  const topSite = siteGroups.find((group) => group.seconds > 0 && group.sites.length > 0);
+  const insights = summarizeUsageInsights(usage);
   return element("section", {
     className: "overview-grid",
+    dataset: { dashboardRegion: "overview" },
     attrs: { "aria-label": t("dashboard.periodOverview", { period: periodLabel(usage.period) }) },
     children: [
-      createMetricCard(
-        t("dashboard.total", { period: periodLabel(usage.period) }),
-        formatDuration(usage.totalSeconds, true),
-        element("span", {
-          className: "metric-card__note-row",
-          children: [
-            element("span", {
-              className: "metric-card__live",
-              text: liveTrackingLabel(tracking),
-              attrs: { "data-testid": "dashboard-live-status" }
-            })
-          ]
-        }),
-        true,
-        "dashboard-total-time"
-      ),
+      createTotalTimeCard({
+        label: t("dashboard.total", { period: periodLabel(usage.period) }),
+        seconds: usage.totalSeconds,
+        status: liveTrackingLabel(tracking),
+        tracking: tracking.isTracking
+      }),
+      createMetricCard(t("usage.dailyAverage"), formatDuration(insights.averageSeconds, true)),
       createMetricCard(
         t("dashboard.topWebsite"),
         topSite?.domain ?? t("dashboard.noRecords"),
-        topSite ? formatDuration(topSite.seconds, true) : t("dashboard.noUsage")
+        topSite
+          ? `${formatDuration(topSite.seconds, true)} · ${formatShare(topSite.seconds, usage.totalSeconds)}`
+          : t("dashboard.noUsage")
       ),
-      createMetricCard(
-        t("dashboard.pendingTime"),
-        planStats ? formatDuration(planStats.pendingSeconds, true) : t("dashboard.noData"),
-        planStats
-          ? planStats.pending > 0
-            ? t("dashboard.pendingEstimate", {
-                count: planStats.pending,
-                minutes: Math.round(planStats.pendingSeconds / 60)
-              })
-            : t("dashboard.noPending")
-          : t("dashboard.planUnavailable")
-      ),
-      createMetricCard(
-        t("dashboard.completed"),
-        planStats ? `${planStats.completed} / ${planStats.total}` : t("dashboard.noData"),
-        planStats
-          ? planStats.total > 0
-            ? t("dashboard.completion", { percent: planStats.completionPercentage })
-            : t("dashboard.planEmpty")
-          : t("dashboard.planUnavailable")
-      )
+      createMetricCard(t("usage.activeDays"), `${insights.activeDays} / ${insights.elapsedDays}`)
     ]
   });
 }
@@ -337,45 +352,48 @@ function liveTrackingLabel(tracking: TrackingStatus): string {
   if (tracking.isTracking) {
     return `${t("popup.tracking")} · ${tracking.section ? t(`section.${tracking.section}`) : t("dashboard.managedWebsite")}`;
   }
-  if (tracking.section === null) return t("popup.notTracking");
   if (tracking.idleState === "idle" || tracking.idleState === "locked") return t("dashboard.away");
   return t("popup.notTracking");
 }
 
-function createMetricCard(
-  label: string,
-  value: string,
-  note: string | Node,
-  primary = false,
-  testId?: string
-): HTMLElement {
+function createMetricCard(label: string, value: string, note?: string | Node): HTMLElement {
   return element("article", {
-    className: `metric-card card${primary ? " metric-card--primary" : ""}`,
+    className: "metric-card card",
     children: [
       element("p", { className: "metric-card__label", text: label }),
       element("p", {
         className: "metric-card__value",
-        text: value,
-        attrs: { "data-testid": testId }
+        text: value
       }),
-      element("p", {
-        className: "metric-card__note",
-        ...(typeof note === "string" ? { text: note } : { children: [note] })
-      })
+      ...(note
+        ? [
+            element("p", {
+              className: "metric-card__note",
+              ...(typeof note === "string" ? { text: note } : { children: [note] })
+            })
+          ]
+        : [])
     ]
   });
 }
 
-function createTrendCard(usage: UsageSummary): HTMLElement {
+function createTrendCard(usage: UsageSummary, settings: FocusSettings): HTMLElement {
+  const insights = summarizeUsageInsights(usage);
+  const { all } = buildScreenTimeSeries(settings, usage);
+  all.label = t("pause.allSites");
   const buckets = buildTrendBuckets(usage);
-  const maximum = Math.max(1, ...buckets.map((bucket) => bucket.seconds));
-  const columns = buckets.map((bucket) => {
+  const maximum = Math.max(
+    60,
+    Math.ceil(Math.max(0, ...buckets.map((bucket) => bucket.seconds)) / 60) * 60
+  );
+  const columns = buckets.map((bucket, index) => {
     const total = bucket.seconds;
-    const height = total > 0 ? Math.max(2, (total / maximum) * 100) : 1.2;
+    const height = total > 0 ? Math.max(2, (total / maximum) * 100) : 0;
     const column = element("div", {
       className: "chart-column",
+      dataset: { empty: String(total === 0) },
       attrs: {
-        tabindex: "0",
+        tabindex: index === 0 ? "0" : "-1",
         role: "img",
         "aria-label": t("dashboard.usageAria", {
           label: bucket.ariaLabel,
@@ -403,38 +421,98 @@ function createTrendCard(usage: UsageSummary): HTMLElement {
         })
       ]
     });
+    column.onkeydown = (event) => {
+      const columns = Array.from(
+        column.parentElement?.querySelectorAll<HTMLElement>(".chart-column") ?? []
+      );
+      const next =
+        event.key === "ArrowRight"
+          ? (index + 1) % columns.length
+          : event.key === "ArrowLeft"
+            ? (index + columns.length - 1) % columns.length
+            : event.key === "Home"
+              ? 0
+              : event.key === "End"
+                ? columns.length - 1
+                : undefined;
+      if (next === undefined) return;
+      event.preventDefault();
+      for (const [position, candidate] of columns.entries())
+        candidate.tabIndex = position === next ? 0 : -1;
+      columns[next]?.focus();
+    };
     return column;
   });
 
   return element("section", {
     className: "chart-card card",
-    attrs: { "aria-labelledby": "trend-title" },
+    dataset: { dashboardRegion: "trend" },
+    attrs: { "aria-labelledby": "trend-title", "data-testid": "dashboard-trend-chart" },
     children: [
       element("header", {
         className: "chart-card__header",
         children: [
           element("div", {
+            children: [element("h2", { text: t("dashboard.trend"), attrs: { id: "trend-title" } })]
+          })
+        ]
+      }),
+      ...(usage.period === "day"
+        ? [createHourlyChart(all)]
+        : [
+            element("div", {
+              className: "trend-plot",
+              children: [
+                element("div", {
+                  className: "trend-axis",
+                  attrs: { "aria-hidden": "true" },
+                  children: [maximum, maximum / 2, 0].map((seconds) =>
+                    element("span", { text: formatDuration(seconds) })
+                  )
+                }),
+                element("div", {
+                  className: "bar-chart",
+                  attrs: {
+                    "aria-label": `${periodLabel(usage.period)} ${t("dashboard.trend")}`
+                  },
+                  children: columns
+                })
+              ]
+            })
+          ]),
+      element("div", {
+        className: "trend-summary",
+        children: [
+          element("p", {
             children: [
-              element("h2", { text: t("dashboard.trend"), attrs: { id: "trend-title" } }),
-              element("p", { text: t("dashboard.trendDescription") })
+              element("span", { text: t("usage.peakDay") }),
+              element("strong", {
+                text: insights.peakDay
+                  ? `${formatShortDate(insights.peakDay.date)} · ${formatDuration(insights.peakDay.seconds, true)}`
+                  : t("dashboard.noRecords")
+              })
+            ]
+          }),
+          element("p", {
+            children: [
+              element("span", { text: t("usage.flowExtra") }),
+              element("strong", { text: formatDuration(insights.extraSeconds, true) })
             ]
           })
         ]
       }),
-      element("div", {
-        className: "bar-chart",
-        attrs: {
-          "aria-label": `${periodLabel(usage.period)} ${t("dashboard.trend")}`,
-          "data-testid": "dashboard-trend-chart"
-        },
-        children: columns
-      })
+      ...(usage.totalSeconds === 0 && usage.period !== "day"
+        ? [element("p", { className: "dashboard-chart-note", text: t("dashboard.noUsage") })]
+        : [])
     ]
   });
 }
 
-function createWebsiteBreakdown(groups: readonly DomainUsageGroup[]): HTMLElement {
-  const groupRows = groups.map((group) => {
+function createWebsiteBreakdown(
+  groups: readonly DomainUsageGroup[],
+  totalSeconds: number
+): HTMLElement {
+  const groupRows = groups.map((group, index) => {
     const siteRows = group.sites.map((site) =>
       element("div", {
         className: "site-group__site",
@@ -443,7 +521,7 @@ function createWebsiteBreakdown(groups: readonly DomainUsageGroup[]): HTMLElemen
           element("div", {
             className: "site-group__identity",
             children: [
-              element("strong", { text: site.label || site.hostname }),
+              element("strong", { text: site.hostname, attrs: { title: site.origin } }),
               element("span", { text: site.origin })
             ]
           }),
@@ -454,29 +532,60 @@ function createWebsiteBreakdown(groups: readonly DomainUsageGroup[]): HTMLElemen
         ]
       })
     );
-    return element("details", {
+    return element(group.sites.length ? "details" : "article", {
       className: "site-group",
       dataset: { domain: group.domain },
       children: [
-        element("summary", {
+        element(group.sites.length ? "summary" : "div", {
           className: "site-group__summary",
           attrs: {
-            "aria-label": t("dashboard.domainDetailsAria", {
-              domain: group.domain,
-              duration: formatDuration(group.seconds, true)
-            })
+            "aria-label": group.sites.length
+              ? t("dashboard.domainDetailsAria", {
+                  domain: group.domain,
+                  duration: formatDuration(group.seconds, true)
+                })
+              : `${group.domain} · ${formatDuration(group.seconds, true)}`
           },
           children: [
             element("span", {
+              className: "site-group__rank",
+              text: String(index + 1),
+              attrs: { "aria-hidden": "true" }
+            }),
+            element("span", {
               className: "site-group__domain",
               children: [
-                element("strong", { text: group.domain }),
-                element("span", { text: t("dashboard.sources", { count: group.sites.length }) })
+                element("strong", { text: group.domain, attrs: { title: group.domain } }),
+                element("span", {
+                  text: group.sites.length
+                    ? t("dashboard.sources", { count: group.sites.length })
+                    : t("usage.removedRecords")
+                })
               ]
             }),
             element("span", {
               className: "site-group__summary-value",
-              children: [formatDuration(group.seconds, true), icon("chevron")]
+              children: [
+                element("span", {
+                  className: "site-group__numbers",
+                  children: [
+                    element("strong", { text: formatDuration(group.seconds, true) }),
+                    element("span", { text: formatShare(group.seconds, totalSeconds) })
+                  ]
+                }),
+                ...(group.sites.length ? [icon("chevron")] : [])
+              ]
+            }),
+            element("span", {
+              className: "site-group__track",
+              attrs: { "aria-hidden": "true" },
+              children: [
+                element("span", {
+                  attrs: {
+                    style: `width: ${totalSeconds ? Math.min(100, (group.seconds / totalSeconds) * 100) : 0}%`
+                  }
+                })
+              ]
             })
           ]
         }),
@@ -487,6 +596,7 @@ function createWebsiteBreakdown(groups: readonly DomainUsageGroup[]): HTMLElemen
 
   return element("section", {
     className: "site-breakdown card",
+    dataset: { dashboardRegion: "websites" },
     attrs: {
       "aria-labelledby": "website-breakdown-title",
       "data-testid": "dashboard-section-list"
@@ -500,13 +610,14 @@ function createWebsiteBreakdown(groups: readonly DomainUsageGroup[]): HTMLElemen
               element("h2", {
                 text: t("dashboard.websiteTime"),
                 attrs: { id: "website-breakdown-title" }
-              }),
-              element("p", { text: t("dashboard.websiteTimeDescription") })
+              })
             ]
           }),
           element("span", {
             className: "badge",
-            text: t("dashboard.domains", { count: groups.length })
+            text: t("usage.activeDomains", {
+              count: groups.filter((group) => group.seconds > 0 && group.sites.length > 0).length
+            })
           })
         ]
       }),
@@ -554,6 +665,7 @@ function createModuleBreakdown(
 
   return element("section", {
     className: "module-statistics card",
+    dataset: { dashboardRegion: `module-${manifest.id}` },
     attrs: { "aria-labelledby": `module-statistics-${safeDomId(manifest.id)}` },
     children: [
       element("header", {
@@ -561,15 +673,10 @@ function createModuleBreakdown(
         children: [
           element("div", {
             children: [
-              element("p", {
-                className: "module-statistics__eyebrow",
-                text: t("dashboard.moduleEnabled")
-              }),
               element("h2", {
                 text: t("dashboard.moduleStats", { module: moduleName }),
                 attrs: { id: `module-statistics-${safeDomId(manifest.id)}` }
-              }),
-              element("p", { text: t("dashboard.moduleDescription") })
+              })
             ]
           }),
           element("div", {
@@ -636,13 +743,6 @@ function createUsageBar(label: string, value: number, maximum: number, color: st
   });
 }
 
-function createFooter(): HTMLElement {
-  return element("footer", {
-    className: "dashboard-footer",
-    children: [icon("shield"), element("p", { text: t("dashboard.footer") })]
-  });
-}
-
 function buildDomainUsageGroups(usage: UsageSummary, settings: FocusSettings): DomainUsageGroup[] {
   const groups = new Map<string, DomainUsageGroup>();
   for (const site of Object.values(settings.sites)) {
@@ -657,7 +757,15 @@ function buildDomainUsageGroups(usage: UsageSummary, settings: FocusSettings): D
     }
   }
 
-  return [...groups.values()]
+  const assigned = new Set(Object.values(settings.sites).flatMap((site) => site.targetIds));
+  const otherSeconds = Object.entries(usage.byTarget)
+    .filter(([id]) => !assigned.has(id))
+    .reduce((sum, [, seconds]) => sum + seconds, 0);
+  const result = [...groups.values()];
+  if (otherSeconds > 0)
+    result.push({ domain: t("pause.otherSites"), seconds: otherSeconds, sites: [] });
+
+  return result
     .map((group) => ({
       ...group,
       sites: group.sites.sort(
@@ -674,39 +782,9 @@ function createSiteUsageStat(site: ManagedSite, usage: UsageSummary): SiteUsageS
   );
   return {
     id: site.id,
-    label: site.label,
     hostname: site.hostname,
     origin: site.origin,
     seconds
-  };
-}
-
-function summarizePlan(planState: PlanState | null): {
-  pending: number;
-  completed: number;
-  total: number;
-  pendingSeconds: number;
-  completionPercentage: number;
-} | null {
-  if (!planState) return null;
-  const completed = planState.queue.items.filter((item) => item.status === "completed").length;
-  const total = planState.queue.items.length;
-  const pending = total - completed;
-  const pendingItems = planState.queue.items.filter((item) => item.status === "pending");
-  const pendingMinutes = pendingItems.reduce(
-    (total, item) =>
-      total +
-      ("scheduledDurationMinutes" in item
-        ? item.scheduledDurationMinutes
-        : planState.settings.watchDurationMinutes),
-    0
-  );
-  return {
-    pending,
-    completed,
-    total,
-    pendingSeconds: pendingMinutes * 60,
-    completionPercentage: total > 0 ? Math.round((completed / total) * 100) : 0
   };
 }
 
@@ -714,11 +792,11 @@ function safeDomId(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "-");
 }
 
-function totalForDay(day: DailyUsage): number {
-  const targetTotal = Object.values(day.byTarget).reduce((total, seconds) => total + seconds, 0);
-  return targetTotal > 0
-    ? targetTotal
-    : SECTION_IDS.reduce((total, section) => total + day.bySection[section], 0);
+function formatShare(seconds: number, totalSeconds: number): string {
+  return new Intl.NumberFormat(getResolvedLocale(), {
+    style: "percent",
+    maximumFractionDigits: 1
+  }).format(totalSeconds ? seconds / totalSeconds : 0);
 }
 
 function parseDate(value: string): Date {
@@ -763,7 +841,7 @@ function buildTrendBuckets(usage: UsageSummary): TrendBucket[] {
     const byMonth = new Map<string, number>();
     for (const day of usage.byDay) {
       const month = day.date.slice(0, 7);
-      byMonth.set(month, (byMonth.get(month) ?? 0) + totalForDay(day));
+      byMonth.set(month, (byMonth.get(month) ?? 0) + totalUsageForDay(day));
     }
     const monthFormatter = new Intl.DateTimeFormat(getResolvedLocale(), { month: "short" });
     const fullMonthFormatter = new Intl.DateTimeFormat(getResolvedLocale(), {
@@ -797,7 +875,7 @@ function buildTrendBuckets(usage: UsageSummary): TrendBucket[] {
       label,
       ariaLabel: fullDate,
       tooltipLabel: formatShortDate(day.date),
-      seconds: totalForDay(day)
+      seconds: totalUsageForDay(day)
     };
   });
 }

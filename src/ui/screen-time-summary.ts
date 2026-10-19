@@ -2,6 +2,7 @@ import { getResolvedLocale, t } from "../shared/i18n";
 import { buildScreenTimeSeries, type ScreenTimeSeries } from "../shared/screen-time";
 import type { FocusSettings, UsageSummary } from "../shared/types";
 import { element, formatDuration } from "../styles/dom";
+import { createHourlyChart, hourlyAxisMaximum } from "./hourly-usage-chart";
 
 /** Screen-time overview shared by top-level pause pages and the in-site flow frame. */
 export function createScreenTimeSummary(settings: FocusSettings, usage: UsageSummary): HTMLElement {
@@ -10,7 +11,7 @@ export function createScreenTimeSummary(settings: FocusSettings, usage: UsageSum
   for (const site of sites) if (!site.label) site.label = t("pause.otherSites");
   const chart = element("div", { className: "screen-time__chart" });
   const buttons = new Map<string, HTMLButtonElement>();
-  const axisMax = Math.max(900, Math.ceil(Math.max(...all.hourlySeconds) / 900) * 900);
+  const axisMax = hourlyAxisMaximum(all.hourlySeconds);
   const date = new Date(`${usage.startDate}T12:00:00`);
   const total = element("header", {
     className: "screen-time__header",
@@ -55,7 +56,18 @@ export function createScreenTimeSummary(settings: FocusSettings, usage: UsageSum
             text: site.label,
             attrs: { title: site.label }
           }),
-          element("strong", { text: duration(site.totalSeconds) }),
+          element("span", {
+            className: "screen-time__site-value",
+            children: [
+              element("strong", { text: duration(site.totalSeconds) }),
+              element("span", {
+                text: new Intl.NumberFormat(getResolvedLocale(), {
+                  style: "percent",
+                  maximumFractionDigits: 1
+                }).format(all.totalSeconds ? site.totalSeconds / all.totalSeconds : 0)
+              })
+            ]
+          }),
           element("span", {
             className: "screen-time__site-track",
             attrs: { "aria-hidden": "true" },
@@ -133,124 +145,6 @@ export function createScreenTimeSummary(settings: FocusSettings, usage: UsageSum
       button.setAttribute("aria-pressed", String(id === series.id));
     chart.replaceChildren(createHourlyChart(series, axisMax));
   }
-}
-
-function createHourlyChart(series: ScreenTimeSeries, axisMax: number): HTMLElement {
-  const heading = element("div", {
-    className: "screen-time__chart-heading",
-    attrs: { "aria-live": "polite", "aria-atomic": "true" },
-    children: [
-      element("span", { text: series.label }),
-      element("span", { text: duration(series.totalSeconds) })
-    ]
-  });
-  const selection = element("p", {
-    className: "screen-time__selection",
-    attrs: { role: "status", "aria-live": "polite" }
-  });
-  const hourButtons: HTMLButtonElement[] = [];
-  const bars = element("div", {
-    className: "hour-chart__bars",
-    attrs: { role: "group", "aria-label": t("pause.hourlyUsage", { site: series.label }) },
-    children: series.hourlySeconds.map((seconds, hour) => {
-      const label = t("pause.hourUsage", {
-        start: `${String(hour).padStart(2, "0")}:00`,
-        end: `${String(hour + 1).padStart(2, "0")}:00`,
-        time: duration(seconds)
-      });
-      const button = element("button", {
-        className: "hour-chart__hour",
-        attrs: {
-          type: "button",
-          title: label,
-          "aria-label": label,
-          "aria-pressed": "false",
-          tabindex: hour === 0 ? 0 : -1
-        },
-        children: [
-          element("span", {
-            className: "hour-chart__fill",
-            attrs: {
-              "aria-hidden": "true",
-              style: `height: ${seconds > 0 ? Math.max(0.8, (seconds / axisMax) * 100) : 0}%`
-            }
-          })
-        ]
-      });
-      button.onclick = () => {
-        for (const candidate of hourButtons) {
-          candidate.setAttribute("aria-pressed", String(candidate === button));
-          candidate.tabIndex = candidate === button ? 0 : -1;
-        }
-        selection.textContent = label;
-      };
-      button.onkeydown = (event) => {
-        const index =
-          event.key === "ArrowRight"
-            ? (hour + 1) % 24
-            : event.key === "ArrowLeft"
-              ? (hour + 23) % 24
-              : event.key === "Home"
-                ? 0
-                : event.key === "End"
-                  ? 23
-                  : undefined;
-        if (index === undefined) return;
-        event.preventDefault();
-        const next = hourButtons[index];
-        next?.focus();
-        next?.click();
-      };
-      hourButtons.push(button);
-      return button;
-    })
-  });
-  const plot = element("div", {
-    className: "hour-chart",
-    children: [
-      element("div", {
-        className: "hour-chart__plot",
-        children: [
-          element("div", {
-            className: "hour-chart__grid",
-            attrs: { "aria-hidden": "true" },
-            children: [element("span"), element("span"), element("span")]
-          }),
-          bars
-        ]
-      }),
-      element("div", {
-        className: "hour-chart__axis-y",
-        attrs: { "aria-hidden": "true" },
-        children: [axisMax, axisMax / 2, 0].map((seconds) =>
-          element("span", { text: t("pause.axisMinutes", { minutes: seconds / 60 }) })
-        )
-      }),
-      element("div", {
-        className: "hour-chart__axis-x",
-        attrs: { "aria-hidden": "true" },
-        children: ["00", "06", "12", "18", "24"].map((text) => element("span", { text }))
-      })
-    ]
-  });
-  return element("div", {
-    children: [
-      heading,
-      plot,
-      selection,
-      ...(series.unallocatedSeconds > 0
-        ? [
-            element("p", {
-              className: "screen-time__hint",
-              text: t("pause.missingHours", { time: duration(series.unallocatedSeconds) })
-            })
-          ]
-        : []),
-      ...(series.totalSeconds === 0
-        ? [element("p", { className: "screen-time__empty", text: t("pause.noUsage") })]
-        : [])
-    ]
-  });
 }
 
 function duration(seconds: number): string {
