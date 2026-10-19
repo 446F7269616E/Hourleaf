@@ -4,7 +4,7 @@
 
 ## 上传与素材
 
-上传 `dist/packages/hourleaf-0.6.0-chromium.zip`，ZIP 根目录直接包含 `manifest.json`。当前最低 Chrome 版本为 121。名称及描述由 `_locales` 提供。
+上传 `dist/packages/hourleaf-1.0.0-chromium.zip`，ZIP 根目录直接包含 `manifest.json`。当前最低 Chrome 版本为 121。名称及描述由 `_locales` 提供。
 
 使用 [LISTING.md](./LISTING.md) 的中英文介绍。准备 128 × 128 商店图标、至少 1 张 1280 × 800 或 640 × 400 实际截图，以及后台要求的小型推广图（440 × 280）；大型展示图（1400 × 560）按需提供。现有扩展图标位于 `public/icons/`，截图与推广图需按最终候选制作、人工核对。
 

@@ -16,33 +16,37 @@ export function buildScreenTimeSeries(
   all: ScreenTimeSeries;
   sites: ScreenTimeSeries[];
 } {
-  const day = usage.byDay.find((candidate) => candidate.date === usage.startDate);
-  const totals = day?.byTarget ?? usage.byTarget;
+  const totals = usage.byTarget;
+  const hoursByTarget = new Map<string, number[]>();
+  for (const day of usage.byDay) {
+    for (let hour = 0; hour < 24; hour++) {
+      for (const [targetId, seconds] of Object.entries(day.byHour?.[String(hour)] ?? {})) {
+        let hours = hoursByTarget.get(targetId);
+        if (!hours) {
+          hours = Array<number>(24).fill(0);
+          hoursByTarget.set(targetId, hours);
+        }
+        hours[hour] = (hours[hour] ?? 0) + seconds;
+      }
+    }
+  }
   const seriesFor = (id: string, label: string, targetIds: string[]): ScreenTimeSeries => {
     const hourlySeconds = Array.from({ length: 24 }, (_, hour) =>
-      targetIds.reduce((sum, targetId) => sum + (day?.byHour?.[String(hour)]?.[targetId] ?? 0), 0)
+      targetIds.reduce((sum, targetId) => sum + (hoursByTarget.get(targetId)?.[hour] ?? 0), 0)
     );
     return {
       id,
       label,
       totalSeconds: targetIds.reduce((sum, targetId) => sum + (totals[targetId] ?? 0), 0),
       hourlySeconds,
-      // Both buckets retain precision; round only the final millisecond delta.
-      unallocatedSeconds: targetIds.reduce(
-        (sum, targetId) =>
-          sum +
-          Math.max(
-            0,
-            Math.round(
-              ((totals[targetId] ?? 0) -
-                Array.from(
-                  { length: 24 },
-                  (_, hour) => day?.byHour?.[String(hour)]?.[targetId] ?? 0
-                ).reduce((a, b) => a + b, 0)) *
-                1000
-            ) / 1000
-          ),
-        0
+      // Keep older totals visible without fabricating an hourly distribution.
+      unallocatedSeconds: Math.max(
+        0,
+        Math.round(
+          (targetIds.reduce((sum, targetId) => sum + (totals[targetId] ?? 0), 0) -
+            hourlySeconds.reduce((sum, seconds) => sum + seconds, 0)) *
+            1000
+        ) / 1000
       )
     };
   };
@@ -53,7 +57,7 @@ export function buildScreenTimeSeries(
       assigned.add(id);
       return true;
     });
-    return seriesFor(site.id, site.label || site.hostname, ids);
+    return seriesFor(site.id, site.hostname, ids);
   });
   const other = Object.keys(totals).filter((id) => !assigned.has(id));
   if (other.length) sites.push(seriesFor("unconfigured", "", other));

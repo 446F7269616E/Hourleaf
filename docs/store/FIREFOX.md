@@ -4,8 +4,8 @@
 
 ## 提交文件
 
-- 扩展包：`dist/packages/hourleaf-0.6.0-firefox.zip`。
-- 同版本源码：`dist/packages/hourleaf-0.6.0-review-source.zip`；包根的 `BUILDING.md` 给出重建步骤，`BUILD_ENVIRONMENT.json` 记录打包环境。
+- 扩展包：`dist/packages/hourleaf-1.0.0-firefox.zip`。
+- 同版本源码：`dist/packages/hourleaf-1.0.0-review-source.zip`；包根的 `BUILDING.md` 给出重建步骤，`BUILD_ENVIRONMENT.json` 记录打包环境。
 - 简介和详情：[LISTING.md](./LISTING.md)。
 - 许可证选择 MIT，与根 `LICENSE` 保持一致。
 - 隐私链接：[PRIVACY.md](https://github.com/446F7269616E/Hourleaf/blob/main/PRIVACY.md)。

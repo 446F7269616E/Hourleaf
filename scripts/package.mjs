@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
@@ -77,14 +77,11 @@ async function assertStoreCandidate(target, sourceDir) {
   if (target === "chromium" && !permissions.has("userScripts")) {
     throw new Error("Chromium user-provided code must use the User Scripts API");
   }
-  if (target === "firefox" && !optionalPermissions.has("userScripts")) {
-    throw new Error("Firefox userScripts must remain optional");
-  }
   if (
-    target === "safari" &&
+    target !== "chromium" &&
     (permissions.has("userScripts") || optionalPermissions.has("userScripts"))
   ) {
-    throw new Error("Safari App Store candidates must not request userScripts");
+    throw new Error(`${target} store candidates must not request userScripts`);
   }
 }
 
@@ -93,7 +90,75 @@ function toStringSet(value) {
   return new Set(Array.isArray(value) ? value.filter((item) => typeof item === "string") : []);
 }
 
+await packageReviewSource();
 await writeFile(path.join(releaseDir, "SHA256SUMS"), `${checksums.join("\n")}\n`, "utf8");
+
+async function packageReviewSource() {
+  const staging = path.join(root, "dist", "review-source");
+  await rm(staging, { recursive: true, force: true });
+  await mkdir(staging, { recursive: true });
+  try {
+    // Explicit inputs exclude local credentials, generated projects and user data.
+    const directories = [
+      "src",
+      "static",
+      "public",
+      "_locales",
+      "manifests",
+      "scripts",
+      "docs",
+      "tests",
+      "optional-modules"
+    ];
+    const files = [
+      "package.json",
+      "package-lock.json",
+      "tsconfig.json",
+      "eslint.config.mjs",
+      "vitest.config.ts",
+      "README.md",
+      "LICENSE",
+      "PRIVACY.md",
+      "CONTRIBUTING.md",
+      "SECURITY.md",
+      "CHANGELOG.md"
+    ];
+    for (const entry of [...directories, ...files]) {
+      await cp(path.join(root, entry), path.join(staging, entry), { recursive: true });
+    }
+    const reviewerInstructions = await readFile(
+      path.join(root, "docs", "store", "SOURCE_BUILD.md"),
+      "utf8"
+    );
+    await writeFile(path.join(staging, "BUILDING.md"), reviewerInstructions, "utf8");
+    const npmVersion = spawnSync("npm", ["--version"], { encoding: "utf8" });
+    if (npmVersion.status !== 0) throw new Error("Unable to record npm version");
+    await writeFile(
+      path.join(staging, "BUILD_ENVIRONMENT.json"),
+      `${JSON.stringify(
+        {
+          node: process.version,
+          npm: npmVersion.stdout.trim(),
+          platform: process.platform,
+          arch: process.arch,
+          version,
+          build: "npm ci && npm run build"
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+    await archiveDirectory(
+      staging,
+      `${packageName}-${version}-review-source.zip`,
+      releaseDir,
+      checksums
+    );
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
+}
 
 const optionalModulesDir = path.join(root, "optional-modules");
 const optionalModuleEntries = await readdir(optionalModulesDir, { withFileTypes: true });
@@ -104,12 +169,7 @@ for (const entry of optionalModuleEntries) {
   }
   const sourceDir = path.join(optionalModulesDir, entry.name);
   const moduleVersion = await assertModuleCandidate(sourceDir);
-  await archiveDirectory(
-    sourceDir,
-    `hourleaf-module-${entry.name}-${moduleVersion}.zip`,
-    moduleReleaseDir,
-    moduleChecksums
-  );
+  await packageModuleArchive(sourceDir, entry.name, moduleVersion);
 }
 if (moduleChecksums.length === 0) throw new Error("No optional module release candidates found");
 await writeFile(
@@ -117,6 +177,40 @@ await writeFile(
   `${moduleChecksums.join("\n")}\n`,
   "utf8"
 );
+
+/** @param {string} sourceDir @param {string} slug @param {string} moduleVersion */
+async function packageModuleArchive(sourceDir, slug, moduleVersion) {
+  const staging = path.join(root, "dist", "module-release", slug);
+  await rm(staging, { recursive: true, force: true });
+  try {
+    await cp(sourceDir, staging, { recursive: true });
+    await cp(path.join(root, "LICENSE"), path.join(staging, "LICENSE"));
+    await writeFile(
+      path.join(staging, "README.md"),
+      [
+        `# Hourleaf module: ${slug}`,
+        "",
+        "Import only hourleaf-module.json and the CSS/user-script files it references.",
+        "LICENSE and this README are distribution notices, not import inputs.",
+        "Verify the source and permissions before installation. This package is a third-party adaptation and is not endorsed by the website operator.",
+        "Firefox and Safari store builds accept packages without user scripts only.",
+        "Documentation, downloads and disclaimer: https://github.com/446F7269616E/Hourleaf/tree/main/optional-modules",
+        "",
+        "This package is distributed under the MIT license included in LICENSE.",
+        ""
+      ].join("\n"),
+      "utf8"
+    );
+    await archiveDirectory(
+      staging,
+      `hourleaf-module-${slug}-${moduleVersion}.zip`,
+      moduleReleaseDir,
+      moduleChecksums
+    );
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
+}
 
 /** @param {string} sourceDir */
 async function assertModuleCandidate(sourceDir) {

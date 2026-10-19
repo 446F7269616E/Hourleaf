@@ -121,6 +121,7 @@ export type LocalModulePlatform = "chromium" | "firefox" | "safari" | "unknown";
 export type LocalModuleWarningCode =
   | "unsafe-user-script"
   | "safari-user-script-disabled"
+  | "platform-user-script-disabled"
   | "user-scripts-api-unavailable"
   | "user-scripts-permission-required"
   | "legacy-dnr-cleanup-failed";

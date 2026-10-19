@@ -32,16 +32,6 @@ export function createGroupProgress(runtime: PeriodRuntimeStatus): HTMLElement {
             attrs: { "aria-hidden": "true" }
           })
         )
-      }),
-      element("p", {
-        className: "group-progress__legend",
-        children: [
-          element("span", {
-            className: "group-progress__key group-progress__key--used",
-            text: t("pause.hollowUsed")
-          }),
-          element("span", { className: "group-progress__key", text: t("pause.solidRemaining") })
-        ]
       })
     ]
   });

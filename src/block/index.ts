@@ -15,11 +15,20 @@ import {
   type LocalModuleWarningCode
 } from "../modules/local/types";
 import { originsFromLocalModule } from "../modules/local/validation";
+import {
+  localModuleAllowsUserScripts,
+  resolveLocalModulePlatform
+} from "../modules/local/capabilities";
 import { configureLocale, localizeDocumentTitle, t } from "../shared/i18n";
 import { sendRequest } from "../shared/messages";
 import { assertAppRoot, describeError, element, icon, setButtonBusy, toast } from "../styles/dom";
+import { createConfigurationDirectory } from "../ui/configuration-directory";
+import {
+  createConfigurationWorkspace,
+  preserveConfigurationPosition
+} from "../ui/configuration-workspace";
 import { createPageNavigation } from "../ui/page-navigation";
-import { applyTheme } from "../ui/theme";
+import { applyAppearance } from "../ui/theme";
 import { createFilterTimePeriodPicker } from "../ui/filter-time-periods";
 import { configuredFilterTimePeriods, filterScheduleReferences } from "../modules/local/schedules";
 import type { FocusSettings } from "../shared/types";
@@ -34,6 +43,9 @@ const app = assertAppRoot();
 let localModules: LocalModuleSnapshot | null = null;
 let scheduleSettings: FocusSettings | null = null;
 let loadGeneration = 0;
+let selectedModuleId: string | null = null;
+let selectedCategory: "modules" | "download" = "modules";
+let releaseSidebarSizing: (() => void) | undefined;
 
 document.body.classList.add("block-page");
 configureLocale("system");
@@ -48,7 +60,7 @@ storageAddChangeListener((changes, area) => {
 
 async function loadPage(): Promise<void> {
   const generation = ++loadGeneration;
-  renderState(t("block.loading"), true);
+  if (!localModules) renderState(t("block.loading"), true);
   try {
     const [settings, snapshot] = await Promise.all([
       sendRequest({ type: "GET_SETTINGS" }),
@@ -56,7 +68,7 @@ async function loadPage(): Promise<void> {
     ]);
     if (generation !== loadGeneration) return;
     configureLocale(settings.locale);
-    applyTheme(settings.theme);
+    applyAppearance(settings);
     localizeDocumentTitle("block");
     localModules = snapshot;
     scheduleSettings = settings;
@@ -80,54 +92,96 @@ function renderPage(): void {
     )
   );
 
-  app.replaceChildren(
-    createShell(
-      element("div", {
-        className: "block-content",
-        children: [
-          element("header", {
-            className: "block-heading page-heading",
-            children: [
-              element("div", {
-                children: [element("h1", { className: "page-title", text: t("block.title") })]
-              }),
-              importButton
-            ]
-          }),
-          createDownloadPanel(),
-          createWarnings(),
-          element("section", {
-            className: "block-library",
-            attrs: { "aria-labelledby": "block-library-title" },
-            children: [
-              element("header", {
-                className: "section-heading",
-                children: [
-                  element("div", {
-                    children: [
-                      element("h2", {
-                        attrs: { id: "block-library-title" },
-                        text: t("block.installed")
-                      }),
-                      element("p", {
-                        text: t("block.installedDescription", { count: installations.length })
-                      })
-                    ]
-                  })
-                ]
-              }),
-              installations.length > 0
-                ? element("div", {
-                    className: "block-module-list",
-                    children: installations.map(createModuleCard)
-                  })
-                : createEmptyState()
-            ]
+  if (!installations.some(({ definition }) => definition.id === selectedModuleId)) {
+    selectedModuleId = installations[0]?.definition.id ?? null;
+  }
+  preserveConfigurationPosition(app, () => {
+    releaseSidebarSizing?.();
+    const selected = installations.find(({ definition }) => definition.id === selectedModuleId);
+    const workspace = createConfigurationWorkspace({
+      label: t("block.title"),
+      editorId: "block-editor",
+      directory: [
+        createConfigurationDirectory({
+          title: t("block.installed"),
+          label: t("block.installed"),
+          editorId: "block-editor",
+          active: selectedCategory === "modules",
+          emptyLabel: t("settings.noModules"),
+          onSelect: () => {
+            selectedCategory = "modules";
+            renderPage();
+          },
+          items: installations.map((installation) => {
+            const definition = localizeLocalModuleCopy(installation.definition);
+            return {
+              id: definition.id,
+              label: definition.name,
+              detail: installation.enabled ? t("common.enabled") : t("common.disabled"),
+              mark: moduleInitial(definition.name),
+              selected: selectedCategory === "modules" && selectedModuleId === definition.id,
+              onSelect: () => {
+                selectedCategory = "modules";
+                selectedModuleId = definition.id;
+                renderPage();
+              }
+            };
           })
-        ]
-      })
-    )
-  );
+        }),
+        createConfigurationDirectory({
+          title: t("block.download"),
+          label: t("block.download"),
+          editorId: "block-editor",
+          active: selectedCategory === "download",
+          emptyLabel: "",
+          onSelect: () => {
+            selectedCategory = "download";
+            renderPage();
+          },
+          items: [
+            {
+              id: "download",
+              label: t("block.download"),
+              detail: t("block.openReleases"),
+              mark: icon("shield"),
+              selected: selectedCategory === "download",
+              onSelect: () => {
+                selectedCategory = "download";
+                renderPage();
+              }
+            }
+          ]
+        })
+      ],
+      content: [
+        element("div", {
+          className: "block-library",
+          children:
+            selectedCategory === "download"
+              ? [createDownloadPanel()]
+              : [createWarnings(), selected ? createModuleCard(selected) : createEmptyState()]
+        })
+      ]
+    });
+    app.replaceChildren(
+      createShell(
+        element("div", {
+          className: "block-content",
+          children: [
+            element("header", {
+              className: "block-heading page-heading",
+              children: [
+                element("h1", { className: "page-title", text: t("block.title") }),
+                importButton
+              ]
+            }),
+            workspace.workspace
+          ]
+        })
+      )
+    );
+    releaseSidebarSizing = workspace.mount();
+  });
 }
 
 function createDownloadPanel(): HTMLElement {
@@ -460,7 +514,15 @@ function openImportDialog(): void {
             text: await file.text()
           }))
         );
-        candidate = parseLocalModuleFiles(files);
+        const parsed = parseLocalModuleFiles(files);
+        if (
+          parsed.userScript.trim() &&
+          !localModuleAllowsUserScripts(resolveLocalModulePlatform())
+        ) {
+          preview.textContent = t("settings.userScriptUnsupported");
+          return;
+        }
+        candidate = parsed;
         const value = createLocalModuleImportPreview(localizeLocalModuleCopy(candidate));
         preview.replaceChildren(
           element("strong", { text: `${value.name} ${value.version}` }),
@@ -500,9 +562,10 @@ async function importModule(
   try {
     if (
       definition.userScript.trim() &&
-      localModules?.runtime.userScripts === "disabled-by-platform"
+      !localModuleAllowsUserScripts(resolveLocalModulePlatform())
     ) {
-      throw new Error(t("settings.safariScriptUnsupported"));
+      toast(t("settings.userScriptUnsupported"), "error");
+      return;
     }
     const granted = await requestLocalModulePermissions(
       definition.matches,
@@ -520,6 +583,8 @@ async function importModule(
       moduleId: definition.id,
       enabled: true
     });
+    selectedModuleId = definition.id;
+    selectedCategory = "modules";
     dialog.close();
     toast(t("settings.moduleImported"));
     renderPage();
@@ -613,8 +678,8 @@ function describeLocalModuleWarning(warning: LocalModuleWarningCode): string {
   return t(
     warning === "unsafe-user-script"
       ? "settings.warning.unsafeUserScript"
-      : warning === "safari-user-script-disabled"
-        ? "settings.warning.safariUserScriptDisabled"
+      : warning === "safari-user-script-disabled" || warning === "platform-user-script-disabled"
+        ? "settings.warning.platformUserScriptDisabled"
         : warning === "user-scripts-api-unavailable"
           ? "settings.warning.userScriptsApiUnavailable"
           : warning === "user-scripts-permission-required"
@@ -624,6 +689,8 @@ function describeLocalModuleWarning(warning: LocalModuleWarningCode): string {
 }
 
 function renderState(label: string, busy: boolean): void {
+  releaseSidebarSizing?.();
+  releaseSidebarSizing = undefined;
   app.replaceChildren(
     createShell(
       element("section", {
@@ -636,6 +703,8 @@ function renderState(label: string, busy: boolean): void {
 }
 
 function renderError(message: string): void {
+  releaseSidebarSizing?.();
+  releaseSidebarSizing = undefined;
   const retry = element("button", {
     className: "btn btn--primary",
     text: t("common.retry"),

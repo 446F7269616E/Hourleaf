@@ -372,6 +372,7 @@ function upgradePauseDefaults(value: unknown): unknown {
   if (isRecord(settings.planMode)) settings.planMode.independentAccessTiming = true;
   settings.disableProtection ??= normalized.disableProtection;
   settings.tabGroupWhitelist ??= [];
+  settings.showSidebarIcons ??= false;
   if (isRecord(settings.endPage)) {
     settings.endPage.flowConsumesNextGroup ??= false;
     settings.endPage.repeatConfirmationInNewTabs ??= false;
@@ -381,14 +382,24 @@ function upgradePauseDefaults(value: unknown): unknown {
       settings.endPage.groupUnlock.waitMinutes = normalized.endPage.groupUnlock.waitMinutes;
     }
   }
-  if (isRecord(settings.sites))
-    for (const site of Object.values(settings.sites)) {
-      if (isRecord(site) && isRecord(site.visitConfirmation)) {
+  // Website display names are derived from their origin, including older backups.
+  if (isRecord(settings.sites)) {
+    for (const [id, site] of Object.entries(settings.sites)) {
+      if (!isRecord(site)) continue;
+      if (normalized.sites[id]) site.label = normalized.sites[id].hostname;
+      if (isRecord(site.visitConfirmation)) {
         site.visitConfirmation.enabled = true;
         site.visitConfirmation.promptEnabled ??=
           typeof site.visitConfirmation.prompt === "string" &&
           site.visitConfirmation.prompt.trim().length > 0;
       }
     }
+  }
+  if (isRecord(settings.targets)) {
+    for (const [id, target] of Object.entries(settings.targets)) {
+      if (isRecord(target) && normalized.targets[id] && !normalized.targets[id].moduleId)
+        target.label = normalized.targets[id].label;
+    }
+  }
   return settings;
 }

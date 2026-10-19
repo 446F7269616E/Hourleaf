@@ -1,15 +1,31 @@
-import { STORAGE_KEYS } from "../shared/storage-keys";
+import {
+  createPauseRecheck,
+  nextPauseAccessCheckAt,
+  pauseAccessChanged,
+  planAllowsPauseResume,
+  WEBSITE_ACCESS_CHANGED
+} from "../shared/pause-access";
 import { getExtensionApi, storageAddChangeListener, tabsGetCurrent } from "../shared/browser";
 import { configureLocale, t } from "../shared/i18n";
 import { sendRequest } from "../shared/messages";
-import type { FocusSettings, PeriodRuntimeStatus, UsageSummary } from "../shared/types";
+import type {
+  FocusSettings,
+  PageDecision,
+  PeriodRuntimeStatus,
+  UsageSummary
+} from "../shared/types";
 import { assertAppRoot, element } from "../styles/dom";
 import { createBrandMark } from "../ui/brand-mark";
 import { applyTheme } from "../ui/theme";
 import { createFlowChoice } from "../ui/flow-choice";
 import { createUnlockControl } from "../ui/unlock-control";
 import { createTimeBalance } from "../ui/time-balance";
-import { createPauseLayout, createPauseNotes } from "../ui/pause-layout";
+import { centerPauseActions, createPauseLayout, createPauseNotes } from "../ui/pause-layout";
+import {
+  createNextPeriodDetails,
+  createPausePeriodDetails,
+  createPauseSiteDetails
+} from "../ui/pause-details";
 import { createGroupProgress } from "../ui/group-progress";
 import { createScreenTimeSummary } from "../ui/screen-time-summary";
 import { siteMatchesUrl } from "../shared/site-scope";
@@ -20,18 +36,32 @@ const app = assertAppRoot();
 const params = new URLSearchParams(location.hash.slice(1));
 const source = params.get("source");
 const targetId = params.get("targetId") ?? "";
-const periodId = params.get("periodId") ?? "";
 const siteId = params.get("siteId") ?? "";
 const itemId = params.get("itemId") ?? "";
 const embedded = window.parent !== window;
-void render();
-let groupResumePending = false;
-let groupCheckTimer: ReturnType<typeof setTimeout> | undefined;
-async function resumeWhitelistedVisit(): Promise<boolean> {
-  if (source === "plan" || groupResumePending) return false;
+let actionInFlight = false;
+let accessResumed = false;
+let resumePromise: Promise<void> | undefined;
+let accessCheckTimer: ReturnType<typeof setTimeout> | undefined;
+let rendering: Promise<void> | undefined;
+let pauseViewDirty = true;
+let currentDecision: PageDecision | undefined;
+let decisionKey = "";
+const recheckAccess = createPauseRecheck(async () => {
+  if (source === "plan") return;
+  await rendering;
+  const resumed = await resumeAvailableVisit();
+  if (!resumed && pauseViewDirty && !actionInFlight) {
+    pauseViewDirty = false;
+    await render();
+  }
+}, 30);
+
+async function resumeAvailableVisit(): Promise<boolean> {
+  if (accessResumed) return true;
+  if (source === "plan" || actionInFlight) return false;
   const url = params.get("returnUrl");
   if (!url) return false;
-  groupResumePending = true;
   try {
     const tabId = (await tabsGetCurrent())?.id;
     const decision = await sendRequest({
@@ -40,41 +70,81 @@ async function resumeWhitelistedVisit(): Promise<boolean> {
       tabId,
       ...(targetId ? { targetId } : {})
     });
-    clearTimeout(groupCheckTimer);
-    if (decision.nextAccessCheckAt !== undefined)
-      groupCheckTimer = setTimeout(
-        () => {
-          if (document.visibilityState === "visible") void resumeWhitelistedVisit();
-        },
-        Math.max(0, decision.nextAccessCheckAt - Date.now())
-      );
-    if (decision.reason !== "tab-group-whitelist") return false;
+    currentDecision = decision;
+    // Countdown ticks alone must not replace inputs or restart the friction UI.
+    const key = JSON.stringify(decision, (name, value: unknown) =>
+      name === "nextAccessCheckAt" || name === "visitConfirmationWaitSeconds" ? undefined : value
+    );
+    if (key !== decisionKey) pauseViewDirty = true;
+    decisionKey = key;
+    clearTimeout(accessCheckTimer);
+    const deadline = nextPauseAccessCheckAt(decision, true);
+    if (deadline !== undefined)
+      accessCheckTimer = setTimeout(() => void recheckAccess(), Math.max(1, deadline - Date.now()));
+    if (decision.blocked || actionInFlight) return false;
     const planDecision = await sendRequest({ type: "GET_PLAN_NAVIGATION_DECISION", url, tabId });
-    if (!planDecision.allowed || (planDecision.reason === "expired" && planDecision.itemId))
-      return false;
+    if (!planAllowsPauseResume(planDecision) || actionInFlight) return false;
+    // Extension previews omit the website's visit gate. A confirmation page
+    // must observe an existing grant, rather than bounce back into itself.
+    if (
+      source === "confirmation" &&
+      siteId &&
+      !["tab-group-whitelist", "plan-access", "focus-disabled", "not-managed"].includes(
+        decision.reason
+      )
+    ) {
+      const gate = await sendRequest({ type: "GET_VISIT_GATE", url, siteId, tabId });
+      if (!gate.alreadyGranted) return false;
+    }
+    // Standalone pages navigate only when shown. Embedded hosts can remove the
+    // overlay in hidden tabs without autoplaying their preserved media.
+    if (actionInFlight || document.visibilityState !== "visible") return false;
     await resume(url);
     return true;
   } catch {
     return false;
-  } finally {
-    groupResumePending = false;
   }
 }
 if (source !== "plan") {
+  // Notifications do not answer requests or reserve their response channel.
+  getExtensionApi()?.runtime.onMessage.addListener((message, sender) => {
+    if (sender.id !== getExtensionApi()?.runtime.id || !message || typeof message !== "object")
+      return;
+    if (!("type" in message)) return;
+    if (message.type === WEBSITE_ACCESS_CHANGED) {
+      if (!("siteId" in message) || message.siteId !== siteId) return;
+    } else if (message.type !== "HOURLEAF_TAB_GROUP_ACCESS_CHANGED") return;
+    pauseViewDirty = true;
+    // Recheck asynchronously: the sender may still own the background write queue.
+    void recheckAccess();
+  });
   storageAddChangeListener((changes) => {
-    if (changes[STORAGE_KEYS.settings] || changes[STORAGE_KEYS.tabGroupBindings])
-      void resumeWhitelistedVisit();
+    if (pauseAccessChanged(changes, targetId)) {
+      pauseViewDirty = true;
+      void recheckAccess();
+    }
   });
   getExtensionApi()?.tabs?.onUpdated?.addListener((_tabId, changeInfo) => {
-    if (changeInfo.groupId !== undefined) void resumeWhitelistedVisit();
+    if (changeInfo.groupId !== undefined) void recheckAccess();
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") void resumeWhitelistedVisit();
+    if (document.visibilityState === "visible") void recheckAccess();
   });
-  window.addEventListener("pagehide", () => clearTimeout(groupCheckTimer));
+  window.addEventListener("focus", () => void recheckAccess());
+  window.addEventListener("pageshow", () => void recheckAccess());
+  window.addEventListener("pagehide", () => clearTimeout(accessCheckTimer));
+}
+if (source === "plan") void render();
+else void recheckAccess();
+
+function render(): Promise<void> {
+  rendering ??= renderPage().finally(() => {
+    rendering = undefined;
+  });
+  return rendering;
 }
 
-async function render(): Promise<void> {
+async function renderPage(): Promise<void> {
   try {
     const settings = await sendRequest({ type: "GET_SETTINGS" });
     configureLocale(settings.locale);
@@ -100,6 +170,7 @@ async function render(): Promise<void> {
       await renderPlan(card, settings);
     } else await renderFocus(card, settings);
     app.replaceChildren(element("div", { className: "end-backdrop", children: [card] }));
+    centerPauseActions(app);
   } catch {
     const retry = element("button", { className: "btn", text: t("common.retry") });
     retry.onclick = () => void render();
@@ -117,19 +188,17 @@ async function render(): Promise<void> {
 }
 
 async function renderFocus(card: HTMLElement, settings: FocusSettings): Promise<void> {
-  if (await resumeWhitelistedVisit()) return;
+  if (accessResumed) return;
   const site = settings.sites[siteId];
   const target = settings.targets[targetId];
   const url = params.get("returnUrl");
   const validUrl = url && site && siteMatchesUrl(site, url) ? url : undefined;
   const usage = await sendRequest({ type: "GET_USAGE", period: "day" });
   let runtime: PeriodRuntimeStatus | undefined;
-  let activePeriodId = periodId;
+  const activePeriodId = currentDecision
+    ? (currentDecision.activePeriodId ?? "")
+    : (params.get("periodId") ?? "");
   let groupUnlocked = false;
-  if (!activePeriodId && validUrl)
-    activePeriodId =
-      (await sendRequest({ type: "GET_PAGE_DECISION", url: validUrl, targetId: target?.id }))
-        .activePeriodId ?? "";
   if (target && activePeriodId) {
     runtime = await sendRequest({ type: "GET_PERIOD_RUNTIME", targetId, periodId: activePeriodId });
     if (runtime.canUnlock && runtime.method === "wait")
@@ -139,11 +208,17 @@ async function renderFocus(card: HTMLElement, settings: FocusSettings): Promise<
         periodId: activePeriodId
       });
   }
-  const { navigation, layout, overview, statistics, actions } = createPauseLayout();
+  const { navigation, layout, overview, statistics, actions, messages } = createPauseLayout();
   card.append(navigation, layout);
   renderSummary(overview, statistics, settings, usage, runtime);
   const siteUsage = createSiteUsageSummary(settings, usage, siteId);
-  if (siteUsage) actions.before(siteUsage);
+  if (siteUsage) messages.before(siteUsage);
+  if (runtime) {
+    const periodDetails = createPausePeriodDetails(settings, usage, runtime);
+    if (periodDetails) overview.append(periodDetails);
+  }
+  const siteDetails = createPauseSiteDetails(settings, usage, siteId);
+  if (siteDetails) actions.before(siteDetails);
   const notes = createPauseNotes([
     ...(source === "confirmation" &&
     site?.visitConfirmation?.promptEnabled &&
@@ -152,11 +227,11 @@ async function renderFocus(card: HTMLElement, settings: FocusSettings): Promise<
       : []),
     settings.endPage.motivationalMessage
   ]);
-  if (notes) overview.append(notes);
+  if (notes) messages.append(notes);
   if (source === "confirmation" && validUrl) {
     const tabId = (await tabsGetCurrent())?.id;
     const gate = await sendRequest({ type: "GET_VISIT_GATE", url: validUrl, siteId, tabId });
-    if (gate.alreadyGranted) {
+    if (gate.alreadyGranted && document.visibilityState === "visible") {
       await resume(validUrl);
       return;
     }
@@ -228,7 +303,13 @@ function renderSummary(
   runtime?: PeriodRuntimeStatus
 ): void {
   if (runtime) overview.append(createTimeBalance(runtime), createGroupProgress(runtime));
-  else overview.append(element("p", { className: "end-message", text: t("pause.noActivePeriod") }));
+  else {
+    const target = settings.targets[targetId];
+    const nextPeriod = target ? createNextPeriodDetails(target, usage) : null;
+    overview.append(
+      nextPeriod ?? element("p", { className: "end-message", text: t("pause.noActivePeriod") })
+    );
+  }
   statistics.append(createScreenTimeSummary(settings, usage));
 }
 
@@ -306,7 +387,6 @@ function createFlowControls(
   });
 }
 
-let actionInFlight = false;
 async function withPauseAction(run: () => Promise<void>): Promise<void> {
   if (actionInFlight) throw new Error("A pause action is already running");
   actionInFlight = true;
@@ -317,6 +397,7 @@ async function withPauseAction(run: () => Promise<void>): Promise<void> {
   } finally {
     actionInFlight = false;
     if (controls) controls.disabled = false;
+    void recheckAccess();
   }
 }
 
@@ -366,6 +447,19 @@ function closeAction(kind: string | null): HTMLElement {
   );
 }
 async function resume(url: string): Promise<void> {
+  resumePromise ??= restorePausedVisit(url)
+    .then(() => {
+      accessResumed = true;
+      clearTimeout(accessCheckTimer);
+    })
+    .catch((error: unknown) => {
+      resumePromise = undefined;
+      throw error;
+    });
+  return resumePromise;
+}
+
+async function restorePausedVisit(url: string): Promise<void> {
   if (!embedded) {
     window.location.replace(url);
     return;

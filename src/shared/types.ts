@@ -277,6 +277,8 @@ export interface FocusSettings {
   enabled: boolean;
   /** Shows the active website allowance as a per-tab toolbar badge. */
   showRemainingMinutesOnIcon: boolean;
+  /** Optional decorative marks in the left-hand configuration directories. */
+  showSidebarIcons: boolean;
   locale: UiLocalePreference;
   /** The accent palette used by full-page extension screens. */
   theme: UiTheme;

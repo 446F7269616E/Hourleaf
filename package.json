@@ -1,7 +1,7 @@
 {
   "name": "hourleaf",
-  "version": "0.6.0",
-  "description": "Local-first cross-browser website focus, planning, time insights, and optional local modules.",
+  "version": "1.0.0",
+  "description": "Local website focus rules, independent plans, and time insights. No accounts or data collection.",
   "license": "MIT",
   "keywords": [
     "browser-extension",
@@ -34,7 +34,8 @@
     "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build",
     "package": "node scripts/package.mjs",
-    "debug:site": "node scripts/debug-site.mjs"
+    "debug:site": "node scripts/debug-site.mjs",
+    "prepare:safari": "node scripts/prepare-safari.mjs"
   },
   "engines": {
     "node": ">=22"

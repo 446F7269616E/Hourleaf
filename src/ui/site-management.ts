@@ -1,6 +1,10 @@
 import { sendRequest } from "../shared/messages";
 import { t } from "../shared/i18n";
 import { resolveSiteScope, type KnownSiteFamily } from "../shared/site-scope";
+import {
+  localModuleAllowsUserScripts,
+  resolveLocalModulePlatform
+} from "../modules/local/capabilities";
 
 export async function addManagedSite(url: string): Promise<void> {
   const result = await sendRequest({ type: "ADD_MANAGED_SITE", url });
@@ -62,6 +66,7 @@ export async function requestLocalModulePermissions(
   patterns: string[],
   needsUserScripts: boolean
 ): Promise<boolean> {
+  if (needsUserScripts && !localModuleAllowsUserScripts(resolveLocalModulePlatform())) return false;
   const api = globalThis as typeof globalThis & {
     browser?: PermissionApi;
     chrome?: PermissionApi;

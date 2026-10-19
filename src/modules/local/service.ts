@@ -16,6 +16,7 @@ import {
   userScriptsUnregister
 } from "../../shared/browser";
 import { LocalModuleRepository } from "./repository";
+import { localModuleAllowsUserScripts, resolveLocalModulePlatform } from "./capabilities";
 import type {
   LocalModuleProfile,
   LocalModuleDefinition,
@@ -55,7 +56,6 @@ function enabledSelectors(
       .flatMap((group) => group.selectors)
   ];
 }
-declare const __HOURLEAF_BROWSER_TARGET__: Exclude<LocalModulePlatform, "unknown">;
 
 export class LocalModuleService {
   private writeQueue: Promise<unknown> = Promise.resolve();
@@ -90,8 +90,8 @@ export class LocalModuleService {
   }
 
   async import(definition: LocalModuleDefinition): Promise<LocalModuleSnapshot> {
-    if (this.platform === "safari" && definition.userScript.trim()) {
-      throw new Error("Safari 商店版不导入或执行用户脚本");
+    if (!localModuleAllowsUserScripts(this.platform) && definition.userScript.trim()) {
+      throw new Error("Firefox 和 Safari 商店版不导入或执行用户脚本");
     }
     return this.enqueue(async () => this.reconcile(await this.repository.import(definition)));
   }
@@ -213,9 +213,20 @@ export class LocalModuleService {
     if (enabledScripts.length !== scriptInstallations.length) {
       warnings.push("unsafe-user-script");
     }
-    if (this.platform === "safari") {
+    if (!localModuleAllowsUserScripts(this.platform)) {
       if (enabledScripts.length > 0) {
-        warnings.push("safari-user-script-disabled");
+        warnings.push("platform-user-script-disabled");
+      }
+      if (hasUserScriptsApi()) {
+        // Cleanup only if the old permission is still available; never request it.
+        await userScriptsGetRegistered()
+          .then(async (registered) => {
+            const ownedIds = registered
+              .map((script) => script.id)
+              .filter((id) => id.startsWith(USER_SCRIPT_PREFIX));
+            if (ownedIds.length > 0) await userScriptsUnregister(ownedIds);
+          })
+          .catch(() => undefined);
       }
       return;
     }
@@ -280,12 +291,11 @@ export class LocalModuleService {
 
   private runtimeStatus(): LocalModuleRuntimeStatus {
     return {
-      userScripts:
-        this.platform === "safari"
-          ? "disabled-by-platform"
-          : hasUserScriptsApi()
-            ? "available"
-            : "permission-required",
+      userScripts: !localModuleAllowsUserScripts(this.platform)
+        ? "disabled-by-platform"
+        : hasUserScriptsApi()
+          ? "available"
+          : "permission-required",
       declarativeNetRequest: "unsupported",
       warnings: [...this.lastWarnings]
     };
@@ -296,13 +306,6 @@ export class LocalModuleService {
     this.writeQueue = result.catch(() => undefined);
     return result;
   }
-}
-
-function resolveLocalModulePlatform(): LocalModulePlatform {
-  if (typeof __HOURLEAF_BROWSER_TARGET__ !== "undefined") {
-    return __HOURLEAF_BROWSER_TARGET__;
-  }
-  return "unknown";
 }
 
 function userScriptId(moduleId: string): string {
