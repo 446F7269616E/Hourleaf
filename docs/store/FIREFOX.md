@@ -1,24 +1,30 @@
-# Firefox AMO 提交
+# Firefox AMO submission
 
-官方资料核对：2026-10-19。
+Official references checked: 2026-10-19.
 
-## 提交文件
+<a id="提交文件"></a>
 
-- 扩展包：`dist/packages/hourleaf-1.0.0-firefox.zip`。
-- 同版本源码：`dist/packages/hourleaf-1.0.0-review-source.zip`；包根的 `BUILDING.md` 给出重建步骤，`BUILD_ENVIRONMENT.json` 记录打包环境。
-- 简介和详情：[LISTING.md](./LISTING.md)。
-- 许可证选择 MIT，与根 `LICENSE` 保持一致。
-- 隐私链接：[PRIVACY.md](https://github.com/446F7269616E/Hourleaf/blob/main/PRIVACY.md)。
+## Submission files
 
-保留已存在的 Gecko ID `bilifocus@opensource.local`。该值是扩展稳定身份，不是联系邮箱；已有安装不能通过改名生成新身份。
+- Extension: `dist/packages/hourleaf-1.0.0-firefox.zip`.
+- Matching source: `dist/packages/hourleaf-1.0.0-review-source.zip`; root `BUILDING.md` describes reproduction and `BUILD_ENVIRONMENT.json` records the packaging environment.
+- Summary/details: [LISTING.md](./LISTING.md).
+- Select MIT, matching the root `LICENSE`.
+- Privacy: [PRIVACY.md](https://github.com/446F7269616E/Hourleaf/blob/main/PRIVACY.md).
 
-## 数据与版本
+Retain the existing Gecko ID `bilifocus@opensource.local`. It is the stable extension identity, not a contact email; renaming must not create a new identity for existing installations.
 
-`browser_specific_settings.gecko.data_collection_permissions.required` 为 `["none"]`。插件不向开发者或第三方传输设置、计划和统计。新扩展按 AMO 要求声明内建数据同意字段。
+<a id="数据与版本"></a>
 
-最低 Firefox 仍为 121；内建数据同意界面从桌面 Firefox 140 开始支持，旧版不会显示这一界面。插件在旧版同样不收集或传输数据，因此不依赖该界面获得数据传输许可。标签页组能力按实际 API 可用性判断，不把所有 Firefox 121+ 版本写为支持组白名单。当前候选未承诺 Firefox Android；提交时只选择经过人工验收的平台。
+## Data and browser versions
 
-## 审核备注
+`browser_specific_settings.gecko.data_collection_permissions.required` is `["none"]`. Settings, plans, and statistics are not transmitted to the developer or third parties. New submissions declare the built-in data-consent fields required by AMO.
+
+Minimum Firefox remains 121. The built-in consent interface starts at desktop Firefox 140 and is absent on older releases. Hourleaf does not transmit data on those versions either, so it does not depend on this UI for data-transmission consent. Check actual group API availability; do not promise whitelists on every Firefox 121+ version. Firefox Android is not an accepted target yet; select only manually verified platforms.
+
+<a id="审核备注"></a>
+
+## Review notes
 
 Hourleaf is a website time-management extension. Its executable core is bundled and built from TypeScript using esbuild. Please use the attached source archive and `BUILDING.md` to reproduce the package. It has no account, analytics, ads, remote executable loader, or data transmission.
 
@@ -26,16 +32,20 @@ Firefox store builds do not request or use `userScripts`. Local JSON/CSS customi
 
 All host access is optional and requested for the user-selected site origins. The broad optional HTTP(S) patterns are only the request ceiling. `tabGroups` is used to read membership for user-selected rules; unavailable APIs fail closed for group whitelists.
 
-## 商店验证与签名
+<a id="商店验证与签名"></a>
 
-在发布环境运行 AMO 提交验证或 `web-ext lint`，人工审阅每项错误和警告，不以构建成功替代审核。源码经打包工具处理，必须为每次版本提交附上匹配源码及构建说明。
+## Validation and signing
 
-上传后取得 AMO 签名 XPI。最终安装、升级、禁用、启用和卸载验收使用签名文件；普通 ZIP 和临时加载目录不是已签名分发文件。
+Run AMO validation or `web-ext lint` in the release environment and review every error/warning. Successful builds do not replace review. Bundled code requires matching source and build instructions for every submitted version.
 
-## 官方依据
+Obtain the AMO-signed XPI after upload. Use it for final installation, upgrade, disable, enable, and uninstall acceptance. Ordinary ZIPs and temporary-load directories are not signed distribution artifacts.
 
-- [Add-on Policies 与 User Scripts 限制](https://extensionworkshop.com/documentation/publish/add-on-policies/)
-- [源码提交要求](https://extensionworkshop.com/documentation/publish/source-code-submission/)
-- [内建数据收集同意机制](https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/)
-- [提交步骤](https://extensionworkshop.com/documentation/publish/submitting-an-add-on/)
-- [签名和分发](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/)
+<a id="官方依据"></a>
+
+## Official references
+
+- [Add-on Policies and User Scripts restrictions](https://extensionworkshop.com/documentation/publish/add-on-policies/)
+- [Source submission](https://extensionworkshop.com/documentation/publish/source-code-submission/)
+- [Built-in data consent](https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/)
+- [Submission steps](https://extensionworkshop.com/documentation/publish/submitting-an-add-on/)
+- [Signing and distribution](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/)

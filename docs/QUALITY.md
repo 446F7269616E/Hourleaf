@@ -1,91 +1,102 @@
-# Hourleaf 质量与商店合规基线
+# Hourleaf quality and store-compliance baseline
 
-> 状态：发布门禁
-> 源码与文档同步：2026-10-19；平台人工验收另行记录
+> Status: release gate
+> Source/documentation synchronized: 2026-10-19. Platform acceptance is recorded separately.
 
-## 单一用途
+<a id="单一用途"></a>
 
-Hourleaf 的单一用途是：帮助用户按自己的规则管理网站使用时间并减少分心内容。
+## Single purpose
 
-- 计时、时段、额度、计划、统计和站点适配必须服务于该用途；
-- 不注入广告，不出售数据，不将浏览活动用于画像或无关分析；
-- 不要求用户安装额外扩展，不从屏蔽页、GitHub 或其他 URL 自动下载模块；
-- 商店说明、权限理由、隐私政策和实际行为必须一致。
+Hourleaf helps users manage website time under their own rules and reduce distracting content.
 
-## 权限预算
+- Timing, schedules, budgets, plans, statistics, and site adaptations must serve that purpose.
+- No injected advertising, data sales, browsing profiles, or unrelated analytics.
+- No requirement to install another extension, and no automatic module downloads from GitHub or other URLs.
+- Store descriptions, permission reasons, privacy disclosures, and behavior must agree.
 
-| 能力             | 权限                            | 约束                                                                                           |
-| ---------------- | ------------------------------- | ---------------------------------------------------------------------------------------------- |
-| 本地设置与统计   | `storage`                       | 不使用云同步或遥测                                                                             |
-| 工具栏当前页预览 | `activeTab`                     | 仅在用户点击工具栏后读取当前页来源，不保存页面 URL                                             |
-| 排除设备离开时间 | `idle`（平台支持时）            | 只判断 active/idle/locked                                                                      |
-| 标签页组白名单   | `tabGroups`（Chromium/Firefox） | 只读组元数据与所属关系；本地摘要恢复、会话标记验证编号；无 API/会话存储时不放行，Safari 不声明 |
-| 注册已授权网站   | `scripting`                     | 只注册到配置中且仍获授权的精确来源                                                             |
-| 用户选择的网站   | `optional_host_permissions`     | `http://*/*`/`https://*/*` 只是请求上限；每次只申请精确 `${origin}/*`                          |
-| 用户本地脚本     | `userScripts`                   | 仅 Chromium 声明且用户另行开启；Firefox/Safari 不声明                                          |
+<a id="权限预算"></a>
 
-默认禁止持续的 `tabs`、`history`、`cookies`、`identity`、`webRequest`、`downloads`、`management`、`nativeMessaging`、`debugger` 与 `unlimitedStorage`。`activeTab` 只允许用户点击工具栏后的单页临时预览。新增权限必须有已实现功能、产品内说明和三平台兼容评审，不能只为未来预留。
+## Permission budget
 
-动态 content script 只能匹配用户已启用且仍持有权限的网站。用户拒绝或撤销权限后，扩展必须安全停用该网站，不能循环弹窗或扩大请求范围。
+| Capability                    | Permission                    | Boundary                                                                                                                                             |
+| ----------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local settings and statistics | `storage`                     | No cloud sync or telemetry                                                                                                                           |
+| Current-site toolbar preview  | `activeTab`                   | Read the origin only after a toolbar click; do not retain the page URL                                                                               |
+| Exclude time away             | `idle`, where supported       | Use only active/idle/locked state                                                                                                                    |
+| Tab-group whitelist           | `tabGroups`, Chromium/Firefox | Read metadata and membership; validate session IDs and restore only unique feature matches; fail closed without group/session APIs; absent on Safari |
+| Register authorized sites     | `scripting`                   | Only configured, authorized site scopes                                                                                                              |
+| User-selected sites           | `optional_host_permissions`   | HTTP(S) wildcards are the request ceiling; request exact origins, except explicitly reviewed site families in `shared/site-scope.ts`                 |
+| Local user scripts            | `userScripts`                 | Chromium only, with the browser's user-script setting enabled; absent on Firefox/Safari                                                              |
 
-## 本地模块与远程代码
+Persistent `tabs`, `history`, `cookies`, `identity`, `webRequest`, `downloads`, `management`, `nativeMessaging`, `debugger`, and `unlimitedStorage` permissions are outside the budget. New permissions require an implemented need, product disclosure, and a three-platform review; do not reserve permissions for future features.
 
-- 扩展不得执行从 GitHub/CDN 下载的普通 JavaScript、WebAssembly、`eval`、`new Function` 或远程动态 import；
-- 商店包不得包含 `optional-modules/` 或网站专用脚本；可选模块仅作为 GitHub 源码文件独立分发；
-- 本地模块只能通过文件选择器进入，禁止 URL 安装、远程更新与后台下载；
-- CSS 必须自包含；非空 DNR 规则因无法表达精确 origin 而拒绝；
-- 用户脚本只能使用浏览器 User Scripts API 的隔离 world，禁止 `eval`、`Function` 与通用脚本注入；
-- Firefox AMO 与 Safari 商店版在 UI 和后台拒绝含用户脚本的导入，不执行已存储的脚本；平台不支持的能力必须显式降级。
-- 平台能力策略位于 `src/modules/local/capabilities.ts`，导入、运行、UI 和权限请求共用；不能通过导入来源、旧存储或恢复设置绕过。
-- 主介绍聚焦专注功能；完整权限理由和审核备注必须披露本地模块能力及平台限制，不能以分开文档替代商店要求的披露。
+Register content scripts only for configured sites with valid permissions. Rejection or revocation must stop the affected behavior safely, without repeated prompts or broader permission requests.
 
-参考官方边界：[Chrome MV3 远程代码](https://developer.chrome.com/docs/extensions/develop/migrate/remote-hosted-code)、[Chrome 分发](https://developer.chrome.com/docs/extensions/how-to/distribute)、[Firefox 签名](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/)、[Safari 分发](https://developer.apple.com/documentation/safariservices/distributing-your-safari-web-extension)。
+<a id="本地模块与远程代码"></a>
 
-## 数据最小化
+## Local modules and executable code
 
-- 普通计时只保存用户配置的网站/目标 ID、日期和聚合秒数；
-- 网站设置只保存精确 origin、hostname、用户标签和规则；
-- 不持久化普通浏览的完整 URL、页面标题、搜索词、网页正文、Cookie 或账号；
-- 计划清单保存用户主动添加的 URL、标题、目标、顺序、状态、时长和到期选项；活动授权、结束通知及标签绑定只存当前浏览器会话，无会话 API 时使用后台内存；
-- 白名单仅长期保存规则名称、星期和时间窗；浏览器组绑定只存会话，不按组名自动恢复，不进入备份；
-- 模块可以在内存中分类页面或匹配元素，但不得把命中内容写入历史；
-- 清空统计、删除网站和恢复设置必须立即清理对应本地数据；
-- 不包含遥测、广告、账户、云备份或第三方分析。
-- 配置备份只能由设置页“数据管理”的本地文件选择/下载触发，不调用网络、云盘或 `downloads` API；包括普通规则、自定义预设、白名单规则、计划清单与普通/计划模块偏好及屏蔽时间引用，不含统计、运行授权、组绑定或模块源码；恢复只应用本机同版本模块偏好。
+- No remote JavaScript/Wasm execution, `eval`, `new Function`, remote dynamic imports, or downloaded instruction interpreters.
+- Store packages contain neither `optional-modules/` nor site-specific executable modules. Modules are distributed separately as GitHub source assets.
+- Imports require an explicit local file selection. No URL installation, remote updates, or background downloads.
+- CSS is self-contained. Reject nonempty DNR rules because they cannot preserve the exact-origin boundary.
+- User scripts use the browser User Scripts API in its isolated world, never general script injection.
+- Firefox AMO and Safari store builds reject script-bearing imports in both UI and background and do not register previously stored scripts.
+- `src/modules/local/capabilities.ts` supplies the shared policy for import, runtime, UI, and permission requests. Old storage and backup restoration cannot bypass it.
+- Main product descriptions focus on time management. Complete permission explanations and review notes must disclose optional capabilities and platform restrictions wherever the store requires them.
 
-## 跨浏览器产物
+Official boundaries: [Chrome MV3 remote code](https://developer.chrome.com/docs/extensions/develop/migrate/remote-hosted-code), [Chrome distribution](https://developer.chrome.com/docs/extensions/how-to/distribute), [Firefox signing](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/), [Safari distribution](https://developer.apple.com/documentation/safariservices/distributing-your-safari-web-extension).
 
-| 平台     | 完整扩展目录    | 公开安装要求                                           |
-| -------- | --------------- | ------------------------------------------------------ |
-| Chromium | `dist/chromium` | Chrome Web Store 审核；开发版可加载已解压目录          |
-| Firefox  | `dist/firefox`  | 固定 Gecko ID、AMO 签名、准确的数据声明                |
-| Safari   | `dist/safari`   | Xcode 承载 App、Developer ID/App Store 签名与公证/审核 |
+<a id="数据最小化"></a>
 
-三平台共用业务与 UI；平台 manifest 只保留实际支持的权限/API。可选模块目录不复制到任何 `dist/<platform>`。Safari 不支持的 API 必须显式降级，不能让扩展页闪退。
+## Data minimization
 
-## 静态与手工门禁
+- Ordinary usage stores configured site/target IDs, dates, and aggregated seconds; site settings store validated origins, hostnames, labels, and rules.
+- Do not persist ordinary browsing URLs, page titles, searches, page text, cookies, or accounts.
+- Plans retain URLs, titles, goals, order, status, duration, and end behavior explicitly entered by the user. Active grants, end notices, and tab bindings are session-only, or background-memory-only without session storage.
+- Whitelist settings retain names, weekdays, and time windows. Local recovery records retain random identities and combined feature hashes; active group IDs are session-validated. Do not save plaintext member URLs or browser page titles, restore by name alone, or include bindings in backups.
+- Modules may classify pages in memory but must not write matching content into history.
+- Clearing statistics, deleting sites, and restoring settings must clean the corresponding local state.
+- No telemetry, advertising, accounts, cloud backup, or third-party analytics.
+- Configuration backups are explicit local file operations under Data management, without network/cloud/`downloads` API calls. They include rules, named presets, whitelist windows, plans, and ordinary/plan module preferences and schedule references. They exclude usage history, live grants, bindings, and module source. Restore module preferences only for an installed, identical module version.
 
-本地自动执行 TypeScript 编译与构建，其他行为按人工验收记录。GitHub Actions 保留现有格式、类型、Lint、单元覆盖、构建与打包流程。下面的发布门禁不能用“构建通过”替代，未勾选项不代表已经完成。
+<a id="跨浏览器产物"></a>
 
-- [ ] TypeScript、ESLint、Prettier 与三平台构建通过；
-- [ ] manifest 只有预算内权限，CSP 无远程执行源；
-- [ ] 商店 ZIP 不包含 `optional-modules/` 文件、网站专用模块代码或可远程执行的模块地址；允许屏蔽页保留只读的 GitHub Release、源码目录和开发规范链接；
-- [ ] 只有用户点击添加网站时出现精确权限请求；拒绝/撤销可恢复；
-- [ ] 可见、焦点、idle、休眠、跨午夜和 SPA 路由不会重复或虚增计时；
-- [ ] 多时段重叠优先级、独立额度、0 点刷新和跨午夜符合领域规则；
-- [ ] 无启用时间段可无限使用并记录实际用时，屏蔽定时及显式域名阻断仍有效；
-- [ ] 有效计划始终独立，跨来源/关标签/重启与到期后重入清理旧授权，来源切换不污染普通额度；
-- [ ] 白名单只放行绑定组内已授权受管网站，窗口结束恢复原普通状态，窗口关闭/重启后按唯一联合特征恢复，明确解散和备份恢复清理绑定，不延长计划；
-- [ ] 普通关闭操作保留全部组内页面，归属无法确认的候选也保留；计划关闭仍按自身来源处理；
-- [ ] 宽容 / 心流 / 严格到期语义正确；心流延时只有一次且不超过 15 分钟；
-- [ ] 分组等待、数学题、密码校验和结束页返回路径不会绕过目标/时段边界；
-- [ ] 简体中文、英文、跟随系统三种语言下无混合文案或布局截断；
-- [ ] 单一扩展可加载，本地模块停用或删除后表现与通用网站一致；
-- [ ] 本地选择器失效时安全放行，不隐藏整个未知页面；
-- [ ] 固定居中置顶导航、键盘操作、200% 缩放与读屏名称可用；
-- [ ] 隐私政策、商店数据披露与抓包结果一致；
-- [ ] 公共仓库与产物不含密钥、证书、profile、账号或用户测试数据。
-- [ ] 配置备份通过同版本往返、恶意字段/超限拒绝、权限拒绝零写入、单次原子写入和运行中恢复计时边界测试。
-- [ ] 商店候选不含 `debug-build.json`、Debug 名称、`version_name`、固定 `host_permissions` 或内联的 Debug 模块内容；本地 Debug 输出未被 Git、CI artifact 或 Release 收集。
+## Browser artifacts
 
-完整步骤见 [MANUAL_ACCEPTANCE.md](./MANUAL_ACCEPTANCE.md) 与 [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)。
+| Platform | Extension directory | Public distribution                                                                   |
+| -------- | ------------------- | ------------------------------------------------------------------------------------- |
+| Chromium | `dist/chromium`     | Chrome Web Store review; unpacked loading for development                             |
+| Firefox  | `dist/firefox`      | Stable Gecko ID, AMO signature, accurate data declarations                            |
+| Safari   | `dist/safari`       | Xcode host app, appropriate signing, and notarization/review for the selected channel |
+
+Business logic and UI are shared. Manifests contain only supported permissions/APIs. Optional module directories never enter `dist/<platform>`. Unsupported Safari capabilities must degrade explicitly without breaking extension pages.
+
+<a id="静态与手工门禁"></a>
+
+## Static and manual gates
+
+Run only compilation/builds locally. Keep existing CI formatting, typing, lint, unit coverage, build, and packaging gates. A successful build does not complete any unchecked acceptance item.
+
+- [ ] TypeScript, ESLint, Prettier, and all browser builds pass.
+- [ ] Manifests stay within the permission budget; CSP has no remote execution sources.
+- [ ] Store ZIPs exclude site modules and remote executable module URLs; read-only release/source/development links are permitted.
+- [ ] Site permissions require explicit action; rejection and revocation are recoverable.
+- [ ] Visibility, focus, idle, sleep, midnight, and SPA routing do not duplicate or inflate usage.
+- [ ] Period overlap, independent budgets, daily reset, and overnight ranges follow the domain contract.
+- [ ] No enabled periods means unlimited ordinary access with actual-use recording; content schedules and explicit domain blocks remain active.
+- [ ] Plans remain independent; origin changes, tab closure, browser restarts, and post-expiry navigation clear old authorization without charging ordinary budgets.
+- [ ] Whitelists cover only authorized managed sites in the bound group; window end restores ordinary state; only unique recovery matches restore bindings; dissolution/backup restore clears them; plan deadlines do not change.
+- [ ] Ordinary close preserves grouped and unknown-membership tabs; plan close uses the item's exact origin.
+- [ ] Flexible/flow/strict semantics hold; one flow extension per group, with 1–15 minutes or explicit video-end behavior.
+- [ ] Waiting, equations, calculus, passwords, and return paths cannot bypass target/period boundaries.
+- [ ] Chinese, English, and system-language modes have complete copy and usable layouts.
+- [ ] The single extension loads; disabling/removing modules restores ordinary behavior.
+- [ ] Stale selectors leave unknown page content visible.
+- [ ] Centered sticky navigation, keyboard access, 200% zoom, and accessible names work.
+- [ ] Privacy policy, store disclosures, storage inspection, and observed network traffic agree.
+- [ ] Repository/artifacts contain no secrets, certificates, profiles, accounts, or user test data.
+- [ ] Backups pass same-version round trips, malformed/oversized input rejection, zero-write permission refusal, atomic replacement, and running-session boundary checks.
+- [ ] Candidates exclude Debug markers, names, `version_name`, fixed host grants, and inlined Debug modules; Debug output is absent from Git/CI/Release assets.
+
+See [manual acceptance](./MANUAL_ACCEPTANCE.md) and the [release checklist](./RELEASE_CHECKLIST.md).

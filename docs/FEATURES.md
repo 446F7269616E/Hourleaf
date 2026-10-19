@@ -1,105 +1,109 @@
-# Hourleaf 当前功能说明
+# Hourleaf Features
 
-对应当前源码与 `1.0.0` 版本，最近同步：2026-10-17。描述已实现行为，不表示各平台已完成签名发布或人工验收。
+Describes the source and `1.0.0` behavior as of October 20, 2026. Platform signing, store publication, and manual acceptance are separate steps.
 
-## 网站与时间段
+## Websites and time windows
 
-配置页添加 HTTP/HTTPS 网站，主动授权后创建规则。普通网站按协议、主机与端口精确匹配，Bilibili 使用已定义的 HTTPS 家族范围。添加成功后已打开的匹配页面也会注入；拒绝权限不保存新网站，撤销权限停止相应功能。
+Add an HTTP/HTTPS website in Configuration and authorize it to create rules. Ordinary websites match the exact scheme, host, and port; Bilibili uses its defined HTTPS site family. Matching open pages receive the content script after authorization. Denied permission does not save a new website; revocation stops its features.
 
-网站名称统一使用规范来源的域名，不受屏蔽插件或旧配置名称影响；目录摘要保留完整来源，区分协议和端口。
+Website names use the canonical domain rather than an imported component or legacy name. Directory details retain the full origin to distinguish schemes and ports.
 
-新网站默认严格模式、每天全天、无分钟限额、一个分组。没有网站整体启停开关，时间段各自启停，字段变更实时保存。每个时段独立选择星期、起止时刻、访问行为、分钟额度与分组数。同起止时间代表全天，跨午夜按开始日计算，结束边界不包含在内。
+New websites default to Strict mode, an all-day window every day, no minute limit, and one group. Windows have individual enable switches; there is no website-wide enable switch. Changes save immediately. Each window has its own weekdays, start/end times, access behavior, allowance, and group count. Equal start/end times mean all day. Overnight windows belong to their start day; the end boundary is excluded.
 
-| 状态                   | 网站访问与统计                                     |
-| ---------------------- | -------------------------------------------------- |
-| 没有时间段或全部停用   | 无限使用；保留实际用时与普通访问确认，不扣时段额度 |
-| 有启用时段，当前未命中 | 不可用                                             |
-| 命中一直可用           | 无额度限制，仍记录实际用时                         |
-| 命中一直禁用           | 阻止普通访问                                       |
-| 命中限额时段           | 根据当天额度、分组和到期模式判定                   |
+| State                               | Website access and tracking                                                                              |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| No windows, or all disabled         | Unlimited use; actual usage and ordinary access confirmation remain, without consuming window allowances |
+| Enabled windows exist, none matches | Unavailable                                                                                              |
+| Always-available window matches     | Unlimited use; actual usage is recorded                                                                  |
+| Always-blocked window matches       | Ordinary access is blocked                                                                               |
+| Limited window matches              | Daily allowance, groups, and expiry mode determine access                                                |
 
-重叠优先级为一直可用、一直禁用、限额使用。上述状态保留内容过滤和显式域名阻断；计划与组白名单另行判定。
+Overlap priority is always available, then always blocked, then limited use. Content filtering and explicit domain blocks remain active. Plans and tab-group access are evaluated separately.
 
-一键添加提供三餐下饭、两段分割、午前、午后、晚间、早起鸟、夜猫子和自定义组合。自定义可命名、保存、复用；添加只替换未修改的默认全天时段，其他规则保留。所有时钟采用 `HH:mm`，支持输入 `0900` 自动变为 `09:00`。
+Quick-add presets include meals, two sessions, morning, afternoon, evening, early bird, night owl, and custom combinations. Custom presets can be named, saved, and reused. Adding a preset replaces only an unchanged default all-day window. Times use `HH:mm`; entering `0900` becomes `09:00`.
 
-## 确认、分组与到期
+## Confirmation, groups, and expiry
 
-普通访问确认和分组解锁使用共同策略：立即确认、等待、方程、微积分或密码。默认等待 30 秒，范围为 1–10800 秒；倒计时结束仍需主动确认，确认之前不计时。
+Ordinary access confirmation and group unlocking share a policy: immediate confirmation, waiting, equations, calculus, or a password. The default wait is 30 seconds, configurable from 1–10800 seconds. Access requires confirmation after the countdown; tracking starts after confirmation.
 
-默认同网站在当前可用时段内共享确认，新标签或重入不重复。开启“新标签页重复确认”后逐标签确认，同标签刷新不重复，离开再返回重新确认。跨日、时段或相关策略变化、浏览器重启使确认失效。网站详情底部的提示语开关只控制文案，关闭保留文字，不关闭确认流程。
+Confirmation is normally shared within the same website's current available window. New tabs and returning visits do not repeat it. With Repeat confirmation in new tabs enabled, each tab confirms separately: refresh retains confirmation, but leaving and returning requires it again. A new day, a time-window or relevant policy change, or browser restart invalidates confirmation. The website's message switch controls only the text; disabling it preserves the text and confirmation flow.
 
-有限额度等分为多组，解锁下一组不重置额度。每组按网站到期模式处理：
+A finite allowance is divided equally into groups. Unlocking the next group does not reset the allowance. Each group uses the website's expiry mode:
 
-- 宽容：提醒，确认后可以继续访问。
-- 心流：本组只能继续一次，选择 1–15 分钟或当前视频播放结束，确认后生效；视频选项需要页面中保留可用视频，没有虚构的分钟截止。
-- 严格：停止本次访问，按剩余组状态提供下一组或关闭操作。
+- Lenient: Show a reminder and allow continued access after confirmation.
+- Flow: Allow one extension per group, either 1–15 minutes or until the current video ends. Confirmation activates it; the video option requires an available video and has no invented minute deadline.
+- Strict: Stop the visit and offer the next group or closure according to the remaining groups.
 
-普通心流实际延时单独记录，默认不扣后续分组；开启扣减后按授权时设置结算。恢复页面失败后重试不会重新发放延时。同一网站目标和时间段内，一页选择分钟延时后，其他停在普通暂停页的标签在切回或授权变化时会重新判定并恢复；共享原授权及截止时间，不重新计时或重复授时。开启下一组、宽容确认、时间窗口重新可用及共享访问确认也按当前规则恢复；仍需逐标签确认时会进入该确认流程，计划到期暂停不会被普通放行跳过。
+Ordinary Flow extensions are recorded separately and do not consume later groups by default. When charging is enabled, accounting follows the setting saved with the grant. Retrying a failed page restoration does not issue another extension. For the same website target and window, a minute extension can restore other tabs paused under ordinary rules when they become visible or the grant changes. They share its original deadline. Opening the next group, Lenient confirmation, a newly available window, and shared access confirmation also restore eligible tabs. Per-tab confirmation still applies when enabled; ordinary access never bypasses an expired plan's pause.
 
-心流继续、结束延时、开启下一组及访问确认完成后，后台主动通知同网站标签页更新当前资格与用时。嵌入式暂停直接解除遮罩，保留网页和视频进度；后台标签不会自动播放媒体。独立暂停页在后台更新状态，显示时再复核并返回网站。仍受限制时刷新当前时段和按钮，不沿用旧分组操作。通知按网站范围发送并合并短时间重复事件，无关目标的运行态、等待初始化、题目生成和统计心跳不触发暂停页重绘。
+After confirmation, Flow changes, or opening the next group, the background updates tabs for that website. Embedded pauses lift without replacing the webpage or losing video position; background tabs do not autoplay. Standalone pause pages update in the background and recheck before returning when shown. Restricted pages refresh the current window and actions. Updates are scoped by website and coalesced; unrelated targets, challenge initialization, generated questions, and tracking heartbeats do not redraw pause pages.
 
-## 标签页组白名单
+## Tab-group whitelist
 
-配置页的网站和白名单目录同级。左侧选择组配置，右侧上方编辑名称和浏览器组绑定，下方管理多个时间段；每段独立命名、选择星期和起止时间、启停、编辑或删除，立即保存。每组最多 64 段，新建组默认每天全天；旧规则保留原组配置与绑定，原时间窗口作为首个时段。多个启用时段取并集，没有时段或全部停用时回到普通网站规则；删除最后一段不会删除组配置。
+Website and whitelist directories are peers in Configuration. Select a group configuration to edit its name, browser-group binding, and time windows. Each window has a name, weekdays, start/end time, and independent editing, enable, and delete controls. Changes save immediately. Each group supports up to 64 windows; a new group starts with an all-day daily window. Legacy rules keep their binding and convert the original window into the first item. Enabled windows form a union. No windows, or all disabled, restores ordinary website rules; deleting the last window keeps the group configuration.
 
-新增时先选择浏览器标签页组，自动将组名填入配置名称；切换所选组会更新尚未手动修改的名称。多个组配置各自按实际标签页归属生效，保存、重新绑定或移动组后，网站内和独立暂停页都会重新检查访问资格。
+Selecting a browser group fills the new configuration name. Changing groups updates the name until it has been manually edited. Configurations follow actual tab membership. Saving, rebinding, or moving tabs causes embedded and standalone pause pages to recheck access.
 
-窗口内，组内已配置且仍授权的网站无限可用，跳过普通额度、分组暂停和访问确认；实际网站及小时用时仍统计，不扣普通额度。窗口结束或移出组恢复原规则和原余额，不重置额度。其他组、组外页面及未授权网站不继承放行。内容过滤、CSS 和显式域名黑名单保留，计划截止时间不延长。
+During an allowed window, configured and authorized websites in the bound group have unlimited ordinary access without allowances, group pauses, or confirmation. Actual website and hourly usage is still recorded. Leaving the group or reaching the window's end restores the original rules and balances. Other groups, ungrouped tabs, and unauthorized websites do not inherit access. Content filtering, CSS, and explicit domain blocks remain; plan deadlines are unchanged.
 
-规则长期保存，活动组编号仅在当前浏览器会话内可信。窗口关闭或浏览器重启后，按本地保存的名称、颜色及成员地址摘要唯一匹配恢复；尚未完整恢复或存在歧义时等待，不仅凭同名放行。解散组、最后一个标签移出导致组消失或备份恢复后需重新绑定。后台休眠保留当前会话绑定。
+Rules persist, but numeric group IDs are trusted only within the current browser session. After a window closes or the browser restarts, bindings restore only when the saved name, color, and member-URL digest identify one group. Incomplete or ambiguous restoration waits rather than authorizing by name alone. Dissolving a group, removing its last tab, or restoring a backup requires rebinding. Background suspension retains session bindings.
 
-Chromium 与具备组 API 和会话存储的 Firefox 支持；Safari 或缺少接口时显示不可用状态，普通网站与计划继续运行。功能只读取已有组及归属，不修改浏览器组或扩大网站权限。
+Supported on Chromium and Firefox with group APIs and session storage. Safari and browsers without the required APIs show an unavailable state; ordinary rules and plans remain usable. The feature reads existing groups and membership without changing groups or expanding website permissions.
 
-## 计划访问
+## Plan access
 
-支持添加、批量导入、编辑、排序、删除、完成和恢复。事项必须有 1–1440 分钟预定时长与到期模式，可填写最多 500 字目标备注并选择视频结束暂停。列表和思维导图均把完成事项放在底部折叠列表；导图支持拖动、指针中心缩放、键盘操作和适配画布。
+Add, bulk-import, edit, reorder, delete, complete, and restore items. Each item requires a 1–1440 minute duration and expiry mode. It can include a goal note of up to 500 characters and pause when its video ends. List and mind-map views place completed items in a collapsed section below pending items. The mind map supports dragging, pointer-centered zoom, keyboard controls, and fit-to-canvas.
 
-添加事项不请求权限；点击开始后申请来源权限，进入暂停页确认时长与目标，确认后创建计时。没有独立计划模式开关；开始时自动标为完成可在设置中启用，默认关闭。
+Adding an item does not request permission. Starting requests the origin permission and opens a pause page to confirm duration and goal. Confirmation starts the timer. There is no separate plan-mode switch. Auto-completing an item when starting is optional and off by default.
 
-计划始终独立计时，不增加普通网站用量或消耗额度，普通禁止时段不覆盖它，显式模块域名阻断仍有效。白名单不能延长或取消计划截止。旧独立计时开关仅作兼容字段，当前设置页不提供此开关。
+Plans always use independent timers. They do not add ordinary website usage or consume its allowance. Ordinary blocked windows do not override them; explicit module domain blocks still apply. Whitelist access cannot cancel or extend plan deadlines. The old independent-timing field remains only for compatibility and is absent from Settings.
 
-同一时刻只有一个活动计划，属于确认的标签页和精确来源。同源分页、刷新、查询参数、fragment、路径和 SPA 路由沿用原截止时间，同网站其他标签不继承授权。离开来源或关闭标签结束本次计划，返回按普通规则判定；再次开始创建新访问与新截止。
+Only one plan visit can be active at a time, bound to the confirmed tab and exact origin. Same-origin navigation, refreshes, query parameters, fragments, paths, and SPA routes retain the deadline. Other tabs do not inherit it. Leaving the origin or closing the tab ends the visit; returning uses ordinary rules. Starting again creates a new visit and deadline.
 
-到期在原访问内显示宽容、心流或严格操作，心流只能选择一次额外分钟或当前视频结束。到期后刷新、重新导航或再次进入网址会清理旧计时与结束通知。停止、替换、完成、删除、修改授权相关字段、全局关闭、重置及恢复备份也撤销授权。后台休眠可恢复会话，浏览器重启不恢复计时；事项与预定时长保留，不写入网站时间段。
+Expiry displays Lenient, Flow, or Strict actions within the original visit. Flow permits one extra duration or continuation until the current video ends. Refreshing, navigating, or revisiting after expiry clears the old timer and notification. Stopping, replacement, completion, deletion, relevant item edits, globally disabling the extension, resetting, or restoring a backup also revoke access. Background suspension can recover a session; browser restart does not restore timers. Items and planned durations remain separate from website windows.
 
-## 内容屏蔽与模块
+<a id="内容屏蔽与模块"></a>
 
-商店候选不预装网站专用模块。用户从 [模块目录](../optional-modules/README.md) 下载、审阅后，在屏蔽页选择清单及其引用的本地文件，核对能力并授权。扩展不自动下载、检查更新或按 URL 安装模块。
+## Content filtering and modules
 
-屏蔽页左侧列出已安装模块与模块下载入口，右侧只显示当前选中模块或下载说明；新增导入后选中新模块，删除后回退到剩余首项或空状态。
+Store candidates do not bundle website-specific modules. Download and review files from the [module catalog](../optional-modules/README.md), then select the manifest and its referenced local files on the Block page, review capabilities, and authorize them. The extension does not download modules, check for updates, or install from URLs.
 
-模块支持精确域名策略、元素选择器、自包含 CSS 和平台允许的隔离用户脚本。域名策略独立于内容分组；脚本仅在 Chromium 中通过 User Scripts API 执行，Firefox 与 Safari 商店候选拒绝脚本导入。停用或删除注销后续注册，已执行脚本的页面效果取决于其生命周期，必要时刷新。
+The Block page lists installed modules and a download entry on the left, with the selected module or download instructions on the right. Import selects the new module. Deletion selects the first remaining module or displays an empty state.
 
-内容分组默认不限时间，可多选对应网站已有时间段，只读取起止时刻作为每天屏蔽窗口。配置时段的星期、启停、访问模式、额度及分组不影响屏蔽；删除引用的时段或网站使引用失效，全部失效不屏蔽。无限使用的网站仍执行这些内容规则。
+Modules support exact-origin policies, selectors, self-contained CSS, and isolated user scripts where the platform permits. Domain policies are independent of content groups. Scripts run only on Chromium through the User Scripts API; Firefox and Safari store candidates reject script imports. Disabling or deleting unregisters future execution. Effects of scripts already executed follow their page lifecycle and may require a refresh.
 
-普通与计划偏好分别保存。“计划期间启用所有屏蔽”默认开启，有效计划使用已安装模块的计划偏好，初始启用内容分组；屏蔽页自动编辑当前上下文，结束恢复普通偏好。已有权限、定时及已调整的计划偏好仍生效，不自动安装模块或请求权限。
+Content groups run at all times by default. They can reference multiple existing windows for the corresponding website, using only start/end times as daily filtering windows. Weekdays, enable state, access mode, allowances, and group counts do not affect filtering. Deleted websites or windows invalidate references; when all references are invalid, filtering stops. Unlimited website access still applies these content rules.
 
-界面统一称“屏蔽插件”；五个仓库插件直接使用网站名称，说明写明隐藏的具体内容，不添加“xx 模块”后缀。名称、说明和分组文案跟随中英文，已导入记录按稳定 ID 更新显示，无需重新导入；未知插件保留作者文案。具体版本与能力见 [模块目录](../optional-modules/README.md)，契约见 [LOCAL_MODULES.md](./LOCAL_MODULES.md)。
+Ordinary and plan preferences are stored separately. Enable all blocking during plans is on by default. An active plan uses installed modules' plan preferences, initially enabling content groups. The Block page edits the current context and restores ordinary preferences afterward. Existing permissions, schedules, and edited plan preferences still apply; no modules are installed or permissions requested automatically.
 
-## 统计、暂停页与工具栏
+The Chinese UI calls these components “屏蔽插件.” The five repository modules use website names, describe the content they hide, and omit module-name suffixes. Names, descriptions, and group labels follow the UI language. Stable IDs localize existing installations without reimporting; unknown modules retain their authors' text. See the [catalog](../optional-modules/README.md) for versions and capabilities and [LOCAL_MODULES.md](./LOCAL_MODULES.md) for the contract.
 
-普通统计只记录页面可见、窗口聚焦、设备 active 的区间；idle 不可用的平台按现有可用信号运行。切标签、最小化、页面离开和锁定不补记不可见用时，按本地日期与小时归桶。独立计划不写普通统计。
+## Statistics, pause page, and toolbar
 
-仪表盘支持今日、本周、本月、本年，显示区间总量、日均用时、有记录天数、最多使用的网站、单日峰值及心流延时。日均包含当前范围内已过且无记录的日期，不计未来日期；心流延时已计入总量。今日趋势按小时、周/月按日、年按月展示，周/月/年另提供相同钟点累计的小时分布。网站排行显示名次、时长和占比，可展开来源，已移除配置的历史用量单列保留。“当前计划”显示整个当前清单的待办预计时长、完成数及完成率，不随统计范围切换。总时长卡使用分离的数字和单位；仪表盘只保留数据名称、数值和必要状态，不显示解释性副标题或页尾说明。
+Ordinary statistics count only visible pages in a focused window while the device is active. Platforms without idle detection use the available signals. Switching tabs, minimizing, navigating away, or locking the device does not backfill invisible time. Usage is grouped by local date and hour. Plans do not write ordinary statistics.
 
-普通暂停页保留本次分组、时长余额、居中操作和今日统计；固定采用左侧用量、中间操作、右侧统计三栏，三个框等宽等高，交互按钮位于中间框下方，设置中的激励话语在中间独立显示，长文字可分页，没有激励话语及访问提示时不占位，本站分布自适应填补空间，窄窗口保留整体横向滚动；左侧补充时段与分组额度，中间按钮上方补充本站今日占比和峰值小时；不在任何启用时段内时，左侧显示下一个可用时间段及日期、星期和起止时刻，没有后续可用配置时显示明确空状态；分组保留段条及已用/剩余数量，移除空心/实心图例文字，三个面板随最长内容统一高度展示，心流与下一组操作无需切换分区即可看到，手机分区导航用于滚动定位；网站用时同时显示占比，可点击网站切换小时分布。心流暂停前存在正在播放的视频时默认选择“视频播放完毕后停止”，也可切换为指定时长；没有播放视频时默认指定时长。小时图默认选中有记录的峰值小时，支持左右方向键、Home/End 查看读数；缺失历史小时明细只显示提示，不推算补填。计划暂停页只显示事项时长、目标和操作。
+The dashboard covers today, this week, this month, and this year. It displays total and daily-average usage, active days, the most-used website, peak day, and Flow extensions. Averages include elapsed days without usage and exclude future days. Flow time is included in totals. Today's trend is hourly, weekly/monthly trends are daily, and the yearly trend is monthly. Week/month/year views also aggregate matching clock hours. Website rankings show duration and share, with expandable origins; retained history from removed websites is separate. Current plan covers the entire current queue regardless of the statistics range. Total usage displays separate numbers and units. The dashboard retains data names, values, and necessary states without explanatory subtitles or a footer.
 
-普通关闭操作只关闭对应网站作用域内明确无组的相关标签；任何组内页面都保留，包括组内暂停页，无法确定归属也保留。计划关闭操作按事项精确来源处理，不套用普通关闭的组内保护。
+Ordinary pauses use three equally sized columns: usage on the left, actions in the center, statistics on the right. Actions stay below the center content. Configured motivational text has its own center area with pagination; no area is reserved when it and the access message are empty. Narrow windows scroll the full layout horizontally. The left column includes window and group balances, or the next available window with date, weekday, and times; no future window produces an empty state. Group segments retain used/remaining counts without a hollow/filled legend. Panels follow the tallest content, and mobile section navigation scrolls to columns. Website rows show shares and select the hourly distribution. Flow defaults to stopping when the video ends if a video was playing before the pause; otherwise it defaults to a duration. Hourly charts initially select the recorded peak hour and support arrow keys and Home/End. Missing historical hourly detail is reported without estimates. Plan pauses show item duration, goal, and actions.
 
-工具栏显示当前网站今日用时、分组剩余或计划剩余，最多三项待办及其余数量，并进入计划页。图标默认显示向上取整的剩余分钟；无分钟限额、白名单、视频结束授权、未配置或全局关闭时不显示普通倒计时，有有效分钟计划时显示计划时间。
+Ordinary closure affects only related tabs within the website scope that are confirmed ungrouped. All grouped tabs, including grouped pause pages, remain open; unknown membership is also preserved. Plan closure follows the item's exact origin rather than ordinary group protection.
 
-## 设置、备份与删除
+The toolbar shows today's website usage, group or plan time remaining, up to three pending items, and a count of further items, with navigation to Plan. Its badge rounds remaining minutes up. Unlimited access, whitelist access, video-end grants, unconfigured pages, and global disablement show no ordinary countdown. Valid timed plan access shows its plan balance.
 
-设置左侧列出运行与保护、界面与显示、计划访问、访问确认与解锁、暂停与结束页面、数据管理、关于七类，右侧显示当前类别。配置、屏蔽、设置共用侧栏交互；保存及语言/主题切换保留选择和滚动，窄屏时目录位于详情上方。默认主题为海洋蓝，保留已有主题选择；侧栏默认不显示图标，可在“界面与显示”开启，三个页面同步生效。支持五套主题、系统明暗、简体中文、English、跟随系统、图标剩余分钟与激励文字。关闭保护可选等待 1/3/5/10 分钟或独立密码。
+<a id="设置备份与删除"></a>
 
-“关于”提供隐私政策、开源许可及联系开发者三项入口。隐私政策与 MIT 许可证在 GitHub 文档中打开，联系入口打开项目 Issues；页面不载入外部文档正文。
+## Settings, backup, and deletion
 
-| 操作         | 范围                                                                          |
-| ------------ | ----------------------------------------------------------------------------- |
-| 导出配置     | 网站与时段、自定义预设、白名单规则、计划清单、普通/计划模块偏好及屏蔽时间引用 |
-| 不进入备份   | 统计、活动计划/临时授权、分组运行态、访问确认、组绑定、模块 CSS 和脚本源码    |
-| 恢复配置     | 权限确认后替换配置，清理运行态和组绑定；只恢复本机已安装且版本一致的模块偏好  |
-| 恢复默认     | 清除网站、规则、白名单、运行态和关闭密码，保留统计、计划清单及已导入模块      |
-| 清空全部数据 | 删除业务设置、统计、计划、模块及运行态                                        |
+Settings has seven categories: Operation and protection, Appearance and display, Plan access, Confirmation and unlocking, Pause and end page, Data management, and About. The right panel shows the selected category. Configuration, Block, and Settings share directory behavior; saving and changing language/theme preserve selection and scroll. On narrow screens the directory appears above the editor. The default theme is Ocean blue; existing choices are retained. Sidebar icons are hidden by default and can be enabled in Appearance and display for all three pages. The interface supports five themes, system light/dark mode, Simplified Chinese, English, system language, badge minutes, and custom motivational text. Disable protection offers waits of 1/3/5/10 minutes or a separate password.
 
-配置备份是本地 JSON，上限 16 MiB，不同步到云端。未安装或版本不同的模块偏好跳过，不凭备份安装代码。恢复默认和清空均需等待 120 秒并输入指定确认文字，取消不改数据。详见 [隐私政策](../PRIVACY.md)。
+About links to the privacy policy, MIT License, and developer contact. Documents open on GitHub, and contact opens project Issues. No remote document content is loaded into the page.
+
+| Action                | Scope                                                                                                                                                 |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Export configuration  | Websites, windows, custom presets, whitelist rules, plans, ordinary/plan module preferences, and filtering-time references                            |
+| Excluded from backup  | Usage, active plan/temporary grants, group runtime, confirmation, group bindings, module CSS, and script source                                       |
+| Restore configuration | Replace configuration after permission confirmation and clear runtime/bindings; restore preferences only for installed modules with matching versions |
+| Restore defaults      | Clear website rules, group runtime, active grants, and disable passwords; retain statistics, plans, and imported modules                              |
+| Clear all data        | Delete application settings, statistics, plans, modules, and runtime state; required to clear usage records                                           |
+
+Configuration backups are local JSON files up to 16 MiB, without cloud sync. Preferences for absent or mismatched modules are skipped; backups cannot install code. Restoring defaults and clearing all data require a 120-second wait and the specified confirmation text. Canceling makes no changes. See the [privacy policy](../PRIVACY.md).

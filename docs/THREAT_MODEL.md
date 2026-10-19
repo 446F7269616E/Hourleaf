@@ -1,65 +1,72 @@
-# Hourleaf 威胁模型
+# Hourleaf threat model
 
-行为与源码同步：2026-10-14。本次同步现有边界，不替代平台人工验收或独立安全审查。
+Behavior/source synchronized: 2026-10-14. This records existing boundaries; it does not replace platform acceptance or an independent security review. Platform and group-recovery descriptions reflect the current contract.
 
-## 范围与资产
+<a id="范围与资产"></a>
 
-范围包括三个浏览器构建、扩展页、content script、background、local/session storage、可选网站权限、浏览器组绑定、动态脚本注册、站点模块和发布供应链。需保护的资产是用户规则、计划、聚合时长、浏览活动隐私、扩展权限、更新渠道和发布凭据。
+## Scope and assets
 
-## 信任边界
+Scope: all three browser builds, extension pages, content scripts, background, local/session storage, optional host access, browser-group bindings, dynamic registrations, site modules, and the release supply chain. Assets: user rules, plans, aggregated usage, browsing privacy, extension privileges, update channels, and release credentials.
+
+<a id="信任边界"></a>
+
+## Trust boundaries
 
 ```text
-不可信网站 DOM/脚本 ─► content script ─► 特权 background ─► local storage
-                               ▲                    ▲
-                               │                    │
-                     local CSS/selectors      extension pages
+untrusted site DOM/scripts -> content script -> privileged background -> local storage
+                                    ^                   ^
+                                    |                   |
+                           local CSS/selectors     extension pages
 
-local files ─► importer/validator ─► CSS/selectors / User Scripts API
+local files -> importer/validator -> CSS/selectors / User Scripts API
 
-source/dependencies ─► CI/build ─► store signing/review ─► browser profile
+source/dependencies -> CI/build -> store review/signing -> browser profile
 ```
 
-所有网页、DOM、URL、模块事件和 content-script 消息都不可信。扩展页与 background 是特权区，但仍需抵抗 DOM XSS、损坏 storage 和供应链攻击。本地 storage 不抵抗已控制设备/profile 的攻击者，因此不保存敏感网页内容。
+Pages, DOM, URLs, module events, and content-script messages are untrusted. Extension pages and background are privileged but still face DOM XSS, corrupted storage, and supply-chain attacks. Storage does not protect against someone controlling the device/profile; avoid sensitive page content.
 
-## 主要威胁
+<a id="主要威胁"></a>
 
-| 威胁                       | 影响                   | 缓解                                                                                             |
-| -------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------ |
-| 可选范围被当成默认全站权限 | 扩大浏览数据暴露       | 只在用户点击后申请精确 origin；撤销后注销 content script                                         |
-| 远程模块/配置执行          | 绕过商店审核           | 无 URL 安装/自动更新；只读文件选择器；禁止远程 JS/Wasm/eval/指令解释器                           |
-| 恶意本地模块扩大主机或能力 | 越权访问               | 精确来源、双重有界校验、显式授权；拒绝无法保持精确来源边界的 DNR                                 |
-| 用户脚本取得扩展权限       | 读取设置或操纵浏览器   | 仅 User Scripts API 隔离 world；不导出特权 API；Safari 禁用                                      |
-| CSS 外联或选择器滥用       | 隐私泄露或页面不可用   | 拒绝远程 import/url；大小/选择器上限；停用与删除路径                                             |
-| 网页伪造消息               | 特权操作或泄露         | 验证 sender、origin、permission、消息版本、类型和值域                                            |
-| DOM XSS/CSS 逃逸           | 扩展代码执行或锁死页面 | 安全 DOM API、严格 CSP、选择器有界、未知 DOM 安全放行、可退出遮罩                                |
-| 统计过细                   | 推断浏览习惯           | 只保存本地日期、小时、目标/时段和聚合用时；不保存普通 URL/标题                                   |
-| 计划授权重放               | 其他访问继承授权       | 绑定 itemId+visitId+真实标签+精确来源+截止，仅存会话；离开、关标签、重启撤销，到期后重入清理通知 |
-| 组绑定伪造或复活           | 普通限制被错误放行     | 仅扩展页显式绑定，后台重读真实归属；组销毁同步撤销，会话失效不自动重绑，缺 API 不放行            |
-| 来源切换污染额度           | 错计用时或延长访问     | 切换前结算旧区间，普通/白名单/计划来源分离，不复用旧视频回调；白名单不延长计划                   |
-| 关闭候选范围过宽           | 误关无关或组内页面     | 普通候选再次复核作用域及无组状态，未知归属保留；计划按自身精确来源处理                           |
-| 备份夹带代码或会话         | 执行代码或恢复旧授权   | 严格 schema 和 16 MiB 上限，只恢复同版本已安装模块偏好，不含源码、运行授权或组绑定               |
-| 心跳重放/休眠补时          | 统计膨胀               | 随机会话 ID、单活动会话、差值上限、idle/visibility/focus 检查                                    |
-| storage 损坏/资源耗尽      | 崩溃或持久错误         | schema、数量/长度上限、归一化、幂等迁移、安全默认值                                              |
-| 发布供应链接管             | 向用户推送恶意版本     | 锁依赖、可复现构建、校验和、MFA、最小发布权限、签名商店渠道                                      |
+## Main threats
 
-## 本地模块边界
+| Threat                                       | Impact                                   | Mitigation                                                                                                                                      |
+| -------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Treating optional patterns as default access | Broader browsing exposure                | Explicit requests for validated origins/reviewed site families; unregister after revocation                                                     |
+| Executable remote modules/configuration      | Bypassing review                         | No URL installation/auto-update; local file selection; no remote JS/Wasm/eval/interpreter                                                       |
+| Local module expands hosts or capabilities   | Unauthorized access                      | Exact origins, bounded validation at two boundaries, explicit permission; reject DNR that cannot preserve origins                               |
+| User script gains extension privileges       | Reading settings or browser control      | User Scripts API isolated world, no privileged API bridge; disabled on Firefox/Safari                                                           |
+| CSS requests or abusive selectors            | Disclosure or unusable pages             | Reject remote import/url, bound sizes/selectors, provide disable/remove paths                                                                   |
+| Forged page messages                         | Privileged actions or disclosure         | Validate sender, origin, permission, version, type, and value bounds                                                                            |
+| DOM XSS/CSS escape                           | Code execution or unusable overlay       | Safe DOM APIs, strict CSP, bounded selectors, preserve unknown DOM, exit paths                                                                  |
+| Excessively detailed statistics              | Browsing inference                       | Local dates, hours, IDs, aggregated time only; no ordinary URL/title history                                                                    |
+| Replayed plan grants                         | Another visit inherits access            | Bind item+visit+real tab+origin+deadline; session-only; revoke on origin departure, close, restart; clear stale notices after expiry            |
+| Forged/revived group binding                 | Incorrect ordinary-rule bypass           | Explicit binding, real membership reads, session-validated IDs, unique combined-feature recovery; dissolution revokes; fail closed without APIs |
+| Mixing timing sources                        | Wrong budgets or extended access         | Settle before switches; separate ordinary/whitelist/plan accounting and media callbacks; never extend plan deadlines                            |
+| Overbroad close candidates                   | Closing unrelated/grouped pages          | Recheck scope and ungrouped state; preserve unknown membership; plan closes by exact item origin                                                |
+| Backup carries code or grants                | Executing code or reviving authorization | Strict schema, 16 MiB cap, preferences only for identical installed versions; no source, grants, bindings                                       |
+| Heartbeat replay/sleep catch-up              | Inflated statistics                      | Random session ID, one active session, bounded elapsed intervals, idle/visibility/focus checks                                                  |
+| Corrupt storage/resource exhaustion          | Crashes or persistent errors             | Schema/count/length limits, normalization, idempotent migration, safe defaults                                                                  |
+| Release supply-chain takeover                | Malicious updates                        | Locked dependencies, reproducible builds, checksums, MFA, minimum publishing access, signed store channels                                      |
 
-本地模块可以提供域名策略、有限选择器、自包含 CSS 和隔离用户脚本，但不能：
+<a id="本地模块边界"></a>
 
-- 调用任意浏览器 API、读取任意 storage key；
-- 读取 Cookie、密码、账号或页面正文并持久化；
-- 添加未声明主机、远程脚本、远程 CSS、任意 HTML 或非空 DNR 规则；
-- 绕过用户的网站开关、权限、时间规则或计时条件。
+## Local-module boundary
 
-User Scripts API 本身允许用户提供任意页面脚本，因此启用前必须展示来源、精确网站范围和能力。核心不承诺第三方脚本安全，只保证它不进入扩展特权世界且可以停用/删除。
+Modules may declare domain policies, bounded selectors, self-contained CSS, and Chromium isolated user scripts. They may not invoke arbitrary browser APIs, read arbitrary storage, persist cookies/passwords/accounts/page text, add undeclared hosts, load remote code/CSS, supply arbitrary HTML/nonempty DNR, or bypass permissions and timing conditions.
 
-计划和组白名单只能覆盖普通时间配置，不能扩展主机权限或绕过显式模块域名阻断。分组定时只读取用户已保存的起止范围，不以网站额度或星期自动改变内容规则；普通/计划偏好独立，备份不携带可执行模块文件。
+The User Scripts API can execute arbitrary user-provided page code. Show source identity, exact sites, and capabilities before enablement. Core isolation and removal controls are not a guarantee that third-party scripts are safe. Unregistering cannot undo effects already executed in a page; refresh affected pages where necessary.
 
-## 剩余风险
+Plans and whitelists override only ordinary time settings, not host permissions or explicit module domain blocks. Filter schedules read saved daily start/end ranges, independently of access weekdays/budgets. Ordinary/plan preferences remain separate; backups contain no executable module files.
 
-- 网站改版可能让选择器或用户脚本失效；安全降级降低破坏面。
-- 浏览器对焦点、冻结、移动端后台和 idle 的报告不同；统计是专注辅助数据，不是审计计量。
-- 拥有设备/profile 权限的人可能读取或修改本地数据。
-- Safari/Firefox 生命周期和权限提示与 Chromium 不同，必须用签名候选手工验证。
+Group recovery uses hashed combined features, not a browser-guaranteed persistent identity. A unique, fully identical copy of a group's readable features cannot be distinguished perfectly by the API; preserve ambiguity rather than guessing.
 
-新增账户、同步、遥测、远程 API/配置、第三方 SDK、新权限、主页面脚本 world 或可执行模块格式时，必须在实现前重新评审本文件与 `PRIVACY.md`。
+<a id="剩余风险"></a>
+
+## Residual risks
+
+- Site changes can break selectors/scripts; safe degradation limits damage.
+- Focus, freeze, mobile background, and idle signals vary. Statistics support focus, not audited timekeeping.
+- Device/profile access permits reading or modifying local data.
+- Safari/Firefox lifecycle and prompts differ from Chromium; verify signed candidates manually.
+
+Review this model and `PRIVACY.md` before adding accounts, sync, telemetry, remote APIs/configuration, third-party SDKs, permissions, MAIN-world execution, or new executable formats.

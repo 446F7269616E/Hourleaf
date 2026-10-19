@@ -1,27 +1,29 @@
 # Hourleaf
 
-Hourleaf 是一款在本机运行的网站专注扩展。为网站设置可用时间和使用额度，安排限时访问计划，并查看使用时间统计。无需注册，不收集或上传用户数据。
+English · [简体中文](./README.zh-CN.md)
 
-支持 Chromium、Firefox 与 Safari 构建，界面提供简体中文、英文、系统明暗模式及五套主题色。当前版本为 `1.0.0`，未发布变更见 [更新日志](./CHANGELOG.md)。
+Hourleaf is a local browser extension for managing website time. Set availability windows and usage limits, schedule timed visits, and review your usage. No account or data collection.
 
-## 功能
+Builds are available for Chromium, Firefox, and Safari. The interface supports English, Simplified Chinese, system light/dark mode, and five color themes. The current version is `1.0.0`; see the [changelog](./CHANGELOG.md) for changes.
 
-- **网站规则**：主动选择并授权网站，按星期设置多个可用或不可用时间段，支持跨午夜与自定义预设。
-- **额度与分组**：为每个时间段单独设置额度和分组，通过等待、数学题或本地密码开启下一组。
-- **到期处理**：提供宽容、心流和严格模式；心流模式可在每组到期后继续一次。
-- **独立计划**：添加、批量导入、排序与完成事项，使用列表或思维导图管理；每项可单独设置访问时长和到期方式。
-- **使用统计**：查看日、周、月、年用时、小时分布、网站占比和计划完成情况。
-- **标签页组白名单**：在支持的浏览器中，为指定组设置可用时间，组内已授权网站不消耗普通额度。
-- **访问确认与保护**：设置访问前确认、暂停页提示语及关闭保护，减少随意延长使用时间。
-- **本地数据管理**：导出和恢复配置，清空统计或全部数据。
+## Features
 
-普通计时以页面可见、窗口聚焦等状态为依据；浏览器支持时会排除设备空闲时间。计划使用独立计时，不消耗普通网站额度。
+- **Website rules:** Choose which websites to authorize, set daily availability windows, and reuse custom presets. Overnight windows are supported.
+- **Limits and groups:** Divide each window's allowance into groups. Open the next group immediately, after a wait, by solving a math problem, or with a local password.
+- **Expiry modes:** Choose Lenient, Flow, or Strict. Flow allows one extension per group.
+- **Independent plans:** Add, bulk-import, reorder, and complete items in a list or mind map. Give each item its own duration and expiry mode.
+- **Usage insights:** Review daily, weekly, monthly, and yearly totals, hourly patterns, website shares, and plan completion.
+- **Tab-group whitelist:** On supported browsers, give an existing tab group its own availability windows without consuming ordinary website allowances.
+- **Confirmation and protection:** Configure access confirmation, pause-page messages, and protection against disabling the extension.
+- **Local data management:** Back up and restore configuration, restore defaults, or delete all local data.
 
-## 安装
+Ordinary usage follows page visibility and window focus, excluding device idle time where supported. Plans run on independent timers and do not consume ordinary website allowances.
 
-商店版本以各平台实际公开的安装页面为准，当前仓库不提供未经确认的商店链接。GitHub 中的 ZIP 为构建产物，不等同于已签名或已通过商店审核的版本。
+## Installation
 
-从源码构建需要 Node.js 22 或更高版本：
+Use each platform's published store listing when available. GitHub ZIP files are build artifacts; they are not signed or store-approved packages.
+
+Building from source requires Node.js 22 or later:
 
 ```bash
 npm ci
@@ -30,26 +32,26 @@ npm run build
 npm run package
 ```
 
-- Chromium：在 `chrome://extensions` 开启开发者模式，加载 `dist/chromium`。
-- Firefox：在 `about:debugging#/runtime/this-firefox` 临时加载 `dist/firefox/manifest.json`；正式安装需使用 AMO 签名版本。
-- Safari：将 `dist/safari` 转换为 Xcode 承载 App，完成签名后安装；App Store 分发另需开发者账户和审核。
+- Chromium: Enable developer mode at `chrome://extensions` and load `dist/chromium`.
+- Firefox: Temporarily load `dist/firefox/manifest.json` at `about:debugging#/runtime/this-firefox`. Permanent installation requires an AMO-signed version.
+- Safari: Convert `dist/safari` to an Xcode container app and sign it before installation. App Store distribution also requires a developer account and review.
 
-发布材料、平台要求及待完成事项见 [商店提交说明](./docs/STORE_SUBMISSION.md)。
+See [store submission materials](./docs/STORE_SUBMISSION.md) for platform requirements and remaining steps.
 
-## 隐私与许可
+## Privacy and license
 
-Hourleaf 在本机处理和保存设置、计划及聚合用时，不收集或上传用户数据。网站权限按需授予，可随时撤销。详情见 [隐私政策](./PRIVACY.md)。
+Settings, plans, and aggregate usage stay on your device. Hourleaf does not collect or upload user data. Website permissions are requested when needed and can be revoked. See the [privacy policy](./PRIVACY.md).
 
-本项目采用 [MIT 许可证](./LICENSE)，允许使用、复制、修改及分发，包括商业用途，须保留版权和许可声明。第三方材料遵循各自许可。
+The [MIT License](./LICENSE) permits use, copying, modification, and distribution, including commercial use, with the copyright and license notices retained. Third-party materials retain their own licenses.
 
-## 免责声明
+## Disclaimer
 
-本项目用于交流、学习和提升效率，按现状提供，不保证计时、访问规则或兼容性始终准确可用。在法律允许的范围内，开发者不承担使用本软件造成的损失；依法不能免除的责任不受影响。
+Hourleaf is provided for learning, exchange, and productivity, as is, without guarantees of timing accuracy, rule enforcement, or compatibility. Liability is limited to the extent permitted by law; rights and obligations that cannot legally be excluded remain unaffected.
 
-如涉及合法权益问题，请[联系开发者](https://github.com/446F7269616E/Hourleaf/issues)并说明相关内容及权利依据；安全或隐私漏洞请使用[私密报告渠道](./SECURITY.md)。
+For rights-related concerns, [contact the developer](https://github.com/446F7269616E/Hourleaf/issues) with the relevant material and basis for your claim. Report security or privacy vulnerabilities through the [private reporting process](./SECURITY.md).
 
-## 文档与参与
+## Documentation and contributions
 
-[功能说明](./docs/FEATURES.md) · [开发文档](./docs/README.md) · [贡献说明](./CONTRIBUTING.md) · [发布清单](./docs/RELEASE_CHECKLIST.md) · [组件目录](./optional-modules/README.md)
+[Features](./docs/FEATURES.md) · [Development documentation](./docs/README.md) · [Contributing](./CONTRIBUTING.md) · [Release checklist](./docs/RELEASE_CHECKLIST.md)
 
-本地自动检查仅执行 TypeScript 编译和构建，浏览器交互及商店候选验收由人工完成。
+Local automated checks cover TypeScript compilation and builds. Browser interactions and store candidates require manual acceptance.

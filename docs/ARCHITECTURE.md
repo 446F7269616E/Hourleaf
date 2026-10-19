@@ -1,483 +1,351 @@
-# Hourleaf 架构与数据契约
+# Hourleaf architecture and data contracts
 
-当前契约与源码同步：2026-10-14。完整产品行为见 [FEATURES.md](./FEATURES.md)，按功能定位源码见 [文档目录](./README.md)。正文的领域章节描述当前行为；后面的日期章节记录演进，旧约定与当前契约冲突时以当前契约为准。
+Domain contracts were synchronized on 2026-10-14; the dated history records changes through 2026-10-19. The current contracts below take precedence over superseded historical layouts or lifecycle rules. See [features](./FEATURES.md) for product behavior and the [index](./README.md) for implementation entry points.
 
-## 目标
+<a id="目标"></a>
 
-Hourleaf 是本地优先、跨浏览器的网站专注扩展。核心目标是准确计时、确定执行用户规则、按需授权网站，并让站点适配可以独立演进而不进入通用内核。
+## Goals
 
-## 分层
+Hourleaf is a local-first, cross-browser website-focus extension. Keep timing accurate, rule evaluation deterministic, site access optional, and site adaptations separate from the generic core.
 
-页面品牌、工具栏与 favicon 共用选定的 C 版叶片沙漏系列；品牌渲染统一由 `src/ui/brand-mark.ts` 提供，资源尺寸和导出方式见 [图标规范](./ICONS.md)。
+<a id="分层"></a>
+
+## Layers
 
 ```text
 popup / dashboard / plan / options / block / home / end
-                    │
-                    ▼
-           application services
-          ┌─────────┴──────────────┐
-          ▼                        ▼
- generic focus core        local module gateway
-          │           ┌────────────┼────────────┐
-          │           ▼            ▼            ▼
-          │      CSS/selectors              User Scripts API
-          └───────────────┬───────────────┘
-                    ▼
-      storage / permissions / scripting / idle
-                    ▼
-     Chromium / Firefox / Safari build adapters
+                         |
+                 application services
+                  /                 \
+        generic focus core    local module gateway
+                  |            /                 \
+                  |       CSS/selectors      User Scripts API
+                  \______________  ______________/
+                                 \/
+              storage / permissions / scripting / idle
+                                 |
+                 Chromium / Firefox / Safari adapters
 ```
 
-- `src/shared` 与 `src/core` 只包含通用领域模型、消息和浏览器端口。
-- `src/background` 是可恢复的协调层，不依赖常驻 Service Worker。
-- `src/content` 只报告可见性、焦点和路由状态，并渲染核心专注界面。
-- `src/modules/local` 负责有界本地文件格式、双重校验、存储和平台执行适配。
-- `optional-modules` 是仓库侧示例目录，不进入商店包，也不被运行时联网读取。
-- UI 只调用版本化消息，不直接读写任意 storage key。
-- 平台差异由浏览器适配层与构建 manifest 处理，业务层不按 UA 分支。
+- `src/shared` and `src/core`: domain models, messages, browser ports.
+- `src/background`: recoverable coordination, without requiring a persistent Service Worker.
+- `src/content`: visibility/focus/routing reports and core focus UI.
+- `src/modules/local`: bounded formats, importer/background validation, storage, platform execution.
+- `optional-modules`: repository-side examples, excluded from store packages and runtime network access.
+- UI uses versioned messages rather than arbitrary storage keys. Browser ports and manifests own platform differences; business logic does not branch on user-agent strings.
+- Branding uses the selected C-series leaf hourglass through `src/ui/brand-mark.ts`; see [icons](./ICONS.md).
 
-## 通用网站模型
+<a id="通用网站模型"></a>
 
-设置 schema v5 使用三个稳定标识：
+## Site model
 
-- `SiteId`：用户授权的网站作用域；普通网站是精确来源，审核过的站点家族使用规范来源；
-- `TargetId`：同一网站内可独立应用时间规则的目标；
-- `SiteModuleId`：经过审核的可选站点能力包。
+Settings schema v5 distinguishes `SiteId` (authorized site scope), `TargetId` (independent rule target within a site), and `SiteModuleId` (reviewed optional adaptation).
 
-核心只保存来源、主机名和经过校验的匹配范围，不保存普通浏览的路径、查询参数或页面标题。新增网站时必须由用户点击触发权限请求。普通网站始终授权精确 `${origin}/*`；只有 `src/shared/site-scope.ts` 中显式审核的站点家族才能扩展范围，例如 Bilibili 使用 `https://*.bilibili.com/*` 同时覆盖根域与其 HTTPS 子域。不得根据任意输入自动推断 eTLD+1 或泛化子域，以免跨租户或扩大权限。后续同类网站通过站点家族注册表新增数据定义，权限、URL 解析、计时、popup、访问确认和标签页关闭统一复用同一作用域函数。后台只为仍持有权限的网站注册动态 content script，并在新增配置或重建注册时把同一脚本安全地补注入已经打开的匹配标签；内容入口以隔离世界内的运行标记保证幂等，避免重复心跳和监听器。撤销权限或删除网站后停止计时与拦截。
+Store origins, hostnames, and validated patterns, not ordinary paths, queries, or page titles. Permission requests require explicit action. Ordinary sites use exact `${origin}/*`; only reviewed families registered in `src/shared/site-scope.ts` may expand scope. Bilibili uses `https://*.bilibili.com/*` for its HTTPS family. Never infer eTLD+1 or broaden arbitrary input across tenants.
 
-普通网站默认有一个整站目标。站点模块可以声明多个稳定目标，但不能扩展到 manifest 未声明的主机。
+Permissions, URL resolution, timing, popup, confirmation, and tab closing reuse the same scope helpers. Register dynamic content scripts only while permission exists. Adding/reconciling a site also safely injects the same script into already-open matching tabs. An isolated-world entry marker prevents duplicate listeners/heartbeats. Revocation/deletion stops timing and interception. Ordinary sites have one whole-site target; optional targets cannot add undeclared hosts.
 
-## 商店核心与本地模块协议
+<a id="商店核心与本地模块协议"></a>
 
-商店包不包含网站专用可执行模块。旧 `SiteModuleDescriptor` 只保留迁移与源码兼容，发布目录为空，构建脚本不再输出 `modules/<site>.js`。
+## Store core and local modules
 
-`LocalModuleDefinition` 是本地文件经导入器解析后的规范化声明：
+Store packages contain no executable site modules. Legacy `SiteModuleDescriptor` remains for migration/source compatibility, but release catalogs are empty and builds emit no `modules/<site>.js`.
 
-- 固定模块 ID、版本、名称和精确 HTTP(S) 来源；
-- `timed | always-allow | always-block` 域名策略；
-- 有界元素选择器和自包含 CSS；
-- 非空 DNR 规则被拒绝，避免域名级规则越过精确 origin 边界；
-- 可选用户脚本文本，只能交给浏览器 User Scripts API。
+`LocalModuleDefinition` normalizes an ID, version, name, exact HTTP(S) origins, `timed | always-allow | always-block` policy, bounded selectors, self-contained CSS, and optional user-script text. Reject nonempty DNR because it cannot express the required exact-origin boundary.
 
-导入器只读取用户在同一次文件选择中提供的 `.json`、`.css`、`.user.js`。清单不能包含远程依赖，核心不提供模块 URL 安装、GitHub API、自动更新、`eval`、`Function`、远程 `import` 或解释器。
+Only `.json`, `.css`, and `.user.js` files selected together enter the importer. There is no remote dependency, URL installer, GitHub API loader, auto-update, `eval`, `Function`, remote `import`, or instruction interpreter.
 
-发布形态：
+- One Hourleaf extension per browser; no second extension requirement.
+- Show author/version/sites/capabilities and require explicit acknowledgement before requesting site permission.
+- Generic content scripts apply selectors/CSS; reject CSS external-resource syntax.
+- `content/local-page-rules.ts` owns document/open-shadow-root styles. Respect each module's `shadowRoots`; scan declared hosts and added subtrees, handle late roots through declared events and page-state refresh, and clean removed hosts/disabled rules. Do not reactivate legacy adapters.
+- Chromium scripts run in isolated `USER_SCRIPT`, top frame, at `document_idle`.
+- Firefox AMO/Safari reject script-bearing imports at preview, permission, and background boundaries and do not register stored scripts. `modules/local/capabilities.ts` is the shared policy; unknown platforms fail closed.
+- Disable/delete unregisters scripts; delete removes source. Initialization cleans Hourleaf's legacy DNR range. Unregistering cannot undo already-executed page effects; refresh affected pages after upgrading.
 
-- 每个平台只发布一个 Hourleaf 扩展，不要求用户安装第二个扩展；
-- 模块先显示网站范围与能力，再由用户点击申请精确来源权限；
-- 元素隐藏/CSS 由通用 content script 应用，CSS 远程加载语法被拒绝；
-- `src/content/local-page-rules.ts` 统一渲染本地样式，并按模块的 `shadowRoots` 声明同步到开放根；后台保留每个模块自己的规则边界。仅扫描声明宿主和新增子树，挂载事件处理晚附着的根，页面状态刷新兜底；规则更新、宿主移除和停用清理旧样式，不依赖已经停用的历史站点适配器。
-- Chromium 固定使用隔离 `USER_SCRIPT` world、顶层 frame、`document_idle`；
-- Firefox AMO 与 Safari 商店构建在预览、授权及后台拒绝用户脚本文件，不执行已保存脚本；平台策略由 `src/modules/local/capabilities.ts` 统一提供；
-- 停用/删除模块会注销其用户脚本，本地文件内容随删除移除；初始化同时清理旧版本遗留的自有 DNR 规则。
+Debug shares the builder but inlines current repository modules and test sites at build time. Its separate name, fixed test hosts, marker, and outside-repository output never enter release candidates. Seeds remove only their own obsolete IDs, not unrelated manual imports. See [Debug](./LOCAL_DEBUG_BUILD.md) and [module format](./LOCAL_MODULES.md).
 
-本地 Chromium Debug 版由同一构建入口生成，但只在构建期内联 `optional-modules/` 当前内容并预置对应受管网站。Debug 产物默认写到仓库外，使用独立名称、固定测试 host 权限和可验证 marker；正式构建注入空预置且发布门禁拒绝任何 Debug manifest 或 marker。Debug seed 只清理自身记录的陈旧模块 ID，不触碰测试者手动导入的其他模块。详见 [LOCAL_DEBUG_BUILD.md](./LOCAL_DEBUG_BUILD.md)。
+<a id="计时模型"></a>
 
-完整格式和平台能力矩阵见 [LOCAL_MODULES.md](./LOCAL_MODULES.md)。
+## Timing and accounting
 
-## 计时模型
+Accrue time only for a configured, authorized, enabled target while its page is visible, its window focused, the device active where supported, and access unblocked. Content sends `start / heartbeat / route / stop`; background serializes events, deduplicates session IDs, and bounds heartbeat gaps.
 
-累计时间必须同时满足：
+Before responding to a session event, persist the previous `TargetId + TimePeriodId` interval so the following decision sees authoritative usage. Split at local minute/hour/midnight boundaries; daily buckets feed week/month/year summaries without ordinary URL history. Retain fractional seconds in storage and aggregation; round only for presentation. Hour buckets contain actual seconds, never a second copy of flow annotations. Repeated DST clock hours share one hour bucket. Daily usage retention is 400 days.
 
-1. 当前来源已由用户配置和授权；
-2. 对应网站与目标已启用；
-3. 页面可见且窗口聚焦；
-4. 设备未空闲或锁定；
-5. 页面未被计划或时间规则阻断。
+`background/period-accounting.ts` separates actual `byTarget` usage from quota `byPeriod[periodId]`. `extra:<periodId>` and `extra:<periodId>:gN` are total/group extra-time annotations; `free:<periodId>` records uncharged extra time. Do not sum annotations into quota or double-count mirrored extras.
 
-content script 发出 `start / heartbeat / route / stop`。后台串行处理会话事件并按会话 ID 去重，心跳间隔超过上限视为中断；每次会话事件必须先完成上一段 `TargetId + TimePeriodId` 聚合写入再响应，使紧随其后的规则判定读取到同一权威用量。按本地小时和午夜边界拆分后写入每日桶，周/月/年统计仍从每日桶汇总，不保存页面 URL。
+`shared/group-quota.ts` alone computes boundaries: convert budget to integer milliseconds; cumulative group N ends at `ceil(totalMilliseconds × N / groupCount)`. The last boundary equals the total exactly; partial groups remain available. Recorder writes serialize read/clip/write and reselect periods at local minute boundaries. Ordinary timing caps at the authorized group; always-allow and whitelist usage records actual time without quota.
 
-## 时间规则
+`UsageTracker.flush` waits for pending writes even with no new accrual. `withSessionBoundary` settles and clears the old session before mutation, preventing heartbeat restart during a source change. Ordinary/whitelist/plan intervals never share ownership or media callbacks. A whitelist-owned interval stops at the window boundary rather than converting its remainder into ordinary quota.
 
-规则是纯函数：`weekday + local time + target settings + period usage + runtime -> allow | block | defer`。
+<a id="时间规则"></a>
 
-- 每个目标拥有多个 `TimePeriodSettings`；新目标默认每天 `00:00–00:00` 全天时段，额度为空、1 组，按本地 0 点刷新；
-- 网站和目标级 `enabled` 仅保留为旧数据兼容镜像并在读取时归一为 `true`；用户可见的启停边界只有 `timePeriods[].enabled`，避免隐藏总开关覆盖时间段状态；
-- 先按星期，再按 `HH:mm` 半开区间匹配；相同起止时间表示所选日期全天，跨午夜按开始日延续；
-- 重叠时优先级为 `always-allow > always-block > timed`；没有时间段或全部时间段停用时可无限使用，仍记录实际用时但不扣时段额度；存在启用的时间段但当前未命中时仍不可用；
-- `timed` 时段拥有独立额度和 1–24 个等分组；组运行状态与统计分离，避免污染长期设置；
-- `src/shared/time-period-presets.ts` 把内置及自定义预设转换为全新的普通 `TimePeriodSettings[]`，因此每次应用均有独立运行时 ID 和额度。应用预设时仅替换完全未修改的系统全天时段，其他已有时段一律保留并追加。内置预设来源不写入存储；用户命名的自定义预设保存为 schema v5 的 `customTimePeriodPresets`，最多 32 个、每个最多 16 段，并随配置备份往返。三餐预设为 07:00–09:00、12:00–14:00、18:00–20:00 各 30 分钟 1 组；两段分割为 06:00–12:00 与 12:00–18:00 各 30 分钟 2 组；午前、午后、晚间分别在 06:00–12:00、12:00–18:00、18:00–00:00 提供 60 分钟 3 组；早起鸟为 00:00–06:00、06:00–12:00 各 30 分钟 2 组，夜猫子为 12:00–18:00、18:00–00:00 各 30 分钟 2 组；
-- 每组额度耗尽后均使用 `end.html` 暂停页。宽容模式在总额度耗尽后可确认继续；严格模式总额度用尽后只能结束；心流模式每组可延长一次（1–15 分钟或当前视频结束），所有模式均保留明确的分组转换。
-- `end.html` 根据上下文增减控件：普通访问显示已完成组数、实际时长、剩余组数与额度、今天各配置网站的总用时及可选激励文字；计划只显示事项的确认时长、目标备注和必要操作。旧 `endPage.view` 仅为备份兼容保留，不再隐藏核心反馈。
-- 网站首次进入先确认；默认在同网站当前可用时段内共享确认，新标签页或重入不重复暂停；开启“新标签页重复确认”后恢复逐标签确认。网站配置在详情底部保留独立的可选目标提示语开关；`visitConfirmation.promptEnabled` 只控制输入区和确认页文案，关闭时保留 `prompt`，不改变访问确认规则。旧记录未带开关时按是否已有有效文字迁移，新增网站默认关闭；配置备份同样补齐兼容值。原独立启停/等待字段作为兼容数据，不再决定放行。普通访问及下一组共用 `endPage.groupUnlock`：默认等待 30 秒（1–10800 秒可调）、立即确认、随机数学题或密码。倒计时结束仍需点击。已有显式选择保留；旧分钟值迁移为秒。
-- 数学题由 `shared/unlock-challenge.ts` 生成，普通题为整系数一次方程，微积分为求导/定积分。随机种子在访问会话或当天分组中持久化，刷新不换题。答案在后台计算，不下发答案；不使用 eval。密码保存本地 SHA-256 校验值，只作为自律摩擦，不是账户安全边界。
-- 待确认挑战绑定 `tabId + SiteId + origin + 策略版本 + 可用时段作用域`。默认将完成的确认按网站共享；开启重复确认后仅使用逐标签授权，离开来源或关标签使该标签授权失效。后台校验确认页自身标签、返回地址及等待/题目/密码；下一组等待仅在真实组边界且没有活动心流延时时开始。
-- 心流时使用同一个 `end.html` 的扩展 iframe 覆盖原站点，暂停原媒体、使网页主体 inert，保留播放位置。恢复请求通过扩展内部消息由后台转发原标签页，内容脚本复核暂停实例与授权后才恢复网站；视频结束绑定原视频元素，替换媒体时重新绑定。普通结束和访问确认采用顶层页面。
-- 计时通过 `background/period-accounting.ts` 分离实际用时与额度，`byTarget` 是不重复的实际总用时，`byPeriod[periodId]` 是额度消耗。`extra:<periodId>` 和 `extra:<periodId>:gN` 记录总额外用时与各组延时；`free:<periodId>` 记录未扣额度的额外时间。它们是统计注记，不参与时段额度汇总。仪表盘显示额外时间，暂停页显示当前时段额外时间。
-- `endPage.flowConsumesNextGroup` 默认关闭，在每次延时授权时快照为 `flowConsumesQuota`；开启后延时扣除后续额度。解锁自动跳过已耗尽分组，最后额度耗尽不再解锁。延时开始清除原等待时间，延时结束后重新等待；每组只能使用一次心流，打开下一组才重置。
-- 暂停、解锁、视频结束及清理操作先结束计时段；tracker 的落盘队列串行，正常计时封顶在已授权组边界。暂停页等待不计入使用时间。跨午夜仍使用每日桶，额度计算保留毫秒精度，界面按秒展示。
-- 普通结束页的关闭操作只关闭配置网站作用域内的组外标签，任何浏览器组内的页面（包括发起操作的暂停页）均保留，与是否配置白名单无关；计划结束页仍按计划事项精确来源关闭相关标签。关闭前复核实时 groupId，无法读取标签页或无法确认其分组状态的普通候选不关闭，空集合不调用 remove；撤销对应活动心流/计划授权。顶层扩展页显式传自身 tab ID，后台复核，兼容 Chromium 不提供 sender.tab。
+## Time rules
 
-## 标签页组白名单
+Pure evaluation: `weekday + local time + target settings + period usage + runtime -> allow | block | defer`.
 
-配置页顶部的“添加标签页组白名单”与“添加网站”同级；左侧同时放置网站目录和白名单目录两个独立模块及各自配置数量，点击左侧项目后右侧只显示当前网站或白名单详情。两个目录共用 `src/ui/configuration-directory.ts`，统一选中、摘要、键盘访问与空状态；配置页分别记住网站和白名单的上次选择，销毁浏览器组不改变白名单自身稳定 ID 对应的选择。新增白名单保存成功后选中它；删除当前项后选中剩余首项，删空后保持在白名单空状态。没有网站时仍可独立选择白名单。沿用中英文、主题和基础控件；创建、编辑、启停、删除由独立 UI 模块调用专用消息，不进入普通网站自动保存的草稿，避免两个保存通道覆盖彼此。
+- New targets default to daily `00:00–00:00`, unlimited quota, one group, local-midnight reset.
+- Site/target `enabled` fields are compatibility mirrors normalized to true. User-visible enablement belongs to individual periods.
+- Match weekdays and half-open HH:mm ranges. Equal endpoints mean the entire selected day; overnight ranges follow the starting weekday.
+- Overlap priority: `always-allow > always-block > timed`. No periods/all disabled means unlimited ordinary access with actual timing and no period charge. Enabled periods with no current match mean unavailable. Explicit domain blocks and filter schedules remain effective.
+- Timed periods have independent budgets and 1–24 equal groups. Runtime is separate from durable configuration.
+- Every group boundary uses `end.html`. Flexible mode allows explicit continuation after total exhaustion; strict ends access; flow allows one extension per group, either 1–15 minutes or explicit video-end authorization.
+- `endPage.flowConsumesNextGroup` defaults false and snapshots to `flowConsumesQuota` on each grant. When enabled, extra time consumes later quota; unlocking skips exhausted groups and cannot exceed the final budget. Starting flow clears waiting; ending flow restarts it. Only opening a new group resets the one-use flow allowance.
+- Pause/unlock/video-end/cleanup first settle timing. Pause-page waiting is not usage. Midnight uses a new daily bucket/runtime; quota calculations retain millisecond precision.
+- A name-only edit preserves runtime. Budget/group/day/range edits invalidate incompatible unlock state; mode edits revoke incompatible flow/flexible grants; unlock-method edits clear waits/challenges. All mutations use the same background state queue and failures do not block subsequent work.
+- Flow grants retain `flowGrantId`, `flowStartedAt`, and `flowConsumesQuota`; stale, duplicate, cross-group/day callbacks cannot change a new grant. Popup extrapolation uses the grant's captured charging policy and is bounded at the current group. Normalize runtime keys/date/target/period and retain newest entries with capacity for all configured target×period combinations; prune runtime older than 35 days, not an arbitrary first 512 entries.
 
-| 模块                                                | 职责                                                                 |
-| --------------------------------------------------- | -------------------------------------------------------------------- |
-| `src/shared/tab-group-whitelist.ts`                 | 有界规则解析、规范化、星期与跨午夜判断、消息状态契约                 |
-| `src/background/tab-group-whitelist.ts`             | 当前浏览器组查询、关闭/解散分类、显式重绑与撤销                      |
-| `src/ui/tab-group-whitelist.ts`                     | 独立左侧目录、右侧选中详情、添加入口、时段表单与失效提示             |
-| `src/ui/configuration-directory.ts`                 | 网站与白名单共用的目录数量、项目摘要、选中样式及可访问导航           |
-| `src/ui/configuration-controls.ts`                  | 网站与白名单共享的字段、开关、星期选择与日期摘要；仅负责呈现         |
-| `src/background/index.ts`                           | 与计划、模块域名策略、访问确认、工具栏合并判定，串行修改及组事件通知 |
-| `src/background/tracker.ts`、`period-accounting.ts` | 组切换前区间快照与结算、分钟边界拆分、白名单实际用时免额度           |
-| `src/content/index.ts`、`src/end/index.ts`          | 组变更即时复核、分钟边界复核、普通暂停页恢复与计划暂停保护           |
+### Presets
 
-设置 schema v5 增加 `tabGroupWhitelist: TabGroupWhitelistRule[]`，旧数据及旧备份补为空数组。最多 64 个组配置，每项继续使用原稳定 ID 关联浏览器组绑定。新增可选 `timePeriods`，每组最多 64 个具有唯一 ID、名称、enabled、1–7 个唯一星期与起止时间的时段。旧单时段字段保留兼容；未提供 `timePeriods` 时由 `tabGroupWhitelistPeriods()` 将旧规则视为一个时段，提供时只以数组为准，空数组不放行；相同起止时间表示所选日期全天，跨午夜沿用开始日，结束时刻不包含在内。同组所有启用时间段取时间并集；白名单不命中或全部停用时完全回到现有普通判定，不形成额外的组黑名单。
+`shared/time-period-presets.ts` produces fresh ordinary periods with independent runtime IDs/budgets. Replace only an untouched system all-day period; append otherwise. Built-in provenance is not stored. Named `customTimePeriodPresets` in schema v5 allow 32 presets, 16 periods each, and round-trip through backup.
 
-绑定与普通网站设置隔离。`background/tab-group-bindings.ts` 串行维护 `hourleaf.tab-group-bindings.v2` 本地记录：规则 ID 对应原组随机身份、恢复特征摘要、当前会话标记和活动组编号；`hourleaf.tab-group-binding-session.v1` 在 session 中保存随机会话标记。数字组编号只在会话标记相同且实时组存在时可信，浏览器重启后不直接复用旧编号。恢复特征为组名、颜色、成员数量及当前权限可读的成员 URL 集合的 SHA-256 联合摘要，保留重复数量、忽略标签排列，不保存 URL 明文或网页标题；无可读 HTTP(S) 成员和私密窗口不建立自动恢复特征。
+| Preset                        | Periods                                 | Budget/groups per period |
+| ----------------------------- | --------------------------------------- | ------------------------ |
+| Meals                         | 07:00–09:00, 12:00–14:00, 18:00–20:00   | 30 minutes / 1           |
+| Two-part split                | 06:00–12:00, 12:00–18:00                | 30 minutes / 2           |
+| Morning / Afternoon / Evening | 06:00–12:00 / 12:00–18:00 / 18:00–00:00 | 60 minutes / 3           |
+| Early bird                    | 00:00–06:00, 06:00–12:00                | 30 minutes / 2           |
+| Night owl                     | 12:00–18:00, 18:00–00:00                | 30 minutes / 2           |
 
-`tabGroups.onRemoved` 同步撤销当前访问；依据 `tabs.onRemoved.isWindowClosing`、窗口移除事件和窗口存在性查询区分窗口关闭与仍打开窗口中的组解散。窗口关闭保留恢复摘要、活动编号置空，配置页显示等待恢复；明确解散组或移走最后一个标签页清理记录。恢复、重新建组事件、成员/URL/颜色/标题变化以及后台启动均协调绑定；同一原组多条规则共享随机身份。只有唯一恢复来源且唯一候选的完整摘要相等时，才原子写入新的会话及组编号；同名、异成员、多个同特征候选或多个不同来源竞争时不猜选。当前 API 不提供跨重启的持久组 GUID；完全复制名称、颜色及可读成员、且仅留下单个候选的组无法从 API 严格区别，恢复采用上述联合特征策略，不能把它当作浏览器原生身份认证。
+## Confirmation and pause
 
-每次放行仍从浏览器读取真实标签所属组；组关闭期间不放行，不按页面消息声明编号授权。旧 v1 会话绑定仅在原组仍打开时升级，旧版已经丢失的绑定需要手动选择一次；原组特征改变而未被观察到、权限导致成员不可读、恢复未完成或存在歧义时保留待恢复状态，可显式重绑。恢复备份、恢复默认、清空数据及删除规则清理对应恢复记录；备份仅携带时段，不携带摘要/身份/编号。显式重绑先撤销旧记录再保存新配置，单次本地写入提交新绑定，保存期间发生组移除或窗口关闭则撤销新记录，不复活旧组。
+First entry requires confirmation. By default, confirmed access is shared across the same site's current available scope; new tabs/re-entry do not repeat it. `endPage.repeatConfirmationInNewTabs` defaults false; when true, each tab confirms and loses its grant on origin departure/close. Completed shared confirmations survive closing the original tab within their scope.
 
-| 重叠情况                                    | 行为                                                                                 |
-| ------------------------------------------- | ------------------------------------------------------------------------------------ |
-| 插件关闭                                    | 沿用关闭状态，无白名单计时或强制限制                                                 |
-| 模块域名黑名单与白名单                      | 模块域名黑名单仍阻断；内容隐藏/CSS 也保留                                            |
-| 当前标签页有有效计划                        | 计划截止时间、到期模式、视频结束暂停始终保留；白名单只覆盖普通配置部分               |
-| 有效计划与白名单重叠                        | 由当前绑定计划独立计时，不写普通用量或额度；白名单不延长计划截止时间                 |
-| 白名单与普通禁用/额度/分组暂停/首次确认重叠 | 组内已配置且仍授权的网站不限时，跳过普通访问确认；保留原额度和分组运行状态           |
-| 白名单时段结束或标签页移出组                | 立即复核普通配置，恢复原额度、分组边界及访问确认；其他组或组外同网站标签页不共享放行 |
+`visitConfirmation.promptEnabled` controls only optional text visibility, preserves `prompt` while off, and does not disable confirmation. New sites default off; old records/backup infer the flag from nonempty text. Obsolete independent wait/enable fields no longer authorize access.
 
-计时保存标签页区间开始时的白名单规则快照，进出组、删除组及修改配置时先结算旧区间；每段再按本地分钟判断，白名单只写实际 `byTarget/byHour`，不写 `byPeriod`。白名单拥有的区间在时段结束后停止，不能中途转为普通额度区间；新的页面会话重新建立普通访问资格。会话消息先结算旧区间再检查当前确认资格，STOP 不受新确认门槛阻止，被拒绝的心跳清理旧可见会话。因此跨白名单结束和跨午夜不会把旧白名单用时扣到后续额度。界面判定不携带旧普通时段、心流或剩余组信息，工具栏不显示普通额度倒计时；有计划时仍显示计划剩余时间。运行中的网页采用组变化事件通知与分钟边界计时器；暂停页按相同边界及组变化复核，不进行固定频率轮询。普通暂停可在白名单开始后恢复，计划到期暂停必须由原计划流程处理。
+Ordinary entry and next-group unlock share `endPage.groupUnlock`: default 30 seconds, adjustable 1–10800 seconds, immediate confirmation, random equation/calculus, or password. Countdown expiry still requires a click. Preserve explicit old choices; migrate minute values to seconds. `shared/unlock-challenge.ts` generates integer-coefficient equations or derivatives/integrals without eval. Persist seeds per visit/day-group; refresh does not change the question. Compute answers in background. Local SHA-256 password hashes are self-discipline friction, not an account-security boundary.
 
-Chromium 和 Firefox manifest 声明 `tabGroups` 权限，只读取组信息及标签页所属关系，不创建、移动或关闭浏览器组。不申请全量 `tabs` 权限。Safari 及缺少组 API 或会话存储的浏览器显示不可用说明并保留规则，安全地不放行。新增网站仍走原有精确 host permission；白名单不会注入未授权页面。
+Challenges bind `tabId + SiteId + origin + policy version + available-period scope`. `createVisitAccessContext` includes local date, relevant period/settings, unlock rules, and repeat mode. Day/period/policy changes invalidate confirmations; unrelated theme edits do not. `byTab` challenges and `bySite` grants live in session storage, or memory without it. Validate the extension confirmation page, its own tab, return URL, permission, and challenge/wait. Chromium may omit `sender.tab` or tab URL without broad `tabs`; verify supplied self-tab identity and reject available conflicting URLs, not missing optional metadata. Group waits begin only at a true boundary without active flow.
 
-接口依据：[Chrome tabGroups](https://developer.chrome.com/docs/extensions/reference/api/tabGroups)、[MDN tabGroups](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabGroups)。官方接口不保证跨重启稳定 ID，且窗口关闭和组清空都可能触发移除。当前采用会话标记验证活动编号、本地联合特征摘要恢复；参见 [MDN TabGroup](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabGroups/TabGroup) 对跨重启联合属性匹配的说明。
+Ordinary pauses show usage, groups, remaining quota, today's site totals, and optional messages; legacy `endPage.view` cannot hide core feedback. Plan pauses show item duration/goal/actions separately. Flow uses an `end.html` iframe over the original page, pauses media, marks body inert, and preserves position. Ordinary entry/end may use a top-level extension page.
 
-## 计划
+`ui/flow-choice.ts` offers minutes/video end, then one confirm button. Only an embedded pause with valid video context offers video end. After grant submission, recovery retry never grants time again. Real playing/unended main video before the pause selects video end initially; paused/ended/video-element-only/audio/standalone cases use minutes.
 
-计划清单接受用户主动添加的 HTTP/HTTPS URL，保存规范化 URL、来源、标题、最长 500 字的可选目标备注（goal）、顺序、完成状态、事项级预定时长和到期模式。点击开始先取得网站权限并进入统一暂停页；只有确认时长与目标后才创建授权和开始计时。只有用户点击“开始”时才请求该事项精确 origin 的可选网站权限；后台二次验证权限后，用唯一固定 ID 为当前 active grant 注册 `content.js`，不会批量注册整个队列，也不会改动 focus 网站的注册。开始项目时创建绑定 `itemId + visitId + origin + expiresAt + completionMode` 的授权；删除、完成、修改、停止或到期会撤销授权并对该固定注册执行 reconcile。后台为当前浏览器会话仍有标签页绑定的访问恢复注册，已到期且尚未确认的通知也保留注册以供原标签页展示。可选的 `autoCompleteOnStart` 默认关闭。
+`RESUME_PAUSE_FRAME` travels through runtime -> background -> `tabs.sendMessage(frameId: 0)`. Check extension sender, real tab, validated return URL, random mount channel, original target, current instance/URL/permissions/confirmation/plan. This relay stays outside the mutation queue to avoid deadlock with content's authoritative queries. Bind valid replacement media before resuming. A missing reply after 10 seconds or failed check offers retry; mutually exclusive fieldsets prevent simultaneous flow/next/close actions. Late responses cannot restore a replacement instance. Do not depend solely on `postMessage` source identity in extension contexts; see [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Window/postMessage#using_window.postmessage_in_extensions).
 
-计划到期沿用宽容 / 心流 / 严格语义。心流授权只能延时一次，分钟选项限制为 1–15；“视频结束”是独立的显式授权状态，不使用分钟过期时间，只由内容脚本绑定的当前视频在 `ended` 时发送 STOP，或由其他显式停止操作撤销。存储使用 `Number.MAX_SAFE_INTEGER` 作为不触发普通到期分支的持久化哨兵值，旧版 15 分钟视频结束授权在读取时迁移为该状态。
+Ordinary close removes only related, ungrouped tabs in the configured scope; preserve every grouped tab, including the initiating pause, and unknown membership. Recheck live membership immediately before removal; do not call remove for an empty set. Plans close by exact item origin. Revoke associated live grants and return visible close counts. Top-level extension pages provide self-tab IDs for background verification.
 
-计划页不暴露独立的“计划模式”启停开关。开始待办是进入计划访问的唯一显式入口；有效授权完成、删除、修改或到期后同步退出计划访问。到期后可在会话内暂存单个 `endedGrant` 作为原访问的待展示结束通知，始终不授权计时；暂停页确认继续、关闭或再次导航进入网站后清除，避免工具栏先读取到期状态而使原页面漏掉结束通知，也避免重复进入网址仍被旧计划拦截。`PlanModeSettings.enabled` 暂时只作为兼容字段和运行时状态保留。
+<a id="标签页组白名单"></a>
 
-计划列表使用自适应网格展示待办；列表与思维导图均把已完成事项统一放在页面底部、画布之外，默认折叠并在页面会话内保留展开状态。思维导图只展示待办分支，画布内容签名和适配范围仅包含待办；修改已完成事项不会重置画布视角。思维导图使用独立的大画布 viewport：节点按统一列宽和真实内容高度参与布局，长链接最多显示两行且不越过节点；画布支持空白区域拖动、指针中心缩放、键盘平移和 `fit view`。适配算法只依赖场景与 viewport 的实际边界并保留内边距，最低概览比例覆盖 500 个事项；分支连接线按真实节点中心重新测量，避免固定百分比连线错位。普通滚轮保留页面滚动，只有 `Ctrl/⌘` 加滚轮执行画布缩放。实现避免引入重量级图编辑器依赖。
+## Tab-group whitelists
 
-用户保存的计划 URL 与运行中的访问会话分离。`background/plan-visit.ts` 把新开始的计划绑定到确认页所属的浏览器标签页和精确 origin；同一标签页内的查询参数、路径、fragment、分页或 SPA 路由变化继续使用同一个截止时间，不依赖站点模块或分页参数清单。其他标签页沿用普通配置，其他来源不获得计划授权。`shared/plan-navigation.ts` 只为旧版无绑定授权保留原资源身份兼容，下一次开始计划自动采用新机制。
+`tabGroupWhitelist: TabGroupWhitelistRule[]` in schema v5 defaults empty for old data/backups. Limit 64 rules, each with a stable ID and up to 64 uniquely identified periods (name, enabled, 1–7 unique weekdays, start/end). `tabGroupWhitelistPeriods()` projects legacy single-period fields only when `timePeriods` is absent. Empty/all-off/no-match grants nothing; enabled periods form a union using the ordinary weekday/all-day/overnight/half-open semantics.
 
-计划始终独立计时：只有标签页及精确来源匹配当前 active grant 的访问可绕过普通配置时段与额度，且不写入配置的 `TargetId + TimePeriodId` 用量。原 `independentAccessTiming` 字段仅作兼容镜像，读写及旧备份恢复统一为 true；设置页移除切换开关。独立计时不扩展 host permission，不向其他标签页分享计划授权。
+| Module                                                       | Responsibility                                                                   |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `shared/tab-group-whitelist.ts`                              | Bounded parsing, normalization, schedule matching, message state                 |
+| `background/tab-group-whitelist.ts`                          | Real group queries, removal classification, rebind/revoke                        |
+| `background/tab-group-bindings.ts`                           | Serialized persistent recovery records and binding transactions                  |
+| `ui/tab-group-whitelist.ts`                                  | Independent directory/detail, add/edit periods, invalid bindings                 |
+| `ui/configuration-directory.ts`, `configuration-controls.ts` | Shared counts, summaries, selection, accessible navigation/fields                |
+| `background/index.ts`                                        | Merge plan/domain/confirmation/toolbar decisions and notifications               |
+| `background/tracker.ts`, `period-accounting.ts`              | Snapshot/settle source before changes, minute boundaries, actual-only accounting |
+| `content/index.ts`, `end/index.ts`                           | Membership/minute rechecks, ordinary recovery, plan-pause protection             |
 
-每个计划事项必须持久化自己的预定时长。可选的 `pauseOnVideoEnd` 会复制到 active grant；内容脚本只能对当前事项发送视频结束 STOP，后台再次校验 `itemId + visitId + sender.tab + origin + grant flag` 后撤销授权；旧页面因路由切换迟到的媒体结束事件不终止新页面。它与到期后心流模式的“播放结束后继续”是两个独立状态。
+Bindings are separate from settings. `hourleaf.tab-group-bindings.v2` in local storage maps rules to random original-group identities, recovery feature hashes, session markers, and active IDs. `hourleaf.tab-group-binding-session.v1` stores a random session marker. Trust numeric IDs only with the same marker and a real current group.
 
-## 存储与迁移
+Recovery hashes combine name, color, member count, and the multiset of currently permission-readable member URLs using SHA-256. Ignore tab order, retain duplicates, and store no plaintext URLs/page titles. No automatic signature for private groups or groups without readable HTTP(S) members. Own `end.html` pages contribute their validated return sites. With no configured rules, do not scan members; coalesce group/member events and write only changed records.
 
-为兼容既有安装，逻辑键暂时保持 `bilifocus.*`；品牌变更不直接重命名持久化键：
+`tabGroups.onRemoved` immediately revokes active access. Use `tabs.onRemoved.isWindowClosing`, window events, and existence queries to distinguish closing a window from dissolving a group in an open one. Window closure retains recovery hashes with no active ID; dissolution/last-member removal deletes the binding. Startup, restoration, group creation, and member/URL/color/title updates reconcile records. Rules for the same original group share random identity.
 
-- `bilifocus.settings.v1`：当前值 schema v5；
-- `bilifocus.usage.v1`：当前值 schema v3，权威字段为 `byTarget` 与 `byPeriod`，可选 `days[date].byHour[0..23][targetId]` 保存实际小时用量；
-- `bilifocus.temporary-access.v1`：当前值 schema v2；
-- `bilifocus.plan-queue.v1`：持久化计划清单；
-- `hourleaf.period-runtime.v1`：schema v1，保存每日分组解锁和一次性心流延时状态；
-- `hourleaf.modules.v1`：旧预装模块迁移状态；商店构建初始化时清理；
-- `hourleaf.local-modules.v1`：schema v1，保存用户本地导入的规范化模块与启用状态。
+Restore atomically only when both source and complete candidate signature are unique. Same names, different members, duplicate candidates, or competing identities never justify guessing. APIs expose no persistent GUID: an otherwise unique fully identical copy cannot be distinguished with certainty. This is a feature-matching strategy, not browser identity authentication.
 
-会话状态与上述长期数据分离：`bilifocus.plan-access.v1` 保存活动计划与待展示通知，`hourleaf.plan-visit.v1` 保存计划所属标签和来源，访问确认键 `hourleaf.visit-confirmation.v1` 保存挑战与确认作用域；不支持会话 API 时计划与确认使用后台内存。`hourleaf.tab-group-bindings.v1` 为旧会话绑定迁移源；v2 本地摘要与独立 session 标记负责白名单恢复，无会话 API 时不放行。旧版 local 计划授权在启动时清除，不迁移为新授权。
+Every grant rereads real tab membership. If a tab lacks `groupId`, query distinct bound groups and continue only for a unique membership. Closed windows, revoked/missing/ambiguous membership, query failure, unavailable group/session APIs, and incomplete recovery fail closed. Pending rules may be explicitly rebound. Rebinding revokes old records first and atomically writes the new binding; concurrent removal/window closure cancels it without reviving the old group. Upgrade old v1 records only for groups still open. Clear matching records on rule deletion, backup restore, defaults, and clear-data. Backups retain periods, never hashes/identities/group IDs.
 
-设置页“数据管理”提供纯本地 JSON 备份，格式为 `hourleaf.configuration-backup` schema v1。包含规范化核心设置（普通时间段、命名自定义预设、白名单时段）、计划清单，以及本机模块的稳定 ID、版本、普通/计划启停、关闭分组 ID 和分组时段引用；不包含使用历史、预设来源标记、临时/计划活动授权、分组运行态、访问确认、组绑定或模块 CSS/脚本源码。导出和导入使用同一严格校验器与 16 MiB 上限。
+| Overlap                                                        | Result                                                                                                           |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Extension off                                                  | No whitelist timing or enforced restrictions                                                                     |
+| Module domain block                                            | Still blocked; CSS/filtering also remain                                                                         |
+| Valid plan                                                     | Plan deadlines, end mode, and media-end pause remain; only the plan owns timing and no ordinary quota is charged |
+| Ordinary unavailable/budget exhausted/group pause/confirmation | Authorized configured sites in the bound group get unlimited ordinary access without changing quota/runtime      |
+| Window ends or tab leaves                                      | Re-evaluate ordinary rules/confirmation; other groups/ungrouped tabs never inherit access                        |
 
-恢复前，设置页在明确确认手势内申请备份网站与“本机已安装、版本完全一致且将恢复为启用”的模块所需来源权限；任一权限缺失不写入。先等待在途设置写入，后台结束并落盘旧计时段并清理组绑定（清理失败则不替换配置），再用单次 `storage.local.set` 原子替换设置、计划队列和安全模块偏好，关闭计划模式并重置本地临时访问及分组运行态。持久化成功后清理会话计划与访问确认，重建受管网站、本地脚本、计划注册和工具栏；协调失败以成功响应中的警告记录。未安装或版本不同的模块偏好跳过，不凭备份安装、替换或启用不同代码。
+Chromium/Firefox declare read-only-use `tabGroups`, not broad `tabs`; no group create/move/close operations. Safari shows unavailable state while preserving rules. Whitelists do not inject into unauthorized pages. API references: [Chrome](https://developer.chrome.com/docs/extensions/reference/api/tabGroups), [MDN](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabGroups), [MDN identity caveats](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabGroups/TabGroup).
 
-恢复不会主动撤销浏览器中原有但已不再出现在配置内的 host permission，以免误伤仍由本地模块或用户其他显式授权使用的同一来源；动态注册会按新配置立即移除，因此这些保留权限不会继续激活 Hourleaf 内容脚本。用户仍可在浏览器扩展权限面板手动撤销。
+<a id="计划"></a>
 
-v1/v2 的 Bilibili 板块、计划和内容降噪设置继续作为只读兼容 capsule 保留，但商店构建不激活旧站点模块。迁移必须幂等、有界并保留无法识别的数据；损坏值回退到安全默认值。计划视图偏好使用 `hourleaf.plan.view`，仅允许 `list | mindmap`。
+## Plans
 
-## 消息边界
+Persist user-entered normalized HTTP(S) URLs/origins, titles, optional goals up to 500 characters, order, completion, per-item duration, and completion mode. Adding/bulk importing requests no site permission. Start requests only that item's exact origin, then opens the common confirmation pause. Create authorization only after confirming duration/goal.
 
-访问确认只能由同一标签页中的扩展确认页授权，后台会再次匹配已配置网站作用域、当前 origin、策略版本和等待截止时间。
+`background/plan-visit.ts` binds `itemId + visitId + tabId + origin + expiresAt + completionMode`. Use the confirmation page's verified tab, never an inferred active tab. All same-tab/same-origin path/query/fragment/pagination/SPA navigation keeps the deadline, even different content. Other tabs/origins do not inherit it. `shared/plan-navigation.ts` retains resource matching only for legacy unbound grants until they end; restarting creates new visit identity without rewriting saved URLs.
 
-消息使用 `{version, requestId, type, payload}`。后台必须验证发送方、URL 来源、权限、字段、长度、枚举与数组规模。网站心流消息还要校验发送标签页同源、目标和时段；计划判定/延时/停止消息校验 sender 与声明 URL 同源且当前 origin 仍有 host permission，但不要求该 origin 已加入 focus 网站，事项、标签页会话与来源校验仍在 `PlanService` 边界完成；分组解锁仅允许扩展页。本地模块在导入器和后台边界分别规范化；content script 只能读取当前 URL 对应的合并 CSS/选择器，不能读取用户脚本、全量模块、全量设置/历史、请求任意 Chrome API 或传入 storage key。扩展页才能执行模块导入、站点 CRUD、计划 CRUD 与数据清理。
+`plan-registration.ts` uses one fixed active-grant registration of `content.js` after background permission revalidation. Never register the whole queue or overwrite focus registrations. Reconcile on stop/delete/complete/edit/expiry and restore current-session bound visits after worker sleep. An expired notice can retain its registration only for the original page to display it. `autoCompleteOnStart` defaults false.
 
-## UI 与文案
+Plans always time independently and do not write ordinary target/period usage. `independentAccessTiming` normalizes to true for old data/backups and has no UI switch. Only explicit Start enters plan access; obsolete `PlanModeSettings.enabled` remains a compatibility/runtime mirror.
 
-界面字号、控件尺寸、间距、导航响应式和页面布局的维护入口见 [UI_STYLE.md](./UI_STYLE.md)。共享尺寸由 `styles/tokens.css` 定义，基础控件由 `styles/base.css` 复用，页面 CSS 只处理各自的信息密度和布局。
+Flexible/flow/strict end behavior remains. A plan flow extension is once-only; minutes are 1–15. Video end is explicit authorization rather than a minute deadline; `Number.MAX_SAFE_INTEGER` is its persisted sentinel, replacing legacy fifteen-minute video grants. Optional `pauseOnVideoEnd` copies to the grant and is distinct from post-expiry video-end flow. STOP validates item, visit, sender tab, origin, and flag. Route/media replacement removes old listeners; stale ended events cannot stop a new page/grant.
 
-固定居中置顶导航顺序为：仪表盘、计划、配置、屏蔽、设置。品牌、主导航和页面操作分别占据顶栏左、中、右区域；最右侧问号按钮提供五个主页面的简短说明；窄屏降级为五等分横向导航。五个完整页面共享标题字号和页首位置；配置、屏蔽、设置不重复显示页面级副标题。各页职责保持单一：仪表盘只读展示聚合统计，计划页只承载待办/思维导图，配置页只管理网站时间段，屏蔽页负责本地模块导入、网站屏蔽内容分组和 GitHub 下载/开发规范入口，设置页管理语言、主题色、计划选项、暂停页、关闭保护与数据。主题色是规范化设置，以设计 token 驱动所有完整页面的强调色方案。配置页不提供人工保存按钮：限制模式和时间段变更通过串行领域消息实时持久化，状态区只反馈保存中、已保存或失败，且不得用完整设置快照覆盖其他页面的并发设置。所有页面通过 `src/shared/i18n.ts` 的稳定键共享简体中文/英文资源，manifest 使用标准 `_locales`；站点模块只提供数据和能力，不拥有独立视觉系统。用户可见文本遵守 [UX_WRITING.md](./UX_WRITING.md)，不显示内部 provider、协议或调试建议。
+Active grants, one pending `endedGrant` notice, and visits are session-only, or shared background memory without session storage. Notices grant no timing. Preserve the original page's notice even if popup reads expiry first. Clear notices on confirm/close or post-expiry navigation, including same-URL reload. Origin departure, tab close, stop/replace/edit/delete/complete, global disable, restore, and reset revoke runtime. Full browser restart restores the durable queue, not grants; clear legacy local grants at startup. Valid same-origin refresh keeps an unexpired deadline. Own pause pages retain the visit for confirmation. Other tabs' navigation cannot terminate it.
 
-配置、屏蔽和设置的桌面侧栏由 `ui/viewport-scroll-panel.ts` 维护可见范围。吸附顶部按导航实际高度与顶部偏移计算；底部留白不小于外壳的 `padding-bottom`，避免右侧滚到底后侧栏受网格底界挤压而被导航遮挡。高度以父网格的自然起点计算，避免侧栏位移与自身高度互相反馈。目录行保持内容高度，使用原生内部滚动并阻断滚动链；导航、网格、外壳尺寸与可视视口变化、页面滚动通过帧调度复核，重绘释放旧监听。宽度不超过 860px 或高度不超过 360px 时恢复单栏文档流。时钟展示始终采用 24 小时制；`ui/clock-input.ts` 为普通时段、预设和白名单提供 HH:mm 输入，绕开本机原生时间控件的 12 小时偏好，消息和存储时间契约不变；计划时间戳使用 `hourCycle: h23`。
+Plan queries and mutation/session heartbeats serialize appropriately. Accounting/badges/context projection use read-only queries (`reconcile: false` where required), avoiding revocation in a partially written transition. Missing/nonmatching items return disabled/allowed and ordinary site rules continue; never redirect ordinary browsing automatically to the plan list. Pause recovery returns the original tab's current validated same-origin page, not the queue's initial URL.
 
-配置页编辑采用即时调度的自动保存，并用单一串行写循环合并快速连续操作；写入期间的新编辑会在前一次完成后继续保存，不显示导航中的保存状态或手动保存按钮。限制模式通过 `UPDATE_MANAGED_SITE` 保存，时间段通过 `UPDATE_SITE_TARGET` 保存，避免陈旧配置页覆盖语言、结束页等其他设置。限制模式与网站身份分别使用独立卡片，避免与时间段开关混淆。时间段区将强调色赋予“一键添加”，普通“添加时间段”为次操作；一键添加弹窗左侧选择预设或进入自定义编辑，右侧用 24 格色条和文字清单同时预览覆盖小时、限额与分组，并在预览下方固定显示“添加预设”按钮，灰色明确表示不可使用。设置页采用左侧七类目录与右侧选中详情，类别为运行与保护、界面与显示、计划访问、访问确认与解锁、暂停与结束页面、数据管理、关于，保存后保留分类与滚动位置；字段使用稳定的说明列/控件列网格，窄屏降为单列；配置导入和导出只出现在“数据管理”。
+The list uses responsive cards; completed items sit below/outside both list and mind-map canvases, initially collapsed with session-local expansion. Only pending items contribute to the map's signature/fit. Measure real node heights/centers, use equal column width, two-line links, blank-space panning, pointer-centered zoom, keyboard movement/fit, and padding around actual scene bounds. Fit up to 500 items; normal wheel scrolls the page and Ctrl/Command-wheel zooms. Editing completed items does not reset viewport. Avoid heavyweight graph-editor dependencies.
 
-仪表盘的日/周/月/年视图与计划页的列表/思维导图视图都使用带可见“视图”标题的单选按钮组。仪表盘在页面统计内容上方显示当前日期范围，日/周/月趋势按日汇总，年趋势按月汇总。访问前目标提示语使用独立卡片并位于网站详情底端，只有启用自定义提示语后才显示输入区；开启条件统一由设置页控制，不再显示相冲突的网站级等待开关。
+<a id="存储与迁移"></a>
 
-Popup 每次刷新都重新查询当前活动标签与计划状态，并监听标签激活、URL 变化、可见性与设置变化；服务端数据以 5 秒为上限对齐，两次对齐之间仅在已确认正在计时时本地递增展示，不频繁写存储。弹窗以紧凑的当前网站摘要呈现当前组/总组数，并按排序展示至多三项未完成待办及其余数量；主操作固定进入计划页面。单组时只显示一个剩余时间；多组时显示本组剩余、当前时段总剩余和该目标全部有限时段的今日总剩余。普通时段和分组用量均从 `PageDecision.activePeriodId + UsageSummary.byPeriod` 计算，不读取已废弃的目标级日限额；进入分钟制心流延时或临时访问后，当前时段剩余改用权威运行时到期时间，视频结束延时因没有确定分钟数而不显示误导性的 `0`。Popup 与完整页面同样从规范化主题设置应用设计 token。`showRemainingMinutesOnIcon` 默认开启；后台为每个活动标签设置剩余整分钟 badge，并在心流运行时、计划授权、用量或设置变化后立即重算。有效计划访问的角标只显示独立计划剩余时间；白名单访问不显示普通额度倒计时，其他标签页仍显示自身普通剩余额度。未配置、无限额、非 HTTP(S)、全局暂停或关闭该选项时清空。
+## Storage and migration
 
-限制模式和计划到期方式共享“短模式名 + 选择控件下方常显说明”的表达：选项只显示宽容、心流、严格，说明随选择即时更新。设置页使用原生按钮导航七个类别，通过 `aria-current` 与 `aria-controls` 表达当前项和详情关联；插件图标剩余分钟开关默认启用。屏蔽页的模块导入弹窗只保留文件选择、结构化预览和必须确认的安全免责，不重复展示格式规范或内部风险标题。
+Keep legacy `bilifocus.*` keys for installation compatibility; branding alone does not rename storage.
 
-所有设置写入，包括站点和模块的新增、删除及清单应用，都通过 `SettingsRepository` 的同一读改写事务队列；领域服务不得在队列外读取后再提交整份旧快照。限制模式更新只修改站点模式，不重放模块清单或重建无关注册。
+| Key                                     | Contract                                                                        |
+| --------------------------------------- | ------------------------------------------------------------------------------- |
+| `bilifocus.settings.v1`                 | Schema v5 settings                                                              |
+| `bilifocus.usage.v1`                    | Schema v3 `byTarget`, `byPeriod`, optional `days[date].byHour[0..23][targetId]` |
+| `bilifocus.temporary-access.v1`         | Schema v2                                                                       |
+| `bilifocus.plan-queue.v1`               | Durable per-item plan queue                                                     |
+| `hourleaf.period-runtime.v1`            | Daily unlock/once-only flow runtime, schema v1                                  |
+| `hourleaf.modules.v1`                   | Legacy preinstalled migration state, cleared in store initialization            |
+| `hourleaf.local-modules.v1`             | Normalized imports and preferences, schema v1                                   |
+| `bilifocus.plan-access.v1`              | Session active plan/end notice                                                  |
+| `hourleaf.plan-visit.v1`                | Session visit tab/origin                                                        |
+| `hourleaf.visit-confirmation.v1`        | Session challenge and confirmed scopes                                          |
+| `hourleaf.tab-group-bindings.v1`        | Legacy session-binding migration input                                          |
+| `hourleaf.tab-group-bindings.v2`        | Local recovery identities/hashes plus session-validated active IDs              |
+| `hourleaf.tab-group-binding-session.v1` | Session marker                                                                  |
+| `hourleaf.plan.view`                    | `list                                                                           | mindmap` preference |
 
-## 访问确认与计划屏蔽更新（2026-09-12）
+Without session APIs, plans/confirmation use memory and whitelists do not grant access. Migrations are bounded/idempotent, retain unrecognized compatibility capsules, and fall back safely for corruption. Legacy Bilibili/plan/filter capsules remain read-only; store builds do not activate old adapters.
 
-确认页通过 `tabs.getCurrent()` 获取自身标签 ID。后台验证发送方为自身 `end.html`，其 hash 中的来源、返回地址及网站 ID 与请求一致，再核对标签存在以及原先的待确认授权、origin、策略版本和等待截止时间。Chromium 可能省略扩展页的 `sender.tab`，没有广泛 `tabs` 权限时也可能省略 `tabs.get()` 的 URL；不能把缺失字段当作标签已离开。URL 可用时额外拒绝导航变化，不新增权限。
+Data management exports/imports `hourleaf.configuration-backup`, schema v1, maximum 16 MiB, using one strict validator. Include normalized settings, named presets, whitelist periods, plans, and module ID/version plus ordinary/plan enable/group/schedule preferences. Exclude usage, built-in provenance, temporary/active grants, group runtime, confirmations, bindings, and CSS/script source.
 
-设置项 `planMode.enableAllBlocking` 默认开启，仅在有效计划授权存在时使用计划屏蔽偏好。`LocalModuleInstallation.planPreferences` 缺省表示模块及内容组全部开启，普通 `enabled / disabledFilterGroupIds` 保持原值；`modules/local/profiles.ts` 负责只读投影。屏蔽页自动显示和编辑当前上下文，不添加设置组切换控件；写请求携带快照的 `profile`，后台拒绝上下文已变化的陈旧写入。模块更新、后台重启和备份恢复保留两组偏好，新增分组在计划中默认开启。
+On explicit restore confirmation, request backup-site scopes and scopes for identical-version installed modules that will be enabled. Any missing permission means zero writes. Wait for in-flight settings saves; settle old timing; clear group bindings (failure aborts replacement); atomically replace settings/queue/safe preferences in one `storage.local.set`. Exit plan mode and reset temporary/group runtime, then clear session grants/confirmation and reconcile sites/scripts/plan registrations/toolbar. Return reconciliation failures as warnings after successful persistence. Skip absent/different-version module preferences; never install or replace code from backup. Restore cannot replace active disable protection or disable a protected extension.
 
-计划启停、到期及新选项切换刷新页面 CSS/Shadow DOM，并串行同步用户脚本注册。计划中仅注册已获精确来源权限的脚本，不自动安装模块或申请权限。域名访问策略继续使用普通启停状态，避免开启内容屏蔽反而阻断计划目标。浏览器注销注册不撤回已执行脚本创建的页面监听器，继续遵守已有用户脚本生命周期。
+Retain browser-granted hosts no longer in configuration because other explicit module permissions may need them; remove their dynamic registrations immediately. Users can revoke retained permission in browser settings.
 
-选择屏蔽上下文调用 `plan.getState({ reconcile: false })`，只读观察，避免在计划授权/模式分步落盘期间清理正在创建的授权。配置备份包含两组纯数据偏好；旧备份缺少新设置时补默认值，其余字段仍严格验证，不引入可执行源码。
+<a id="消息边界"></a>
 
-## Bilibili 片尾自动续播抑制（2026-10-04）
+## Message boundaries
 
-Bilibili 1.2.3 在模块用户脚本内通过无内容的零尺寸 DOM 标记读取 `related-videos` 分组的实际 CSS 隐藏状态；核心不新增站点特例、消息或持久化字段。脚本只操作经过核对的原生相关推荐连播开关，由网站自身同步 `relatedAutoplay` 和中止切换；局部新增节点、开关状态与样式变更触发微任务同步，屏蔽失效或页面离开时恢复当前仍存在且曾被临时关闭的控件。普通、计划及时间段偏好由原规则生成层提供单一状态源。用户脚本未获执行能力时只保留卡片隐藏，具体来源和人工验收范围见 `SITE_MODULE_RESEARCH.md`。
+Use `{version, requestId, type, payload}`. Validate sender, extension/page URL, origin, permissions, types, lengths, enums, and array bounds. Only privileged extension pages may import modules, manage sites/plans, unlock groups, or clear data. Confirmation must come from its own verified same-tab extension page and valid scope/wait.
 
-## 屏蔽选项的启用时间段（2026-10-04）
+Site flow messages additionally validate tab origin/target/period. Plan decision/extension/STOP validate sender/current-origin permission without requiring a focus-site entry; `PlanService` validates item/visit/tab. Normalize module input at importer and background boundaries. Content reads only its current URL's merged CSS/selectors, never all modules, user scripts, settings/history, arbitrary APIs, or storage keys.
 
-- `modules/local/schedules.ts`：读取配置页已保存的对应网站/目标时间段，使用 `shared/site-scope.ts` 的网站范围键匹配模块精确来源；仅已审核的 Bilibili 站点家族共享时段，其他网站保持精确来源匹配。UI、后台写入校验、运行时匹配及下一检查边界复用同一规则，按 `targetId + periodId` 引用；统一引用校验、规范化、当前时间匹配和下一次检查边界，不复制时间或额度。
-- `ui/filter-time-periods.ts`：每个内容分组使用统一卡片：上方说明与开关，下方时间选择摘要与可展开的多选列表；只显示对应网站的时段，名称、网站/目标和每天的起止时间分层展示；提供给 UI 的时段数据仅含名称和起止时间，避免重新耦合访问设置。缺失或跨站的旧引用作为失效项供取消，不展示其他网站的时段名称。摘要节点在展开/收起时保留，支持键盘焦点。折叠时不创建完整列表；保存期间禁用控件，保留展开、焦点和滚动位置，失败恢复原选择。
-- `LocalModulePreferences.filterGroupSchedules`：可选 `groupId -> { targetId, periodId }[]`；没有组键表示“不限时间”，空数组表示不生效，每组最多 64 个。普通与计划偏好独立；计划缺省全部开启且不限时间。
-- `SET_LOCAL_MODULE_FILTER_SCHEDULE`：仅扩展页可写，验证字段、模块/分组和当前偏好上下文。新引用必须存在于配置且属于模块对应网站；已删除或跨站的旧引用可以保留或取消，运行时忽略，失效时不会回退为全天。仓库串行保存；重新导入同 ID 模块保留时间绑定并清理已移除分组。
-- `LocalModuleService.getPageRules()`：分组开关已开且任一所选时间段当前生效时才生成选择器；使用 `shared/schedule.ts:isDailyTimeRangeActive()` 的每日黑名单时间匹配，只读取起止时间，不读取星期、配置时段启停、额度、分组消耗或访问策略；开始时间包含、结束时间不包含，跨午夜取两侧，起止相同表示全天。配置访问判断仍使用原有 `isTimePeriodActive()`，保持独立。
-- 内容入口按 `nextScheduleCheckAt` 的本地时钟边界刷新，到达每天的开始/结束边界刷新；即使原配置时段已停用仍创建计时器，全天不额外设置时钟边界。沿用心跳、配置变更及标签重新可见时立即刷新作兜底，页面离开清理计时器。Document 与已声明 Shadow DOM 使用相同分组规则；不改变模块基础 CSS、脚本或域名策略。
-- 配置中修改起止时间立即影响引用，修改星期或停用原配置时段不影响内容屏蔽；删除时间段/网站、模块更新后不再匹配的网站使引用失效；全部失效不屏蔽。配置备份保存普通/计划引用，旧安装/备份缺少字段时不限时间。
+All settings changes, including site/module CRUD and manifest application, use one `SettingsRepository` read-modify-write queue. Never read outside the transaction then submit a stale full snapshot. Mode changes modify mode only, without replaying module manifests or rebuilding unrelated registrations.
 
-验证结果：TypeScript 编译、Chromium / Firefox / Safari 正式构建和本机 Debug 构建均通过。按项目要求未运行单元或浏览器测试；交互、跨午夜、真实网站恢复及备份往返留给人工验收。
+## Module preferences and schedules
 
-## 关闭保护与数据操作（2026-09-28）
+`planMode.enableAllBlocking` defaults true. `LocalModuleInstallation.planPreferences` missing means all content groups enabled/unlimited in plans; ordinary `enabled / disabledFilterGroupIds` remain intact. `modules/local/profiles.ts` projects read-only preferences. Filtering UI edits current context, sends its captured `profile`, and background rejects stale-context writes. Updates/restarts/backups preserve both profiles; new plan groups default on. Domain policy uses ordinary enablement so plan content preferences do not accidentally block the destination. Profile changes refresh document/shadow CSS and serially reconcile authorized Chromium scripts without auto-installation/permissions.
 
-`disableProtection` 默认 method=none；可选 wait（仅 1/3/5/10 分钟）或 password，关闭密码与分组密码分离。`background/protected-actions.ts` 负责一次性票据：绑定操作、发送页面、原保护设置，保存后台截止时间和一小时过期时间，串行消费。UI 使用 `ui/protected-action-dialog.ts`；保护生效时，直接 UPDATE_SETTINGS 关闭插件或改保护会被拒绝，必须满足旧保护条件。备份也不能替换现有关闭保护或直接关闭受保护插件。
+`modules/local/schedules.ts` references configured periods by `targetId + periodId`, matched through shared site-scope helpers; only reviewed families share subdomain periods. `filterGroupSchedules[groupId]` absent means unlimited, empty means inactive, maximum 64 references. Ordinary/plan schedules are independent.
 
-清空所有数据和恢复默认设置都需要后台固定等待 120 秒，再输入弹窗指定的完整确认文字。取消不修改数据，重新打开重新计时，旧票据不得复用。旧 CLEAR_USAGE 接口不再提供绕过入口。
+Only saved start/end times determine daily filtering via `isDailyTimeRangeActive()`: start inclusive, end exclusive, overnight on both sides, equal endpoints all day. Ignore referenced period weekday/enabled/budget/groups/access policy. Access rules continue using `isTimePeriodActive()`. Deleted/cross-site references remain removable but inactive, never expand to all day. Reimport retains schedules for surviving groups; backups preserve them; older missing fields remain unlimited.
 
-- 清空所有数据：注销配置/模块注册，删除使用历史、网站配置、计划、模块及所有业务存储键，然后写入默认设置。
-- 恢复默认设置：清除网站规则、分组状态、活动计划/临时授权和密码，保留统计、计划清单、已导入模块。
-- 两者均清除关闭插件密码；浏览器授予的 host permission 保留，沿用配置备份的权限生命周期。
-- Debug 重置后只保留一个抑制自动预置的内部标记，防止后台重启立刻重建被清除的数据；用户点击“配置测试网站”后恢复预置。
-- 全局关闭后停止计时、计划访问和普通内容过滤，注销本地用户脚本的后续注册；已执行的用户脚本仍遵守浏览器生命周期，原页面必要时需刷新。
+`SET_LOCAL_MODULE_FILTER_SCHEDULE` is extension-only, validates context/module/group and new references; serialize writes. `ui/filter-time-periods.ts` exposes corresponding-site names/ranges only, shows invalid references without leaking other-site names, lazily builds expanded lists, preserves summary focus/scroll, disables during save, and restores on failure. `nextScheduleCheckAt` triggers local daily boundaries even for disabled access periods; all-day adds no unnecessary timer. Heartbeat/config/visibility refresh are fallbacks, and leave-page cleanup removes timers. Base CSS/scripts/domain policy are unchanged.
 
-## 自律交互依据
+Repository module names/descriptions/groups are projected by stable IDs through `ui/local-module-copy.ts` and i18n, without storing translations or matching Chinese prose in logic. Unknown third-party IDs/groups retain author copy. Existing installs switch language without reimport. Bilibili's optional script reads a content-free DOM marker for native related-autoplay suppression; it restores only controls it changed and leaves unknown/commercial content alone. Site-specific evidence belongs in [research](./SITE_MODULE_RESEARCH.md).
 
-采用可见用量反馈、明确目标备注、事前选择与再次确认，避免羞辱性文案和倒计时自动放行。目标提示可写成“做完 X，记录 Y 后离开”，帮助把目标转成可执行行为。
+## Protected actions
 
-参考：[实施意图元分析](https://doi.org/10.1016/S0065-2601%2806%2938002-1)、[屏幕时间设计摩擦随机现场实验](https://pubmed.ncbi.nlm.nih.gov/36577008/)、[工作反馈研究](https://www.nature.com/articles/s41598-024-53388-3)。这些研究支持设计方向，但未验证本插件、30 秒等待、2 分钟清理等待或微积分挑战的效果；这些时长和难度是用户可选择的产品规则，不宣称治疗或保证效果。
+`disableProtection` defaults `method=none`; optional wait allows only 1/3/5/10 minutes, or a dedicated password separate from group passwords. `background/protected-actions.ts` serializes one-use tickets bound to action, sender page, original protection, server deadline, and one-hour expiry. Direct settings writes cannot bypass old protection; use `ui/protected-action-dialog.ts`.
 
-## 暂停页分组与屏幕时间视图（2026-09-30）
+Clear-all/reset require a fixed 120-second background wait plus the full requested confirmation text. Cancel writes nothing; reopening restarts waiting; consumed/old tickets cannot be reused. No legacy `CLEAR_USAGE` bypass.
 
-模块目录：
+- Clear all: unregister sites/modules; delete usage, sites, plans, modules, business keys; write defaults.
+- Restore defaults: clear site rules, group runtime, active plan/temporary grants, passwords; retain statistics, queue, and imports.
+- Both clear the disable password while retaining browser host permissions.
+- Debug retains only a seed-suppression marker until explicit reconfiguration.
+- Global disable stops timing/plan access/ordinary filtering and future user-script registrations; existing page script effects may need refresh.
 
-- `ui/group-progress.ts`：1–24 块横向等宽分段，与配置组数相同。已耗尽组为空心，尚有额度的组为实心；文字明确已用/总数/剩余并提供图例，`progressbar` 的值表达剩余组数。部分使用但未耗尽的组仍为实心；不更改分组规则。
-- `ui/screen-time-summary.ts`：今日总用时、24 小时柱状图、网站用时排行及占比条。选择网站只切换图表，顶部始终保留全部网站的今日总量；全部网站/单站共用同一纵轴刻度便于比较。点击小时柱查看时段与时长，左右键及 Home/End 支持键盘选择。
-- `shared/screen-time.ts`：纯数据投影，合并网站的目标用量，按用时降序排列；已删除配置的目标合并为“其他网站”，避免它们从今日总数中消失。保留未记录小时明细的历史总量，不伪造小时分布。
-- `shared/analytics.ts`、`shared/storage.ts`：在既有 schema v3 上兼容增加可选 `byHour`。实际用时、额度消耗与小时记录在同一写事务中落盘；小时桶仅累计实际秒数，心流注记不会重复相加。时段跨小时/午夜拆分，夏令时重复钟点合并在同一个小时柱中。底层和统计汇总均保留小数秒，仅界面格式化时舍入，避免频繁心跳导致小时、每日总量与分组额度漂移。
+<a id="ui-与文案"></a>
 
-旧数据缺少小时字段时继续显示总量；图表下注明“有 X 历史用时未记录小时明细”。新小时记录从更新后开始积累，沿用每日桶的 400 天保留期。Debug 消耗额度工具仍按原约定把合成用时写入当天零点附近，因此测试用量会显示在对应小时。
+## UI and settings
 
-分段、小时柱、网站占比条及选中状态均使用主题 token，兼容系统深浅色和 forced-colors；窄屏压缩柱间距，分段不换行。计划来源维持上一版约定：只显示确认时长与目标，不加入网站用量图。
+[UI_STYLE.md](./UI_STYLE.md) owns dimensions/layout; [UX_WRITING.md](./UX_WRITING.md) owns copy. Shared tokens/base controls remain separate from page density. Site modules do not own a visual system.
 
-## 分组记账一致性（2026-09-30）
+Centered sticky navigation is Dashboard, Plans, Configuration, Filtering, Settings, with brand left/actions right and a rightmost help button. Narrow screens retain five equal navigation slots. Five-page titles align; configuration/filtering/settings omit repeated subtitles. Dashboard is read-only statistics, plans own queue/map, configuration owns site periods, filtering owns imports/preferences/download links, and settings owns global behavior/data/About.
 
-- `shared/group-quota.ts` 是分组边界的唯一计算入口，供规则判定、运行状态、计时封顶、工具栏和 Debug 消耗工具共用。将累计额度换算成整数毫秒，第 N 组累计边界为 `ceil(总毫秒 × N / 组数)`；不能整除的配置只在组间分配不足 1 毫秒的差值，最后一组严格等于总额度。已用组表示已耗尽的组，部分使用的组仍属于剩余组。
-- `AnalyticsService.summarize` 不再取整权威数据，`byTarget / byPeriod / byHour` 保持原始精度；所有展示取整留给格式化函数。旧版已持久化丢失的精度不猜测补写、不清空用户历史。
-- `PeriodUsageRecorder` 串行执行读取额度、裁剪、写入；按本地分钟边界分段并重新选择生效时段，因此时段切换不把上一段归到下一时段，跨午夜使用新一天的运行态和额度。严格/普通计时封顶于已授权组，宽容确认仅在宽容模式有效；延时记录绑定原授权组。显式域名始终允许仍累计实际用时，但不消耗分组额度。
-- `UsageTracker.flush` 即使当前标签不可计时或没有新增时间，也等待已有写入完成；暂停页运行状态和等待操作先 flush，避免读到旧分组。`withSessionBoundary` 先结算旧策略并清除会话，再执行变更；其间串行阻止新的会话心跳重新开始。
-- 后台将分组解锁、延时、结束、配置变更和数据替换放入同一个状态变更队列，失败不阻塞后续操作。配置变更保留实际统计：改名保留分组；修改额度、组数、日期或时段范围会废弃不兼容的解锁状态；切换限制模式撤销旧延时/宽容确认；修改解锁方法清除旧等待与题目。重新解锁按现有额度用量跳过已经耗尽的组。
-- 心流授权保存 `flowGrantId / flowStartedAt / flowConsumesQuota`，网页结束回调必须携带授权 ID；重复、跨组、跨天或陈旧视频事件不会修改新授权。工具栏显示授权所属组，并按授权时保存的扣额选项推算，避免用户随后改设置导致展示与后台不同；本地展示推算封顶于当前组，跨日重新取数。
-- 运行态归一化验证键与日期、目标、时段一致；按最近日期优先保留，容量覆盖配置允许的全部目标 × 时段，避免旧版固定前 512 条使新分组状态反复丢失。正常写入仍清理 35 天以前的运行态。
+Configuration autosaves through one coalescing serialized loop. Edits during a write are saved next; report errors visibly without manual Save or navigation save buttons. `UPDATE_MANAGED_SITE` changes mode; `UPDATE_SITE_TARGET` changes periods, never a stale global settings snapshot. Presets show left selection/custom editing and a right 24-hour strip/text preview with a persistent Add preset action; gray means unavailable. Custom presets require names and multiple editable periods; reject overflow atomically.
 
-验证约束：仅执行 TypeScript 编译检查和 Chromium、Firefox、Safari、Debug 构建；交互与计时场景按人工验收清单执行。
+Directories share `configuration-directory.ts`, `configuration-workspace.ts`, and `configuration.css`; stable detail IDs plus `aria-controls`/`aria-current` associate selection. Retain scroll/focus on redraw; independent desktop sidebar scrolling uses actual navigation/grid/shell geometry and returns to document flow at width ≤860px or height ≤360px. Settings has seven categories and a description/control grid; data import/export appear only under Data management. Whitelist period edits have a separate serialized latest-value queue, not ordinary site draft autosave.
 
-## 新标签页访问确认（2026-09-30）
+Default/invalid theme is `ocean`; preserve existing valid themes. Five high-saturation light/dark palettes provide accent/foreground tokens and fixed `--palette-*` swatches. `showSidebarIcons` defaults false and survives clone/reset/backup; `applyAppearance()` updates theme/icon root attributes and listens for settings. Site/whole-site target names derive from canonical hostname; dedicated target names remain. Old backup migration changes only these labels/missing preference before strict validation.
 
-- 设置页“暂停与结束页面”新增 `endPage.repeatConfirmationInNewTabs`（新标签页重复确认），默认 `false`，旧设置及旧备份缺少字段时迁移为关闭。中英文说明同步更新，备份可往返保存该选项。
-- `background/visit-confirmation.ts` 区分逐标签的待确认挑战 `byTab` 与已完成的网站确认 `bySite`，仍保存在 `storage.session`，不跨浏览器会话；无 session API 时使用后台内存。关闭重复确认时，同一受管网站的新标签和已审核站点家族子域可共享确认；不同网站不能共享，调用入口仍校验网站权限和作用域。
-- `createVisitAccessContext` 把本地日期、网站策略版本、网站各目标当前生效时段、解锁规则和重复确认设置计算为作用域摘要。跨日、时段切换和相关策略变化使旧确认失效；切换开关、解锁规则或插件总开关也会清除确认缓存。无固定时限的网站按当天及浏览器会话限定共享确认。
-- 页面判定先执行原有分组、时段、总额度及屏蔽规则，再决定是否需要访问前确认；网站共享确认既不新增额度，也不解锁下一组。`SESSION_UPDATE` 使用相同的确认作用域接受心跳，防止页面已放行而新标签未计时。独立计划访问继续使用自己的授权。
-- 默认共享的网站确认不因原标签关闭或导航而消失，当前作用域内重新打开仍复用；开启重复确认后，每个新标签都须确认，同标签在同来源连续访问不重复。若并发打开的确认页发现其他标签已完成同网站确认，自动返回目标网站，由内容脚本继续执行额度判定。
+Use shared 24-hour `ui/clock-input.ts` across periods/presets/whitelists, including `0900` normalization; plan timestamps use `hourCycle: h23`. Dashboard date selectors and plan layout selectors have visible View radio-group labels.
 
-验证仅进行 TypeScript 编译检查和正式/Debug 构建；以下行为留给人工验收。
+Popup refreshes active tab/plan on activation, URL, visibility, and settings changes. Align authoritative data at most every five seconds; increment locally only while confirmed timing, without per-second writes. Show at most three ordered pending items plus remaining count and a Plans primary action. Single-group sites show one remaining value; multi-group sites show current group/period/today's limited-period remainder from active period usage, not obsolete target limits. Flow/temporary minutes use authoritative expiry; video-end grants show no misleading zero/huge number.
 
-## 暂停页自适应布局与时长圆环（2026-09-30）
+`showRemainingMinutesOnIcon` defaults true. Recompute each active tab's rounded-up minute badge after grant/usage/settings changes. Plans display independent remaining time; whitelists display no ordinary quota countdown. Clear for unconfigured/unlimited/non-HTTP(S)/globally paused/disabled display. Popup width is 380px, max height 600px, natural scroll; Debug section expansion survives refresh.
 
-- `end/index.ts` 将普通暂停页分为本次用量、居中操作、今日统计三个独立区域；卡片最大宽度扩大到 1440px，品牌与标题采用横排，减少装饰和重复留白。计划页面维持目标、时长与操作的独立简洁布局，不加入网站统计。
-- `ui/pause-layout.ts` 负责小窗口的分区切换及完整备注分页。宽度不足 1100px 或高度不足 640px 时由三栏切换为单区显示，导航按钮支持键盘并声明受控区域。切换只改变展示，不重建计时控件、不重新开始等待。较宽的矮窗口将操作区再次拆成两列，手机心流选择与按钮并排。
-- `ui/time-balance.ts` 以连续圆环对比本时段实际已用时长与剩余额度，深色弧为已用、浅色弧为剩余，旁边保留两项精确时长。圆环比例的分母是实际已用加剩余，包含心流额外用时，不作为额度消耗进度；文字说明明确这一口径。无限额度使用虚线环与无穷符号，不伪造百分比；零用量/零额度仍显示精确数值。
-- 现有分组仍使用空心/实心分段，今日小时用量仍使用柱状图；三种图形各自表达时间分布、分组状态和发生时段，均沿用主题 token。圆环是辅助视觉，标签和数值始终可由辅助技术读取，forced-colors 使用不同线条与系统色。
-- `ui/screen-time-summary.ts` 网站列表每页 3 项，保留全部网站、选中网站及小时详情；翻页不改变选中统计或总量。长网站名称单行省略，同时保留完整 title 和辅助标签。目标和激励文字按 Unicode 字符分页，避免长文案撑高主页面，不删除用户文本。
-- 高度较小时收紧间距、圆环与柱图区，优先让常规窗口一屏呈现；不使用整页缩放或 `overflow:hidden` 裁剪操作。极小窗口、软键盘及高倍无障碍缩放保留自然溢出兜底，保证所有控件仍可访问。
+About links point to public privacy policy, MIT license, and Issues, using `ui/external-link.ts`, native new-tab links, `rel="noopener noreferrer"`, and an external-link icon. Do not embed/prefetch documents or run remote scripts. No new settings/message fields; About does not introduce other add-ons.
 
-按项目要求，仅进行 TypeScript 编译检查与正式/Debug 构建，没有运行视觉、交互或自动化测试。
+## Cross-tab pause updates
 
-## 暂停页比例与心流恢复链路（2026-09-30）
+`shared/pause-access.ts` centralizes relevant storage changes, plan-end protection, deadlines, and coalesced rechecks. Watch settings, unlock/flow/flexible grants, temporary access, module policies, plan grants, and bindings. Only completed confirmation changes trigger confirmation notifications; waits/questions and usage heartbeats do not create self-refresh loops. Filter runtime changes by target and use `STORAGE_KEYS.visitConfirmation` without changing storage format.
 
-- 页面使用等宽左右信息面板夹住居中的操作面板，三栏拉齐高度；品牌标题居中，圆环/分组和操作内容在各面板内平衡分布。按钮宽度上限 240px 并居中，不再拉满右侧列；小屏分区切换和矮窗口操作双列继续保留。
-- `ui/flow-choice.ts` 统一配置模式与计划模式的心流选择：先选指定时长或视频结束，再点击唯一确认按钮。只有保留了视频上下文的 iframe 提供视频结束选项。选择成功后锁定本次选择，恢复失败只重试恢复，不重复提交延时授权。
-- `RESUME_PAUSE_FRAME` 使用 `runtime.sendMessage → 后台 → tabs.sendMessage(frameId: 0)`，替换没有回执的跨上下文 DOM 消息。后台验证扩展暂停页、发送标签、返回 URL、每次挂载的随机 channel；内容脚本验证扩展发送方、当前实例、页面 URL 及授权。此转发不进入状态变更队列，避免等待内容脚本反向查询判定时形成循环等待。
-- 内容脚本复核时明确传递原 `targetId`，防止多目标网站（例如首页与视频）恢复时误判到默认目标；配置心流同时复核计划访问限制。视频元素被替换时选择仍有效的媒体，恢复前绑定结束事件，计划视频监控使用稳定的一致标识，避免初始化覆盖刚绑定的监听。
-- 页面在收到恢复结果前保持提交状态；10 秒无回应或复核失败显示可重试反馈。暂停页操作通过互斥锁和 fieldset 禁用避免心流、下一组与关闭同时提交；下一组成功后重试恢复也不会重复解锁。旧暂停实例、已经导航的标签和陈旧回调不获得恢复权。
-- 浏览器适配依据：[MDN：扩展中的 postMessage 限制](https://developer.mozilla.org/en-US/docs/Web/API/Window/postMessage#using_window.postmessage_in_extensions)。扩展环境的 source 可能为 null，原先严格依赖 `event.source === iframe.contentWindow` 的路径不适合作为唯一恢复机制；现有实现使用浏览器扩展消息通道，不向网页广播恢复消息。
+`background/website-access.ts` sends `HOURLEAF_WEBSITE_ACCESS_CHANGED` after committed ordinary grants/revokes/unlocks/flexible confirmations/visit confirmations. Scope content queries through `siteMatchPatterns()` and filter extension-page notices by `siteId`. Dispatch without waiting for receiving pages' authoritative queries or badge completion; do not hold a mutation queue waiting on itself. Extension pause listeners use synchronous no-response notification handlers.
 
-本次仅执行编译和正式/Debug 构建；布局效果及心流的真实媒体播放留给人工检查。
+Content and pause pages re-read authoritative eligibility and original expiry. Embedded ordinary pauses may remove overlays/initialize timing in background tabs but resume media only when visible. Standalone hidden pauses update state then recheck before navigating on visibility. Plans never inherit ordinary recovery or another item's old iframe.
 
-## 计划导航、暂停通知与主题修复（2026-10-01）
+Coalesce short notices into 30ms batches; queue a follow-up if events arrive during a check. Concurrent recovery shares one Promise. Validate current URL/instance/channel/target/permissions/confirmation/plan before restoration; clean frame state on removal and recheck BFCache. Late responses cannot resume new pages. Redraw only when relevant access/configuration changes; retain inputs/waits for checkpoint-only changes and defer while actions run. Existing visibility/storage/deadline timers remain fallbacks; no periodic full-tab scan or forced page refresh.
 
-- `shared/plan-navigation.ts` 保留旧版无 visitId 授权的资源匹配兼容及暂停页返回校验；当前新计划使用标签页/精确来源绑定，同源不同视频或内容也沿用截止时间，不重写用户计划 URL。
-- `background/plan.ts` 先校验事项与当前访问再判到期；视频结束和心流结束保留会话内 `endedGrant`，使其他读取入口先结束计划时原页面仍能展示通知。通知不授权独立访问；确认、关闭或到期后再次导航清除。后台计划读写串行，避免中间态被并发请求读取。
-- `content/index.ts` 为有效分钟授权维护单个截止定时器，授权变化时更新，暂停或离开时取消；15 秒心跳继续兜底。设置/授权变动先判计划再判普通规则，计划到期不被普通网站规则页面抢占。计划各到期模式和视频结束均使用原网页内的统一 `end.html` 暂停 iframe，保留播放位置；返回使用已校验的当前分 P URL。
-- `end/index.ts` 的页面大标题统一为 Hour Leaf；删除标题下说明和操作区“接下来”。计划开始前继续先显示暂停页、确认后才创建授权；内容优先显示完整事项备注，其次设置中的激励文字，两者为空时采用中英文默认激励文字。事项标题另行显示，长备注复用分页组件，操作复用互斥 fieldset。
-- `ui/site-usage-summary.ts` 在操作面板上方显示今日本站用时，复用日统计的网站聚合口径，以菱形时钟标识区别于时段圆环、分组段条和小时柱图。圆环说明、选择柱条提示和选择网站提示从页面删除，实际交互与辅助标签保留。关闭当前所有相关标签页使用主题填充按钮。
-- 工具栏使用 `.popup-document` 明确 380px 的固有宽度、最大 600px 高度和自然纵向滚动，删除按初始 viewport 宽度反推弹窗宽度的规则；Debug 操作改为原生折叠区并保留本次弹窗展开状态。
-- `styles/tokens.css` 的森林绿、海洋蓝、紫罗兰、琥珀黄、玫瑰红均更新为高饱和配色，明暗分别提供强调色与按钮前景 token。设置色标统一读取固定 `--palette-*`，首个绿色不再继承当前主题的品牌色。
+## Statistics and pause data
 
-仅执行 TypeScript 编译和 Chromium、Firefox、Safari、Debug 构建；行为及视觉效果留给人工验收。
+`shared/usage-insights.ts` computes usage, daily average, elapsed/recorded days, peak day, and flow extras without side effects. Average over elapsed local calendar dates from range start through today, including zero days and excluding the future; never divide milliseconds by 24 hours. Sum only `extra:<periodId>`, not group mirrors; extras remain part of actual total.
 
-## 同标签页通用计划访问（2026-10-07）
+`shared/screen-time.ts` aggregates hour buckets across selected dates by target, then site. Preserve removed/unknown targets under Other websites and retain missing-hour historical totals without inventing a distribution. Site filters share the all-site scale and total. Website lists paginate three entries; changing page retains selection. Long names retain accessible full labels; prompts paginate by Unicode characters.
 
-- 新计划从完整 URL/站点资源匹配升级为标签页访问会话。`PlanVisitService` 仅保存一个 `visitId + tabId + origin` 绑定，使用 `storage.session`，不支持时使用后台内存；`PlanWatchGrant` 同样使用会话存储并引用随机 `visitId`。不会记录翻页后的 URL、页面标题或导航历史。浏览器重启丢失会话时旧绑定无效；MV3 后台休眠后可从会话存储恢复。
-- `START_PLAN_ITEM` 使用确认页所属标签页创建绑定；网站消息以浏览器提供的 `sender.tab.id` 为准。Chromium 顶层扩展页缺少 sender.tab 时，用页面提供的自身 tabId 查回标签并校验 URL 与扩展发送页相同，不使用当前活动标签推断。工具栏只读查询显式传入当前网站标签页 ID。
-- 计划判定、结束通知、心流继续、视频结束停止和独立计时共用同一个标签页/来源校验。路径式分页（如 `/page/2`）、查询式分页（如 `?page=2`）、fragment、搜索参数和 SPA 路由不导致停止或重置截止时间；同站的新内容也属于这次计划访问。不同标签页包括同一 URL 不继承计划授权，继续普通配置规则。
-- 标签页关闭、事项删除/完成、主动关闭计划、清空数据或恢复配置会清理对应绑定；来源权限仍按原事项精确授权。新事项替换旧事项时生成新的访问 ID。暂停页返回原标签当前同源页面，避免心流继续或宽容确认后返回计划最初的第一页。
-- 计划的授权变更、网页判定和会话心跳串行处理。计时核对与角标使用只读计划判定，不在后台读数过程中撤销切换中的授权；已过期但待展示的计划仅为原访问保留内容脚本注册，再次导航时清除旧通知和注册。
-- 内容脚本在路由切换时解绑旧视频监听，并用事项及截止时间区分视频监控。旧页面在 URL 变化后迟到的 ended 事件触发路由重判而非停止计划；用户明确开启的视频结束暂停、分钟到期和主动结束仍然有效。
-- 旧版无 visitId 的进行中授权保留原兼容判定至结束，重新开始后使用通用绑定；不迁移或重写用户保存的计划 URL、备份格式及预定时长。
+`ui/hourly-usage-chart.ts`/`styles/usage-charts.css` share scales, peak defaults, explicit hour readings, 24-hour labels, and keyboard selection. `dashboard/index.ts` owns range cards/trends/site shares: today hourly, week/month daily, year monthly. Ranking percentages use actual range total; current sites use canonical domains. `dashboard/usage-panels.ts` shows the entire current plan because queue items have no completion-date attribution; completion is item-count-based, pending duration sums scheduled durations.
 
-本次仅做 TypeScript 编译和正式三平台/Debug 构建；交互与媒体场景留给人工验收。
+Visible dashboard refresh remains five seconds with one in-flight request and a generation guard for range changes. Defer active-region replacement, preserve expansions/list scroll/hour selection, and retain last good data on read failure.
 
-## 普通网站误跳计划页修复（2026-10-07）
+The current ordinary pause uses equal-height, equal-width usage/actions/statistics frames, max width 1180px and a minimum 960px horizontal-scrolling layout. `centerPauseActions()` centers initial actions. Navigation scrolls only; prior single-visible-panel and two-row layouts are obsolete. `ui/group-progress.ts` retains segment counts/accessibility but no visible hollow/solid legend. `dashboard/total-time-card.ts` uses separate localized digits/units and keeps timing/test IDs without the old dark card.
 
-- `content/index.ts` 移除计划判定失败后强制导航至 `plan.html` 的旧兜底。只有带有效事项 ID 的计划到期判定才由计划暂停流程处理；旧后台的 `not-authorized / not-video` 响应不会抢占网页，之后继续普通配置的访问确认、时段与额度判定。
-- `background/plan.ts` 对不存在的事项或不匹配当前访问返回 `disabled / allowed`：计划不授权也不禁止该普通访问。当前绑定标签离开来源时，经导航生命周期清理旧授权；其他标签的普通导航不清理有效计划。旧无绑定授权保留资源匹配兼容。
-- 所属计划的有效授权、同源翻页、到期、心流与结束通知保持原流程。网页没有自动跳转到计划清单的路径，计划页面只由用户主动打开。
+`ui/pause-details.ts` reuses authoritative quota helpers for active period/group detail and computes today's site share/peak without scores or new collection. `ui/pause-layout.ts` supplies a separate messages slot; empty messages disappear, content rows flex, controls sit at the bottom, and long text expands all equal frames. A populated message area reserves at least 88px.
 
-本次仅进行 TypeScript 编译和正式三平台/Debug 构建，交互验收留给人工。
+`shared/next-available-period.ts` enumerates local dates and boundaries in the next week through `selectActiveTimePeriod()`. Respect weekday/all-day/overnight/priority rules, skip disabled/always-block/zero/exhausted current-day periods, evaluate future-day independent quotas, and show the effective interval truncated by higher-priority periods. Only display next-period details when no enabled period currently matches. No valid future interval means an explicit empty state; the display never authorizes access. Existing minute rechecks redraw it.
 
-## 主分支同步与提交检查（2026-10-08）
+<a id="自律交互依据"></a>
 
-当前计划访问和 Bilibili 1.2.5 修复统一提交到 `main`；旧开发分支中的发布改动已通过等价提交进入主分支，无需重复应用。产品变更入口为 `CHANGELOG.md` 与 `docs/releases/0.6.0.md`，开发契约及人工验收分别在本文和 `MANUAL_ACCEPTANCE.md` 维护。
+## Self-discipline design references
 
-GitHub 上此前的 CI 在格式检查阶段失败，涉及 `docs/SITE_MODULE_RESEARCH.md` 与 `tests/e2e/ui-contract.spec.ts`。提交前使用仓库锁定的 Prettier 整理这些文件及本次修改文件，测试文件只调整格式。Git 元数据写入及远端同步需使用允许访问仓库和网络的执行环境；受限环境中的 keyring 登录失败提示不代表凭据已经失效。
+Use visible usage feedback, explicit goals, advance choice, and deliberate reconfirmation; no shaming or automatic countdown admission. Example prompts may describe finishing a concrete task before leaving.
 
-本地 TypeScript 编译、Chromium / Firefox / Safari 正式构建及 Debug 构建均通过；未在本地运行单元或浏览器测试，交互留待人工验收。GitHub Actions 保留现有质量流程，远端执行结果以对应提交的运行记录为准。
+References: [implementation intentions](https://doi.org/10.1016/S0065-2601%2806%2938002-1), [screen-time friction field experiment](https://pubmed.ncbi.nlm.nih.gov/36577008/), [feedback research](https://www.nature.com/articles/s41598-024-53388-3). These support design directions, not the effectiveness of this extension, its 30-second/120-second waits, or calculus questions. Do not claim treatment or guaranteed outcomes.
 
-首轮远端 CI 已通过格式与类型检查，随后在 ESLint 阶段暴露此前被格式失败遮蔽的 13 项问题。按错误日志将仅用作类型的导入改为 `import type`，删除冗余断言和重复类型，将不会重新赋值的变量改为 `const`，会话重置改为直接返回 Promise；不修改领域行为或降低现有质量门禁。
+<a id="访问确认与计划屏蔽更新2026-09-12"></a>
+<a id="bilibili-片尾自动续播抑制2026-10-04"></a>
+<a id="屏蔽选项的启用时间段2026-10-04"></a>
+<a id="关闭保护与数据操作2026-09-28"></a>
+<a id="暂停页分组与屏幕时间视图2026-09-30"></a>
+<a id="分组记账一致性2026-09-30"></a>
+<a id="新标签页访问确认2026-09-30"></a>
+<a id="暂停页自适应布局与时长圆环2026-09-30"></a>
+<a id="暂停页比例与心流恢复链路2026-09-30"></a>
+<a id="计划导航暂停通知与主题修复2026-10-01"></a>
+<a id="同标签页通用计划访问2026-10-07"></a>
+<a id="普通网站误跳计划页修复2026-10-07"></a>
+<a id="主分支同步与提交检查2026-10-08"></a>
+<a id="无启用时间段时无限使用2026-10-08"></a>
+<a id="计划临时计时生命周期修复2026-10-08"></a>
+<a id="三类用时的独立生命周期2026-10-13"></a>
+<a id="网站模块英文与-github-检查修复2026-10-13"></a>
+<a id="关闭窗口后的白名单恢复2026-10-15"></a>
+<a id="配置屏蔽和设置的目录与时段交互2026-10-15"></a>
+<a id="默认外观目录图标和网站名称2026-10-15"></a>
+<a id="跨标签页暂停恢复2026-10-15"></a>
+<a id="多组白名单的归属和暂停同步2026-10-17"></a>
+<a id="暂停操作后的同网站同步2026-10-18"></a>
+<a id="仪表盘与暂停页数据展示2026-10-19"></a>
+<a id="暂停页核心控件恢复2026-10-19"></a>
+<a id="暂停页紧凑布局仪表盘精简与视频心流默认项2026-10-19"></a>
+<a id="暂停页等尺寸面板激励区与下次可用时段2026-10-19"></a>
+<a id="关于与文档入口2026-10-19"></a>
 
-远端后续测试暴露 11 个与当前产品契约不一致的旧预期：模块名称与版本、默认 30 秒等待、宽容继续前显式确认、计划不拦截普通访问，以及结束通知确认前保留注册。对应既有测试同步更新，并保留确认后放行、通知清理和重复延时不得更改原授权的断言。本地仍仅编译及构建，未运行测试。
+## Change history
 
-## 无启用时间段时无限使用（2026-10-08）
+The following dates preserve development history. Current sections above incorporate the surviving contracts; obsolete single-panel pauses, compulsory restart rebindings, old plan resource matching, and coupled plan timing are superseded.
 
-`shared/schedule.ts:hasEnabledTimePeriods()` 统一判断目标是否存在启用的时间段，不按当前时间是否命中来判断。`evaluateTimePeriods()` 对空列表或全部停用的列表返回无额度的可用状态，不携带活动时段或分组；有启用时段时仍执行原来的星期、起止时间、优先级和额度规则。使用普通可用状态继续进入本地模块策略判定，不跳过显式域名屏蔽。
-
-`background/period-accounting.ts` 在同一条件下仅累计实际用时及小时分布，不写入任何时段额度；已有统计与配置不变。屏蔽分组仍按自己的开关与每日起止时间生效，引用的配置时间段停用后仍保留原时间范围及边界刷新。访问前确认与计划时长继续由各自设置决定。
-
-## 计划临时计时生命周期修复（2026-10-08）
-
-- `PlanAccessRepository` 将活动授权及结束通知移至 `storage.session`，无会话 API 时使用共享后台内存。计划清单仍持久化事项级预定时长，开始时创建新的访问 ID 和截止时间，绝不向网站时间段写入计划分钟数。启动清除旧版 `storage.local` 中的计划授权，不把旧计时迁入新会话。
-- `PlanService.releaseAfterNavigation` 经后台状态队列处理顶层 URL 变化及 `loading`（包含同 URL 刷新）：未到期的同源访问继续原截止时间；离开原来源，或到期/视频结束后再次进入网站，销毁活动授权、结束通知和标签绑定，再执行普通网站规则。自己的独立暂停页保留原访问以便确认或心流选择，iframe 暂停不触发顶层销毁。
-- 关闭标签、停止/替换/修改/删除/完成计划、全局关闭、恢复配置和重置数据均清理计划运行态；恢复配置先清会话再协调注册。授权变更的后台、Popup、屏蔽页和内容脚本订阅同步使用会话存储，不忽略删除事件。
-- 原页面到期通知仍可展示并提供原有宽容/心流/严格操作；导航后旧通知不再拦截。新访问若被阻止，只来自普通网站或屏蔽规则。此前关于“整页刷新仍显示结束通知”和“离开来源再返回仍继承旧截止时间”的约定由本节替代。
-
-本次 TypeScript 编译、Chromium / Firefox / Safari 正式构建及本机 Debug 构建均通过；未运行单元或浏览器测试，行为按人工验收清单检查。
-
-## 三类用时的独立生命周期（2026-10-13）
-
-用户确认标签页组的“指定用时”指配置的星期与起止时刻，窗口内组内受管网站无限可用，不设组分钟额度。普通额度耗尽、分组等待或访问确认均不能覆盖有效白名单；窗口外沿用原普通额度及状态，不重置、不补发额度。
-
-| 来源     | 计时与持久化                                                               | 结束及恢复                                                                                   |
-| -------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| 普通网站 | 每日独立时段额度及分组运行态；实际统计与额度分桶                           | 当日/时段边界按普通规则处理，不借用白名单或计划时间                                          |
-| 标签页组 | 配置时段和本地恢复摘要持久化，活动编号由会话标记隔离；命中时仅记录实际用时 | 时段结束或移出组恢复普通资格；窗口关闭/重启可按唯一特征恢复；解散和备份恢复清理绑定          |
-| 计划     | 每次显式开始建立新的 visitId 与独立截止时间，仅绑定原标签页和来源          | 停止、替换、完成、授权字段修改、删除、离开来源、关标签或重启销毁授权；到期保留原结束通知流程 |
-
-`background/index.ts:decideCurrentPageAccess()` 统一页面与普通心流操作返回值的来源选择：显式域名阻断仍最终生效，有效计划优先于白名单，白名单优先于普通时间配置。普通心流操作携带真实 sender.tab.id，避免结束事件返回组外普通判定而误暂停白名单页面。内容脚本的媒体结束监听记录来源，切换为计划或白名单时清理旧普通监听，退出计划时清理旧计划监听；不复用其他来源的截止时间和视频结束回调。
-
-`withPlanSessionBoundary()` 延迟执行计划变更，先等待 tracker 结算旧来源区间，再更新授权和注册；开始、继续、停止、替换、完成、修改、删除与导航撤销共用这一边界。无关标签页导航不重置当前会话。`shouldRecordConfiguredUsage()` 明确拒绝有效计划与到期通知，宽容到期通知也不能直接授权普通计时。
-
-组重绑跨存储写入后再次读取真实组状态，拒绝在设置写入期间已销毁的组，避免迟到的保存复活绑定。普通结束页关闭候选通过 `background/related-tabs.ts` 单独解析并在关闭前读取所属组，不读取白名单配置；只关闭明确无组的相关页；浏览器未提供 groupId 时也保留页面，避免误关组内页。保留组内暂停页时显示结果并允许再次操作。
-
-## 网站模块英文与 GitHub 检查修复（2026-10-13）
-
-- `ui/local-module-copy.ts` 使用稳定模块 ID 与过滤组 ID 查找 i18n key，为 Bilibili、YouTube、小红书、百度贴吧和 X 的名称、模块说明、过滤组名称及说明提供只读语言投影；中英文文案统一保存在 `shared/i18n.ts`。不在业务层匹配中文句子，不保存翻译后的模块快照。
-- `block/index.ts` 的模块排序、卡片、删除确认、开关可访问名称、时段选择器及导入预览统一使用该投影；实际导入、权限、选择器和偏好仍使用原始模块及稳定 ID。当前版本已导入的模块随界面语言立即切换，不要求重新导入；未知模块和未知过滤组保留作者文案。独立脚本导入按脚本能力显示对应简短说明，不显示完整模块的过滤能力。
-- 最新失败的 GitHub CI（run 38387368091，提交 2d4cb29）在 ESLint 阶段报六项错误：标签页组服务类型导入、冗余/不明确的绑定断言、星期数组的 any 展开以及目录的三处未绑定方法回调。改为显式类型导入、有界数字绑定构造、星期类型守卫及闭包调用，不放宽检查规则。
-- 原计划独立计时开关和关闭全部相关标签的检查预期已按当前产品契约修正，保留计划授权身份校验、普通额度隔离与组内页面保护的断言。只更新现有检查与夹具，本地不运行单元或浏览器测试；执行类型编译和正式/Debug 构建，上传后读取远端 CI 结果。
-- 首轮修复上传后的远端 CI 已通过格式、类型和 ESLint；单元检查只剩旧提示语迁移预期缺少 `promptEnabled: true`，已补齐规范化与后续合并的两处预期，确保保留原提示文字且默认启用已有内容。
-
-## 关闭窗口后的白名单恢复（2026-10-15）
-
-本节取代原“窗口关闭或浏览器重启后一律重新绑定”的约定。领域配置和计时优先级不变，只改变浏览器组身份的恢复层。`tab-group-bindings.ts` 将恢复记录与写事务集中管理，`tab-group-whitelist.ts` 负责移除分类与放行，UI 区分 bound / waiting / unbound。本地记录只在内容变化时写入，分桶构造成员特征，组/成员恢复事件合并调度，已有活动组的会话编号仍优先使用；无白名单配置不扫描成员。恢复过程中自有 end.html 按其 returnUrl 参与摘要，避免部分成员先进入普通暂停页后导致完整恢复永远无法匹配；仍由原暂停页独立复核计划、网站权限和白名单后恢复。
-
-新增浏览器端口只有组颜色、pendingUrl/私密标志、组创建事件、标签页移除详情和窗口查询/移除事件，不新增权限、不修改浏览器组名，不主动重建组。窗口重开或恢复尚未完成时等待后续组/成员事件复核；绑定恢复不改变计划截止时间、普通额度和统计归属。
-
-本轮仅类型编译和 Chromium / Firefox / Safari 及 Debug 构建，组恢复、事件顺序和多窗口交互留待人工验收。
-
-## 配置、屏蔽和设置的目录与时段交互（2026-10-15）
-
-- 三页复用 `ui/configuration-directory.ts`、`ui/configuration-workspace.ts` 与 `styles/configuration.css`。各页给详情区域指定稳定 ID；目录按钮通过 `aria-controls` 关联，当前项通过 `aria-current` 表达。桌面侧栏由 `viewport-scroll-panel.ts` 管理独立滚动，重绘释放旧监听并恢复位置与目录焦点，860px 以下或窗口高度不超过 360px 时恢复文档流。
-- 设置页七类只呈现当前分类；屏蔽页按模块选择，下载入口独立，导入后选中新模块，删除当前项回退到首项或空状态。背景计划上下文刷新不先清空现有屏蔽内容，保存与刷新保留选择。
-- 白名单目录仍以稳定的组配置 ID 选择；组名称/绑定与时间段编辑分开。组详情内逐项管理时段，删除最后一段保留组身份和绑定；删除整个配置才删除绑定。新建组配置默认每天全天的一个时段。旧配置和旧备份按一个时段读取，不合并或丢弃现有配置及绑定。
-- `shared/tab-group-whitelist.ts` 验证整个有界时段数组，拒绝重复时段 ID、非法星期和时间；空数组、全部停用与未命中均不授予白名单访问。运行判定与历史区间结算继续统一调用 `isTabGroupWhitelistActive()`，内部按所有启用时段取并集。备份沿用规范化器保存嵌套时段，不携带组绑定。
-- `ui/time-period-controls.ts` 复用网站和白名单的名称、星期、HH:mm、启停字段。白名单保持无限放行语义，不引入网站分钟额度或分组扣费。UI 写队列跨重绘串行，每次时段变更读取最新组配置再合并，避免快速操作和切换目录丢失其他时段；普通网站保存通道独立。
-
-## 默认外观、目录图标和网站名称（2026-10-15）
-
-- `FocusSettings.theme` 的默认和无效值回退为 `ocean`；`ui/theme.ts` 与未设主题属性的 CSS 首帧采用同一蓝色。保留已保存的五种合法主题，恢复默认时才应用新的默认值。
-- 增加 `FocusSettings.showSidebarIcons: boolean`，缺失时补 `false`；合并、克隆、重置、配置备份均保留该偏好，旧备份缺失时补默认关闭。设置入口位于“界面与显示”。`applyAppearance()` 向文档根设置主题与图标属性，并监听本地设置更新；`styles/configuration.css` 默认隐藏目录标记并使用单内容列，开启后恢复图标列。三页共用样式，不改顶栏导航、操作按钮或右侧功能图标。
-- 网站与普通整站目标名称由 `normalizeManagedConfiguration()` 从规范来源的 `hostname` 派生；新增网站和网站更新均保存域名，历史插件标签、调试标签不再覆盖网站名。网站稳定 ID、来源、权限、目标关联和时间规则不变；专用模块目标仍保留板块名。旧备份校验前只迁移这些显示名称及缺失的图标偏好，其余严格校验保持原边界。
-- 仓库五个屏蔽插件的名称和功能描述由 `ui/local-module-copy.ts` 按稳定 ID 投影，已有安装也直接显示网站名称，不依赖原名称是否带“模块”。`optional-modules/*/hourleaf-module.json` 同步描述具体隐藏内容；仅调整显示元数据，保留 ID、版本、偏好、脚本及选择器。
-
-## 跨标签页暂停恢复（2026-10-15）
-
-- 普通心流分钟授权仍属于网站目标/时间段及当前使用组，不改为逐标签发放。其他暂停页必须读取现有权威判定后恢复，不能重新调用授时、解锁或确认接口来制造访问资格；沿用同一 `flowGrantId` 与截止时间。
-- `shared/pause-access.ts` 集中判断影响恢复的存储变化、计划到期保护、时间边界及异步复核合并。监听设置、分组/心流运行态、临时授权、模块策略、计划授权与组绑定；访问确认只在已确认授权集合变化时通知，未确认挑战写入不触发自身复核循环，使用统计心跳也不触发。原 `hourleaf.visit-confirmation.v1` 键统一从 `STORAGE_KEYS.visitConfirmation` 引用，不变更存储格式。
-- `end/index.ts` 普通暂停页在上述事件、切回标签页、窗口聚焦及页面恢复时重新查询当前网站与计划判定；不再只接受白名单放行。确认页必须先读取已经完成的当前确认，避免未确认时反复跳转；分钟和临时授权按实际截止时间复核，普通时间规则按分钟边界复核。隐藏页不自动恢复媒体，显示后再确认当前授权有效性。
-- `content/index.ts` 的嵌入式普通暂停仍保留 iframe 和原媒体。暂停状态不再被 `evaluatePage()`、可见性与心跳的早退条件完全跳过；宿主记录原 `targetId`，读取最新访问判定，确认需要时进入正常确认页，允许时通过原 channel 恢复。恢复前再次验证当前 URL、实例、权限、访问确认及计划状态。
-- 并发复核串行合并，运行中收到新事件会补查；同一实例的并发恢复共用一个 Promise，避免宿主自动恢复与 iframe 确认同时发生时误报失败。移除 iframe 清理来源/channel/target，BFCache 恢复重新检查；旧 URL 或已替换实例的迟到响应不能恢复新页面。跨时段恢复后的媒体结束使用当前判定的 target/period/grant 标识。
-- 独立计划的暂停保持原确认流程，不由普通网站放行自动关闭；宽容计划到期即使允许导航，携带待确认事项的暂停仍需原操作。旧计划 iframe 不能恢复另一事项的授权。视频结束模式继续要求真实可用媒体，不用固定分钟替代；分钟延时到期继续按原每组一次及扣额策略执行。
-
-## 多组白名单的归属和暂停同步（2026-10-17）
-
-- `TabGroupWhitelistService.rulesForTab()` 在恢复全部绑定后读取请求标签页的最新归属，匹配该组的全部配置，不依赖目录选中项或配置顺序。浏览器的单标签元数据缺少 `groupId` 时，逐个查询不同已绑定组的真实成员，只在唯一匹配时继续；无组、关闭窗口、已撤销、查询失败或归属歧义不推测放行。
-- 白名单保存/删除和浏览器组变化完成后，后台同时通知网站内容脚本与扩展暂停页。网页通知不等待工具栏徽标完成，独立 `end.html` 通过同步、无响应的通知监听触发合并复核，不占用其他请求的回复通道，也不等待后台写队列内的复核结果。恢复仍由原网站/计划判定授权；隐藏页显示时再次检查。
-- 新增组配置先选择真实组，自动建议名称（空组名用界面未命名文案、最长 80 字符）；尚未自定义时切换组同步建议，已编辑名称和已有配置名称保持。不会修改浏览器组名或增加网站权限。
-- 本轮仅执行 TypeScript 编译和正式/Debug 构建；第二组及多窗口、暂停恢复场景尚待人工验收，不能把构建成功视为交互已验证。
-
-## 暂停操作后的同网站同步（2026-10-18）
-
-- `background/website-access.ts` 在普通心流授权/撤销、下一组解锁、宽容确认和访问确认成功提交后发送 `HOURLEAF_WEBSITE_ACCESS_CHANGED`。网站内容脚本按既有 `siteMatchPatterns()` 查询范围通知，扩展暂停页通过 runtime 通知并按 `siteId` 筛选。通知不等待接收方重新查询资格，避免在后台串行写队列内等待其自身请求；不增加权限、存储键或逐标签授权。
-- 内容宿主与暂停页继续从后台读取权威资格及原授权截止时间。嵌入式普通暂停在后台标签中也可解除遮罩、初始化当前计时状态；只有可见时恢复原媒体播放。独立暂停页在隐藏时更新视图，显示时复核后再导航；计划暂停及逐标签确认边界保持不变。
-- `shared/pause-access.ts` 将网站/暂停页的短时重复通知合并为 30ms 批次，进行中收到的新事件保留补查。运行态观察按当前目标过滤，只比较分组解锁、心流授权及宽容确认字段；等待和题目初始化不引发自身刷新，统计心跳仍被排除。存储事件、可见性与原有截止时间定时器继续提供恢复兜底，不新增周期性全标签扫描或强制整页刷新。
-- `end/index.ts` 串行合并重新绘制，在访问状态或相关配置变化后更新时长与操作；当前时段取新判定，不固定使用 URL 中的旧时段。只改变倒计时检查点不重建输入和等待控件；操作执行中延后复核，独立计划继续使用原来的操作及恢复重试状态。
-- 本轮仅执行 TypeScript 编译和正式/Debug 构建。跨标签交互、媒体恢复与性能感受以人工验收为准。
-
-## 仪表盘与暂停页数据展示（2026-10-19）
-
-- `shared/usage-insights.ts` 负责无副作用的日用量、日均、已过/有记录天数、单日峰值和心流延时聚合。日均按区间起点至本机今日的已过日历日计算，含无记录日期、排除未来日期，不按毫秒除以 24 小时；延时只累加 `extra:<periodId>`，不重复加组级镜像，仍包含在实际总用时内。
-- `shared/screen-time.ts` 将任意 `UsageSummary` 的每日小时桶投影为相同钟点的累计秒数，先按目标预聚合再映射网站，今日调用保持原口径。未知/已移除目标保留到“其他网站”，不新增采集、消息、存储或权限。
-- `ui/hourly-usage-chart.ts`、`styles/usage-charts.css` 供仪表盘与暂停页共用，负责刻度、默认峰值选择、明确的小时读数、24 小时制与键盘选柱。暂停页网站筛选共用全部网站的刻度；无小时明细保留总量和缺失提示，不插补历史分布。
-- `dashboard/index.ts` 组织区间卡片、日期趋势与域名占比；今日趋势改用小时图，周/月保留日趋势、年保留月趋势。排名百分比以区间实际总量为分母，已移除配置的用量单列保留；当前网站使用规范域名显示。
-- `dashboard/usage-panels.ts` 组织区间小时图和计划摘要。计划数据没有完成日期归属，始终说明为当前整个清单，不随日/周/月/年筛选，完成率以清单项数计算、待办时长按事项预定时长求和。
-- 仪表盘可见时沿用 5 秒读取，更新全部统计区而非只更新总数；请求互斥并用加载序号丢弃切换区间后的旧响应。正在操作的区域延后刷新，其余区域保留展开来源、列表滚动及小时选择；读取失败保留最近成功数据。
-- 暂停页仅修改展示组件和样式，继续使用既有时段运行态、暂停恢复与操作互斥。本轮仅进行类型/CSS 编译及正式三平台和 Debug 构建，视觉和交互验收待人工执行。
-
-## 暂停页核心控件恢复（2026-10-19）
-
-- 恢复 `styles/end.css` 中提取公共小时图时误移除的分组进度条、空心/实心图例和今日统计容器样式；共享小时图继续由 `styles/usage-charts.css` 提供，两个样式模块各自保留职责。
-- 本节替代旧的小窗口“单区显示”约定：`ui/pause-layout.ts` 与暂停样式在宽度不足 1100px 或高度不足 640px 时纵向排列全部区域，分区导航只滚动定位。心流时长选择、视频结束选项、确认按钮、下一组操作与分组进度不再因切换分区而隐藏；窄窗口保留自然滚动。
-- 心流和下一组是否可操作仍取决于原有后台运行态，逐组一次、计划独立计时及授权校验不变；不向无权限或没有可用额度的页面添加操作资格。本轮只执行类型/CSS 编译和正式三平台、Debug 构建，交互留待人工验收。
-
-## 暂停页紧凑布局、仪表盘精简与视频心流默认项（2026-10-19）
-
-本节替代同日先前的暂停页全窄窗单列及总时长深色卡展示约定。
-
-- `styles/end.css` 的暂停卡恢复为最大宽度 1180px、固定三栏（用量 / 操作 / 统计），三列等宽并由网格统一拉伸至相同高度，使操作列始终居中；取消两行布局及统计区横跨。窄窗口以 `pause-layout-viewport` 横向滚动承载最小 960px 的完整三栏，`centerPauseActions()` 在挂载后将操作列置于可视中心；手机导航仅定位，不隐藏或重建控件。
-- `ui/pause-details.ts` 填充现有三栏中的留白：左侧读取活动时段配置和 `UsageSummary.byPeriod`，复用 `resolveGroupQuota()` 展示总额度、本组额度、本组剩余及已开启分组，不把免费额外用时计入额度消耗。中间按钮上方展示本站今日占比、记录中的峰值小时及对应时长，无小时数据时显示暂无记录；不生成评分、增加采集或改变访问资格。
-- `dashboard/total-time-card.ts` 独立组织总时间卡，按小时/分钟或不足一分钟的秒数分开显示数字与本地化单位；主题顶线及图标取代深色背景和装饰圆。总量测试标识和计时状态标识保留，刷新沿用原统计区更新流程。
-- `dashboard/index.ts`、`dashboard/usage-panels.ts` 删除解释性副标题、日均口径说明、模块身份提示及整个页尾说明；保留数据名称、日期、数值、计划完成进度、空状态和缺失小时的必要提示，计划卡标题改为“当前计划”。统计口径仍在开发文档中说明。
-- `content/index.ts:showPauseFrame` 现有 `video` 标记取自暂停守卫介入前实际正在播放且未结束的主视频。`end/index.ts` 仍只在嵌入式暂停中接受此标记；`ui/flow-choice.ts` 据此默认选中 `video-end` 并立即同步分钟字段隐藏状态，没有视频时默认 `minutes`。用户仍可切换时长，确认才授时，失败重试不重复授权；不修改视频恢复、结束监听和普通/计划计时边界。
-- 本轮只进行类型/CSS 编译与三浏览器正式、Debug 构建；未执行浏览器截图、交互或自动化测试。
-
-- `ui/group-progress.ts` 删除可见空心/实心图例文字，保留分组段条、已用/剩余摘要与读屏进度值；`ui/pause-layout.ts` 的导航顺序和文档顺序统一为用量、操作、统计，不隐藏心流或下一组控件。相关图例样式同时移除。
-
-## 暂停页等尺寸面板、激励区与下次可用时段（2026-10-19）
-
-- `ui/pause-layout.ts` 为中间框提供独立 `messages` 插槽。`end/index.ts` 将设置中的激励文字及访问自定义提示放入该区域，复用原 Unicode 分页，不再附加到左侧；中间依次为本站摘要、激励文字、本站分布、操作区。`styles/end.css` 使用三等分网格和等高拉伸，右侧统计容器撑满面板，中间使用纵向弹性布局并把 fieldset 推至底部；文字区有内容时最少保留 88px，不生成替代文案，长内容自然撑高全部三框；没有激励话语和访问提示时通过 `:empty` 隐藏空插槽，并让中间本站分布与各数据行弹性增长填补空间，继续保持三框等尺寸及按钮靠下。
-- `shared/next-available-period.ts` 为纯读取的下一时段投影。枚举下一周内的本地日期、时段起止及午夜边界，复用 `selectActiveTimePeriod()` 的星期、全天、跨午夜及 allow > block > timed 规则；跳过禁用/一直禁用/当日已耗尽或零额度时段，未来日期按独立日额度判断。被其他更高优先级时段截断时，展示有效区间而非未经选择的原范围。
-- `ui/pause-details.ts:createNextPeriodDetails()` 仅在目标完全未命中启用时段时显示下一可用时段名称与日期/星期/24 小时起止时间；没有后续可用时段时显示明确空状态，不伪造时间、不改变授权或自动放行。现有分钟边界复核负责时段变化后的重绘，既有计时、恢复、心流和组解锁契约不变。
-- 本轮仅执行类型/CSS 编译及正式三平台、Debug 构建；等高视觉、文字分页和下一时段边界留待人工验收。
-
-## 关于与文档入口（2026-10-19）
-
-- `home/index.ts` 增加“关于”分类，沿用设置目录、字段卡片和重绘位置保持机制；链接标签与说明使用 `shared/i18n.ts` 的中英文稳定键，不新增设置字段或消息。
-- 关于页提供三项外链：隐私政策与 MIT 开源许可固定指向 `446F7269616E/Hourleaf` 默认分支的 `PRIVACY.md`、`LICENSE`，联系开发者指向项目 Issues；文档正文不嵌入扩展、不预取、不使用远程脚本。
-- `ui/external-link.ts` 提供带外链图标的原生链接，新标签页打开并设置 `rel="noopener noreferrer"`。仅在用户点击后由浏览器访问链接目标；关于页不展示其他插件或可选屏蔽组件的介绍。
+- **2026-09-12:** Verified same-tab confirmation; independent plan filtering profiles; dark-toolbar rounded backing.
+- **2026-09-28:** Protected disable/clear/reset tickets; Debug pause/budget tools.
+- **2026-09-30:** Hourly usage/group visualization; precise group accounting; shared/new-tab confirmation; pause balance rings and authenticated media recovery. Historical local validation covered compilation/builds, not rendered or interaction acceptance.
+- **2026-10-01:** Plan notices, same-origin compatibility, popup dimensions, and five theme palettes.
+- **2026-10-04:** Bilibili 1.2.3 native-autoplay handling and independent daily content-filter schedules.
+- **2026-10-07:** General same-tab/origin plan visits; removed forced plan-list redirects; Bilibili 1.2.5 dynamic featured comments.
+- **2026-10-08:** Integrated earlier release work on main; corrected formatting/type-only imports and stale test expectations without reducing quality gates. Empty/disabled period sets became unlimited; session-only plan grants and post-expiry navigation cleanup replaced stale local grants/notices. Local checks were compilation/release/Debug builds; remote results belong to their commit/run.
+- **2026-10-13:** Separate ordinary/whitelist/plan ownership and ungrouped-only ordinary close; stable-ID bilingual module projection. CI run `38387368091` at `2d4cb29` exposed type/closure issues; subsequent stale migration expectations were aligned without weakening checks.
+- **2026-10-15:** Unique combined-feature group recovery; shared directory/period controls; default blue/theme/icon/domain labels; coalesced cross-tab pause recovery.
+- **2026-10-17:** Read real membership for every configured group; notify pause pages without stealing replies; suggest group names without overwriting user edits.
+- **2026-10-18:** Post-commit same-site notices, 30ms recheck coalescing, retained inputs and original grant deadlines.
+- **2026-10-19:** Shared usage projections/charts and dashboard refresh; recovered pause controls; compact fixed three-column layout; separated total digits/units; actual-playing-video default; equal frames/messages/next-period details; About privacy/MIT/contact links. Only compilation/CSS/release/Debug builds were recorded for these rounds; visual and interaction acceptance remains manual.

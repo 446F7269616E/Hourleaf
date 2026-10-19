@@ -1,47 +1,47 @@
-# Hourleaf 模块开发准则
+# Hourleaf module development guidelines
 
-本准则面向希望在 GitHub 提交或发布可选网站模块的开发者。模块是用户主动下载、审查和导入的本地文件，不是 Hourleaf 核心的一部分，不会被预装、远程拉取或自动更新。
+These guidelines cover optional website modules submitted or published through GitHub. Users download, review, and import local files themselves. Modules are separate from the core and are never preinstalled, fetched remotely, or automatically updated.
 
-协议字段的完整定义与平台限制见 [LOCAL_MODULES.md](./LOCAL_MODULES.md)。这里重点说明如何把模块做得安全、克制、可维护。
+See the [local module specification](./LOCAL_MODULES.md) for fields and platform limits, and the [component catalog](../optional-modules/README.md) for downloads and disclaimers.
 
-## 1. 先判断是否需要模块
+## 1. Decide whether a module is needed
 
-只有网站特有的能力才应进入模块：
+Only website-specific behavior belongs in a module:
 
-- 隐藏该网站独有的推荐流、评论或非商业导航干扰；
-- 为精确来源声明默认的 `timed`、`always-allow` 或 `always-block` 策略；
-- 用少量本地 CSS 降低视觉干扰；
-- 用无网络、无扩展权限的用户脚本提供轻量键盘操作。
+- hiding site-specific recommendation feeds, comments, or noncommercial navigation distractions;
+- declaring a default `timed`, `always-allow`, or `always-block` policy for exact origins;
+- small local CSS adjustments that reduce visual distraction;
+- lightweight keyboard actions through a user script without networking or extension privileges.
 
-计时、时间段、独立计划、标签页组白名单、访问确认、结束页和统计属于通用核心。模块不得复制这些功能，也不得读取或修改 Hourleaf storage。先在 [开发目录](./README.md) 定位核心契约；当前使用行为见 [FEATURES.md](./FEATURES.md)。
+Timing, time periods, independent plans, tab-group allowlists, access confirmation, end pages, and statistics belong to the general core. Modules must not duplicate them or access Hourleaf storage. Locate the relevant core contract in the [development index](./README.md); see the [feature guide](./FEATURES.md) for current behavior.
 
-### 商业内容边界（内部开发约束）
+### Commercial-content boundary
 
-Hourleaf 网站模块只负责减少与用户当前意图无关的干扰，不得隐藏、遮挡、自动跳过或削弱网站用于盈利的内容，包括广告、推广、赞助、付费展示、会员/购买入口、创作者商业化入口及其他商业投放。这个约束只用于开发与评审，不写入模块名称、描述、开关名称或其他用户可见文案。
+This is an internal development and review constraint. Website modules reduce distractions unrelated to the user's current intent. They must not hide, obscure, skip, or weaken revenue-related content: advertising, promotions, sponsorships, paid placements, membership or purchase entry points, creator monetization, or other commercial placements. Do not repeat this internal rule in module names, descriptions, switches, or other product copy.
 
-- 不得选择同时容纳普通内容与商业内容的整块列表、网格、侧栏或时间线容器；应选择可验证的普通子项，并显式排除稳定的商业标记。
-- 如果当前 DOM 无法稳定区分普通内容与商业内容，则该区域不提供过滤能力；不得依赖语言文本、排名位置或“看起来像”广告来猜测。
-- 网站改版、A/B 实验或未登录状态使排除条件失效时，必须安全地保留内容，而不是扩大隐藏范围。
-- 站点研究记录要保存来源、许可证、验证页面与选择器借鉴点；只借鉴 DOM 语义和工程方法，不复制大段第三方代码。
+- Do not hide entire lists, grids, sidebars, or timelines that mix ordinary and commercial content. Target verified ordinary child items and explicitly exclude stable commercial markers.
+- If the DOM cannot reliably distinguish them, leave that area unfiltered. Do not guess from language, rank, position, or appearance.
+- If a redesign, experiment, or signed-out layout invalidates exclusions, retain content rather than expanding the hidden area.
+- Research notes must record sources, licenses, inspected pages, and borrowed selector ideas. Use DOM semantics and engineering approaches without copying substantial third-party code.
 
-## 2. 目录与文件
+## 2. Directory and files
 
-每个仓库模块使用独立目录：
+Each repository module has its own directory:
 
 ```text
 optional-modules/<slug>/
 ├── hourleaf-module.json
-├── focus.css          # 可选
-└── focus.user.js      # 可选
+├── focus.css          # optional
+└── focus.user.js      # optional
 ```
 
-- `<slug>` 只用小写字母、数字和连字符，并在后续版本保持稳定。
-- JSON 清单必须显式引用 CSS 与脚本；不允许未声明文件、子目录或远程文件。
-- `id` 一经发布不得复用给另一个模块；建议使用反向域名或 `hourleaf.local.<site>-<purpose>`。
-- 清单、CSS 和用户脚本元数据中的 `format`、`id`、`name`、`author`、`version` 必须一致。
-- 面向用户开关的选择器放入 `filterGroups`；组 `id` 只使用稳定的小写 kebab-case，已发布后不得改名。`hideSelectors` 仅保留模块启用后必须始终生效的少量规则。
+- Use lowercase letters, digits, and hyphens for a stable `<slug>`.
+- Explicitly reference CSS and scripts in the JSON manifest. Undeclared files, subdirectories, and remote files are not allowed in the source directory.
+- Never reuse a published `id` for another module. Prefer a reverse-domain ID or `hourleaf.local.<site>-<purpose>`.
+- Keep `format`, `id`, `name`, `author`, and `version` consistent across the manifest and CSS/script metadata.
+- Put user-controlled selectors in `filterGroups`. Group IDs are stable lowercase kebab-case and must not be renamed after publication. Reserve `hideSelectors` for a small set of rules active whenever the module is enabled.
 
-最小清单：
+Minimal manifest:
 
 ```json
 {
@@ -51,15 +51,15 @@ optional-modules/<slug>/
   "name": "Example Focus",
   "author": "Example Author",
   "version": "1.0.0",
-  "description": "提供 Example 网站推荐内容的可选过滤。",
+  "description": "Optional filtering for Example recommendations.",
   "matches": ["https://example.com/*"],
   "domainPolicy": "timed",
   "hideSelectors": [],
   "filterGroups": [
     {
       "id": "home-recommendations",
-      "name": "首页推荐",
-      "description": "隐藏首页中的普通推荐卡片。",
+      "name": "Home recommendations",
+      "description": "Hide ordinary recommendation cards on the home page.",
       "selectors": [".recommendations > .card:not([data-placement])"]
     }
   ],
@@ -68,121 +68,115 @@ optional-modules/<slug>/
 }
 ```
 
-## 3. 来源和权限边界
+## 3. Origins and permissions
 
-- `matches` 只接受明确的 `http://host/*` 或 `https://host/*`，不接受通配主机、凭据、路径级权限幻想或非 Web 协议。
-- 只声明实际测试过的来源。`www.example.com`、`live.example.com` 和 `example.com` 是三个不同来源，需要分别列出。
-- 模块不能申请权限。Hourleaf 只会在导入预览后，由用户点击请求清单里的精确来源。
-- 不得通过重定向、iframe、DNR、开放代理或脚本导航把权限扩大到未声明来源。
-- 模块不得读取登录状态、Cookie、账号标识、页面正文或浏览历史并发送到外部。
+- `matches` accepts explicit `http://host/*` or `https://host/*` patterns. Wildcard hosts, credentials, non-web protocols, and assumptions of path-level authorization are invalid.
+- Declare only inspected origins. `www.example.com`, `live.example.com`, and `example.com` are separate origins and need separate entries.
+- Modules cannot request permissions. After the preview, Hourleaf requests the manifest's exact origins only through a user action.
+- Do not expand access through redirects, iframes, DNR, open proxies, or script navigation.
+- Never send login state, cookies, account identifiers, page content, or browsing history off-device.
 
-## 4. 选择器与 CSS
+## 4. Selectors and CSS
 
-选择器应描述稳定语义，而不是依赖脆弱的自动生成类名。
+Prefer stable semantics over generated class names, in this order:
 
-推荐顺序：
+1. Stable IDs, ARIA/roles, or public semantic classes.
+2. Component roots and explicit data attributes.
+3. Combined selectors inspected in at least two page variants.
 
-1. 稳定 ID、ARIA/role 或网站公开的语义类；
-2. 组件根节点和明确的数据属性；
-3. 经过两个以上页面形态验证的组合选择器。
+Avoid:
 
-避免：
+- `body *`, wildcard descendant chains, or broad `:has()` queries;
+- site-wide font, color, or layout resets using `!important`;
+- hiding playback, pause, subtitles, login, privacy, or accessibility controls;
+- selectors that exist only for one account, experiment, or language;
+- mixed containers with advertisements, promotions, sponsorships, paid placements, or commercial entry points;
+- `@import`, `url()`, remote fonts, images, tracking pixels, or any network resources.
 
-- `body *`、通配后代链或大范围 `:has()`；
-- 用 `!important` 重置整站字体、颜色或布局；
-- 隐藏播放、暂停、字幕、登录、隐私或无障碍关键控件；
-- 依赖单一账号、实验分组或语言环境才存在的选择器；
-- 隐藏包含广告、推广、赞助、付费展示或商业入口的混合容器；
-- `@import`、`url()`、远程字体、图片、追踪像素和任何网络资源。
+The core generates hiding rules from `hideSelectors`. Use `focus.css` only for small adjustments that cannot be expressed by hiding. Support light/dark themes, 200% zoom, and `prefers-reduced-motion`.
 
-`hideSelectors` 由核心生成隐藏规则。`focus.css` 只承担无法用隐藏表达的轻量视觉调整，并必须支持深浅色、200% 缩放和 `prefers-reduced-motion`。
+For open Shadow DOM, explicitly declare hosts and any necessary low-frequency mount event in `shadowRoots`, and reuse `LocalPageRuleController`. Do not build a second style injector in a user script. Selectors operate within each root and must scope themselves to the intended area; a broad `.video-card` can affect search, favorites, or history. Cover early/late mounting, remounting, appended pages, switches, retention of unknown nodes, and isolation between modules.
 
-第三方界面使用开放 Shadow DOM 时，在清单的 `shadowRoots` 中显式声明宿主及必要的低频挂载事件，复用核心 `LocalPageRuleController`；不要在用户脚本中另建样式注入器。选择器在根内部求值，必须自行限定首页等区域，避免 `.video-card` 一类通用类名误伤搜索、收藏或历史。新增适配需覆盖先后挂载、重新挂载、分页追加、分组启停、未知节点保留及模块间样式隔离。
+## 5. User scripts
 
-## 5. 用户脚本
+Prefer manifests and CSS. Use scripts only when necessary:
 
-优先不用脚本。能用清单或 CSS 完成的功能，不应升级为脚本。
+- Listen only to required events, return early, and throttle high-frequency events.
+- Do not poll, scan the entire DOM, or run full-page queries on every mutation.
+- Preserve the website's primary shortcuts; return when an input or `contenteditable` has focus.
+- Degrade safely when nodes are missing, shadow roots are not mounted, or SPA routes change.
+- Do not use `eval`, `Function`, string timers, dynamic import, or WebAssembly code generation.
+- Do not use `fetch`, XHR, WebSocket, EventSource, Beacon, or other networking.
+- Do not access `chrome.*`, `browser.*`, cookies, extension messaging, or injected `<script>` elements.
+- Scripts are Chromium-only. Firefox AMO and Safari App Store builds accept modules without scripts; provide a separate JSON/CSS edition when cross-platform support is needed.
 
-确需脚本时：
+To coordinate script behavior with a filter group and its schedule, a script may create its own empty, zero-size DOM marker and include that selector in the group. Read the marker's computed hidden state without accessing Hourleaf storage or duplicating scheduling logic. Prefer verified native website controls and save page-local state that needs restoration. Discover late controls through inserted subtrees or affected local containers only, and restore state when styles are removed. Clearly describe any reduced functionality in a separately maintained script-free edition.
 
-- 只监听必要事件，尽早返回；高频事件必须节流；
-- 不轮询页面，不扫描整棵 DOM，不在每次 mutation 中做全页查询；
-- 不阻止网站的主要快捷键，输入框和 `contenteditable` 获得焦点时必须退出；
-- 对找不到节点、Shadow DOM 未挂载和 SPA 路由切换做安全降级；
-- 不使用 `eval`、`Function`、字符串计时器、动态 import、WebAssembly 代码生成；
-- 不使用 `fetch`、XHR、WebSocket、EventSource、Beacon 或其他外联；
-- 不访问 `chrome.*`、`browser.*`、Cookie、扩展消息或注入 `<script>`；
-- 脚本仅供 Chromium 使用。Firefox AMO 与 Safari App Store 构建只接收不含用户脚本的模块；需要跨平台时另行提供纯 JSON/CSS 版本。
+Static validation quickly rejects obvious violations; it is not a safety certification. Review script inputs, outputs, event lifecycles, and worst-case performance manually.
 
-如脚本行为必须随内容分组及启用时段联动，可由脚本创建无内容、零尺寸的专属 DOM 标记，将标记选择器加入对应 `filterGroups`；脚本只读取该标记的实际隐藏状态，不读取 Hourleaf storage 或自行复制时间逻辑。网站行为优先通过已核对的原生控件处理，并保存当前页面中需要恢复的状态；控件晚挂载仅查询新增子树及受影响的局部容器，样式移除也必须触发恢复。缺少用户脚本能力时需明确只保留视觉过滤。
+## 6. Performance budgets
 
-静态检测是快速拒绝明显越界功能的防线，不是安全认证。评审者仍需逐行审查脚本的输入、输出、事件生命周期和最坏性能。
+Protocol limits are hard ceilings, not targets. Repository modules should keep:
 
-## 6. 性能预算
+- manifests and selectors within the actual feature scope;
+- CSS generally below 20 KB;
+- scripts generally below 30 KB;
+- initialization free of large synchronous loops;
+- interactions limited to local node queries;
+- background networking, telemetry, advertisements, and update checks absent;
+- disabled modules free of further script, style, or permission effects.
 
-协议硬上限不是建议目标。仓库模块应尽量满足：
+A PR exceeding these soft budgets must explain why and provide reproducible performance evidence. Unregistering an already executed script does not undo its page effects; account for page refresh and cleanup in its lifecycle.
 
-- 清单和选择器保持在实际所需范围；
-- CSS 通常小于 20 KB；
-- 用户脚本通常小于 30 KB；
-- 页面初始化不做同步大循环；
-- 单次交互只查询局部节点；
-- 没有后台网络、遥测、广告或更新检查；
-- 禁用模块后不再产生脚本、样式或权限副作用。
+## 7. Copy, accessibility, and compatibility
 
-若需要突破这些软预算，PR 必须解释原因并提供可复现的性能证据。
+- Use the website name without a “focus module” suffix. Put unofficial status in the shared import notice and documentation; do not imply endorsement.
+- Describe actual behavior without marketing claims or unverified compatibility.
+- Avoid common browser/site shortcuts and protect text input.
+- Preserve focus outlines and keyboard navigation, and do not use color alone for state.
+- Record manual results separately for Chromium, Firefox, and Safari. Script-bearing packages are Chromium-only; never mark an untested platform as passed.
+- Changed selectors should safely do nothing rather than hide essential content.
 
-## 7. 文案、可访问性与兼容性
+## 8. Local verification
 
-- 仓库网站模块名称直接使用网站名称，不添加“专注模块”等后缀；功能与“非官方”身份写在描述中，不暗示网站官方授权。
-- `description` 说明模块做什么，不写营销承诺或无法验证的兼容范围。
-- 新增快捷键时避开浏览器与网站常用快捷键，并提供输入状态保护。
-- 不以颜色作为唯一状态，不移除焦点轮廓，不破坏键盘导航。
-- 分别记录 Chromium、Firefox 和 Safari 的人工验收结果；包含脚本时明确仅 Chromium 支持，不把未执行的平台写为通过。
-- 网站改版导致部分选择器失效时应安全地“什么都不做”，不能误隐藏主要内容。
-
-## 8. 本地验证
-
-1. 在“屏蔽”页一次选择清单及全部引用文件，人工检查预览中的名称、作者、版本、来源和能力。
-2. 分别验证授权拒绝、授权成功、启用、停用、删除和重新导入。
-3. 检查模块声明的每个来源，以及未声明来源不会生效。
-4. 在无登录、已登录、窄屏、200% 缩放、深浅色和减少动态环境下检查主要页面。
-5. 本地自动检查仅编译与构建：
+1. Select the manifest and all references together in Blocking, then manually inspect the name, author, version, origins, and capabilities.
+2. Check permission denial/grant, enable/disable, deletion, and reimport.
+3. Check every declared origin and confirm that undeclared origins are unaffected.
+4. Inspect primary pages signed out and signed in, at narrow widths and 200% zoom, in both themes and with reduced motion.
+5. Local automated checks are limited to compilation and builds:
 
 ```bash
 npm run typecheck
 npm run build
 ```
 
-发布打包另外使用 `npm run package` 生成独立模块 ZIP，不将 Debug 文件复制到候选目录。GitHub Actions 保留既有单元覆盖与打包检查；实际站点表现、权限拒绝、定时切换、普通/计划偏好与中英文文案留给人工验收，不以编译成功代替。
+Use `npm run package` separately for release archives. Never copy Debug files into store candidates. GitHub Actions retains the existing unit and packaging checks. Actual website behavior, permission denial, schedule changes, normal/plan preferences, and bilingual copy require manual acceptance; compilation does not establish those results.
 
-## 9. 版本与发布
+## 9. Versioning and release
 
-模块使用语义化版本：
+Use semantic versions:
 
-- patch：选择器修正、文案或兼容性修复；
-- minor：新增来源、过滤区域或可选能力；
-- major：行为或权限范围发生不兼容变化。
+- **patch:** selector, copy, or compatibility corrections;
+- **minor:** new origins, filter areas, or optional capabilities;
+- **major:** incompatible behavior or permission changes.
 
-每次修改同步更新清单、CSS/脚本元数据和 Release 说明。`npm run package` 会为 `optional-modules/` 下的每个有效目录生成独立 ZIP 与 `MODULE-SHA256SUMS`。模块 ZIP 和浏览器安装包发布在同一 GitHub Release，但必须作为不同资产列出；模块永远不复制进扩展安装包。
+Update manifest metadata, CSS/script headers, and release notes together. `npm run package` creates one ZIP per valid directory plus `MODULE-SHA256SUMS`. Component ZIPs and browser packages may share a GitHub Release but must remain distinct assets. Components never enter extension installation packages. Module archives include MIT `LICENSE` and README notices; these are not import inputs.
 
-## 10. PR 评审清单
+## 10. PR checklist
 
-- [ ] 功能确实需要网站模块，而不是通用核心功能；
-- [ ] 作者、格式、ID、版本、描述和引用文件一致；
-- [ ] 来源精确、最小且逐一测试；
-- [ ] 所有组选择器只命中普通干扰内容；混合列表已下钻到子项并显式排除商业标记；
-- [ ] 没有 DNR、远程资源、账号数据、网络请求或扩展权限；
-- [ ] 选择器不会隐藏主要控制、隐私提示或无障碍入口；
-- [ ] 脚本事件有输入保护和安全降级，没有轮询或无界扫描；
-- [ ] Chromium、Firefox、Safari 能力差异已记录；
-- [ ] 真实模块文件通过导入测试和打包检查；
-- [ ] README / Release 说明明确非官方状态和已知限制。
+- [ ] The feature belongs in a website module rather than the core.
+- [ ] Author, format, ID, version, description, and referenced files agree.
+- [ ] Origins are exact, minimal, and individually inspected.
+- [ ] Group selectors target ordinary distracting content; mixed lists use child items with explicit commercial exclusions.
+- [ ] No DNR, remote resources, account data, network access, or extension privileges are present.
+- [ ] Essential controls, privacy notices, and accessibility entry points remain visible.
+- [ ] Script events protect input and fail safely, without polling or unbounded scans.
+- [ ] Chromium, Firefox, and Safari capability differences are recorded.
+- [ ] Actual module files pass import and packaging checks.
+- [ ] README and release notes state unofficial status and known limitations.
 
-## 界面文案的语言维护
+## Localization and naming
 
-仓库模块的用户可见名称、说明和过滤组文案需要同时提供简体中文与英文的稳定 i18n key。映射入口为 `src/ui/local-module-copy.ts`，资源入口为 `src/shared/i18n.ts`；使用模块 ID 与组 ID 选择资源，不按整句中文替换。修改过滤行为时同步更新两种说明，未知组不要套用其他组文案。界面语言投影不写回已导入文件，不改变权限和执行内容；无需为纯界面翻译修改模块 ID 或执行文件版本。
+User-visible names, descriptions, and filter groups need stable Chinese and English i18n keys. `src/ui/local-module-copy.ts` maps module/group IDs to `src/shared/i18n.ts`; do not replace entire Chinese strings to localize them. Update both languages when behavior changes and retain author text for unknown groups.
 
-## 名称与描述
-
-用户界面统一称“屏蔽插件”，内部 ID、格式和目录仍沿用 local-module。仓库插件名称只写网站名称，描述直接列出隐藏的内容及必要的操作；不使用“xx 专注模块”名称或重复的“非官方本地模块”说明前缀。修改仓库清单时同步 `src/shared/i18n.ts` 与 `src/ui/local-module-copy.ts` 的显示映射；导入说明继续明确非官方关系与用户确认责任。网站与普通整站目标只以来源域名命名，不用插件名称覆盖。
+Display projections do not rewrite imported files, alter permissions, or change executable content. A display-only translation does not require a new module ID or executable-file version. The Chinese UI calls these blocking plugins; internal IDs, format names, and directories retain `local-module`. Use website names without suffixes and concise behavior descriptions without repeated “unofficial local module” prefixes. Keep unofficial status and source confirmation in the import notice. Website targets continue to use origin domains independently of module names.

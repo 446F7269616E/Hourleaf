@@ -1,379 +1,223 @@
-# Hourleaf 手工验收
-
-按当前源码同步：2026-10-19。功能总览见 [FEATURES.md](./FEATURES.md)；以下项目留给人工执行，日期章节按当前契约检查，不沿用已移除的开关或旧身份匹配方式。
-
-为候选版本记录 commit、版本、浏览器/系统版本、构建命令与 SHA-256。使用新 profile，并准备一个含 v0.4 数据的升级 profile。
-
-## 核心流程
-
-- [ ] Chromium、Firefox、Safari 完整扩展都能加载；popup、仪表盘、计划、配置、屏蔽、设置无闪退、空白或持续加载。
-- [ ] 五个全页入口显示“仪表盘、计划、配置、屏蔽、设置”的居中置顶导航顺序与当前页状态；窄屏可返回和互相跳转。
-- [ ] 五个完整页面的标题字号与页首位置一致；配置、屏蔽、设置不显示重复副标题。导航最右的问号按钮可打开五页用途说明，键盘和读屏可操作。
-- [ ] 仪表盘只呈现统计：通用网站按域名聚合并可展开子域名；仅启用的模块显示模块统计，手动添加的网站不受模块状态影响。
-- [ ] 仪表盘以带“视图”标题的单选按钮切换今日/本周/本月/本年；统计内容正上方显示当前完整日期范围，趋势卡不重复日期范围，年视图按月汇总。
-- [ ] 配置页以网站下的多个时间段为主体；屏蔽页独立管理模块和网站屏蔽内容，设置页只包含插件级选项。
-- [ ] 配置页导航没有“已保存”或其他保存状态按钮；限制模式、时间段增删改和独立开关在操作后立即进入保存队列，快速连续操作不丢失，失败通过可见提示反馈且离页前不会静默丢失。
-- [ ] “添加时间段”旁显示高强调色的“一键添加”和次要样式的“添加时间段”；弹窗左侧可选三餐下饭、两段分割、午前、午后、晚间、早起鸟、夜猫子、已保存的自定义预设和“自定义”，右侧 24 格色条以灰色表示不可使用、以不同颜色对应各时段，并用文字同时显示起止时间、限额和分组数；预览下方始终显示“添加预设”提交按钮。两段分割为 06:00–12:00 与 12:00–18:00，各 30 分钟、2 组；午前为 06:00–12:00，午后为 12:00–18:00，晚间为 18:00–00:00，均为 60 分钟、3 组；早起鸟为 00:00–06:00 与 06:00–12:00，夜猫子为 12:00–18:00 与 18:00–00:00，后二者的每段均为 30 分钟、2 组。自定义流程要求预设及每段命名，支持新增/删除多个时间段、实时预览、保存并添加，重新打开后可复用且会随备份往返。确认后只替换未修改的默认全天时段，其他已有时段保留；达到 64 段上限时不部分写入。
-- [ ] 网站没有整体启停开关；旧版曾关闭的网站升级后仍注册并执行规则，只有每个时间段自己的开关决定该时段是否参与。
-- [ ] 网站详情底部提供提示语独立开关，新增时关闭；开启显示输入区，关闭保留文字且确认页不显示。访问确认始终按设置页共同策略运行，默认等待 30 秒，支持 1–10800 秒、立即确认、方程、微积分或密码；取消不回到原站形成循环。
-- [ ] 同网站当前可用时段默认共享确认，新标签/重入不重复；开启新标签重复确认后逐标签核对，同 origin 刷新/SPA 不重复，离开再返回重新确认。跨日、时段和相关策略变化使确认失效，后台休眠恢复会话，浏览器重启不恢复。
-- [ ] 访问前与分组结束使用共同解锁策略，后台校验各自挑战和状态；确认前不计时，倒计时结束仍需点击。
-- [ ] UI 无首次使用步骤、教程卡、内部 schema/provider 或原始异常。
-- [ ] 新安装不默认请求任何网站；添加 `https://example.com` 时只请求 `https://example.com/*`。
-- [ ] 添加 `bilibili.com`、`www.bilibili.com` 或任一 `*.bilibili.com` 子域时，权限和配置统一为审核过的 Bilibili 家族范围，根域、`t.bilibili.com`、`space.bilibili.com` 等 HTTPS 子域均被识别；`evilbilibili.com`、`bilibili.com.example.org` 和其他普通网站仍保持精确 origin，不能被误匹配。
-- [ ] 权限拒绝后不写入网站；重新点击可再请求。浏览器侧撤销权限后立即停止计时/屏蔽。
-- [ ] 添加 HTTP、HTTPS、端口不同的网站时按精确 origin 区分；拒绝 `file:`、浏览器内部页、账号密码 URL 和无效输入。
-- [ ] 删除网站或撤销权限后动态脚本和本地数据一致；重启浏览器可恢复其余网站注册。
-- [ ] 在网站标签已经打开时新增该精确 origin，无需刷新页面即可开始计时/拦截；重复重建注册不会产生双份心跳或重复弹层，popup 与图标在切回该标签后立即显示配置和剩余时间。
-
-## 规则与计时
-
-- [ ] 同一网站添加多个独立时间段；不同网站、目标和时段的额度互不影响，均在本地 0 点刷新。
-- [ ] `always-allow`、`always-block`、`timed` 重叠时按可用、禁用、限额的顺序解析；有启用时段但当前未命中时不可用。
-- [ ] 删除全部时间段或停用全部时间段后可无限使用网站；工具栏不显示有限额角标，Popup 显示无时间限制，实际用时继续累计且不扣任何时段额度。重新启用时段恢复原有可用范围、分组与额度规则。
-- [ ] 全部配置时间段停用后，内容屏蔽及其每日定时仍生效：引用 12:00–18:00 的停用时段时，12:00 开始屏蔽、18:00 恢复；分组开关、跨午夜及普通/计划偏好保持原行为。
-- [ ] 验证每天/工作日/周末、相同起止全天、半开边界和跨午夜。
-- [ ] 分组额度等分正确；每组耗尽均进入结束页，显示当前使用组与总组数并询问是否开启下一组。分别验证直接开启、等待、数学题和密码：等待不可在边界前预先启动，成功后均回到受配置网站作用域校验的原地址，重启后台不会提前解锁或错误跳组。
-- [ ] 宽容到期只提醒；心流可选 1–15 分钟及播放视频结束，且不能二次延时；“视频结束”不在 15 分钟时提前结束，只在目标视频结束或显式 STOP 后进入结束页；严格直接进入结束页。
-- [ ] 心流选择区的“再用 / Use”显示在选择框外，选择框选项只显示“1 分钟 / 1 min”至“15 分钟 / 15 min”。
-- [ ] 时间段进入心流选择后，选择 1–15 分钟会立即把工具栏角标和 popup 剩余时间刷新为新的延时时间；计划事项进入心流选择后，工具栏角标同样立即刷新。有效计划始终显示独立计划剩余时间，普通额度耗尽不覆盖计划时间；选择“视频结束”时不显示误导性的 `0` 或超大分钟数。
-- [ ] 普通结束页显示本次用量、必要操作和今日统计，激励文字正确；旧 endPage.view 值不隐藏核心信息。计划结束页只显示目标、确认时长及必要操作。
-- [ ] 普通结束页关闭按钮明确说明只关闭相关组外页，组内页面和归属不明候选保留，包括组内暂停页；组内保留反馈可见，不关闭相似域名。计划关闭按事项精确来源处理。仍可开启下一组时开启操作为主按钮。
-- [ ] 仅前台可见、窗口聚焦、设备 active 时计时；切标签、最小化、锁屏和休眠停止。
-- [ ] 到达心跳边界时先持久化本段用量再执行规则判定，限额不会因为异步写入而永久落后一轮；图标、popup 与结束页使用相同的时间段用量。
-- [ ] SPA 路由、刷新、前进后退和多个窗口不会产生重复会话或大段补时。
-- [ ] 今日/本周/本月/本年总计与分项一致；跨午夜拆桶，清空后所有已打开页面归零。
-
-## 计划
-
-- [ ] 在无启用配置时段的网站开始短计划，分别验证宽容、心流、严格及心流延时到期；原访问显示结束操作，随后在同标签重新输入同 URL、刷新、前进后退或改同源路径时，不再显示旧计划计时或旧结束拦截，遵守普通网站规则。重新点击计划开始后获得新的完整时长。
-- [ ] 计划有效期间同源翻页/刷新不重置截止时间；离开来源再返回、关闭标签重新打开、停止、完成或删除计划、全局关闭、配置恢复及数据重置后，旧计划运行态消失。配置时间段、用量和屏蔽定时不被计划分钟数改写。
-- [ ] 浏览器后台休眠恢复保留有效计划；完全关闭并重启浏览器不恢复运行计时或结束通知，但计划清单及预定时长仍在。升级后旧本地计划授权被清除；无会话存储平台只在当前后台内存保留运行态。
-- [ ] 可添加任意 HTTP/HTTPS URL，且必须设置预定时长和到期模式；无效 URL、重复项和超长标题不写入。
-- [ ] 添加和批量导入时不请求网站权限；只在点击某事项“开始”时请求该事项精确 origin 权限，拒绝后不创建授权或跳转。
-- [ ] 待办列表与思维导图可从右上角带“视图”标题的单选按钮组切换；拖拽及键盘移动后刷新顺序保持。
-- [ ] 待办列表按可用宽度自动调整列数；列表和思维导图的已完成区域始终在页面底部、画布外，首次进入默认折叠，展开后可恢复事项且焦点不会落入隐藏内容。
-- [ ] 待办列表为空时不显示加号图标；添加待办仍使用页面操作按钮。
-- [ ] 思维导图在独立大画布中显示；缩放、适配全部内容、空白区域拖动和键盘 `+` / `-` / `0` / 方向键可用，500 字符 URL、长英文单词、200% 缩放和窄屏下均不越过节点或画布边界；50 / 500 个待办都能完整适配；导图仅含待办分支，完成的节点移至底部列表，展开/折叠或编辑已完成事项不会改变画布视角与适配范围。
-- [ ] 页面不显示计划模式启停开关；开始后只放行确认标签与精确来源，沿用独立截止时间；完成、删除、授权字段修改或到期撤销授权并退出计划访问。
-- [ ] 未加入配置页的计划网站也能执行限时和三种到期模式；开始其他事项、完成、删除、修改、STOP 和到期后只清理计划专用注册，不影响 focus 注册。
-- [ ] 计划始终独立计时；已开始的精确事项在配置禁止时段或普通额度耗尽时仍可访问，且不增加配置用量。旧设置和旧备份中的 independentAccessTiming=false 自动迁移为 true，设置页没有切换开关。
-- [ ] 添加、编辑和批量添加计划事项时都要求事项级预定时长；开启“视频结束时暂停访问”后，当前主视频结束即撤销该事项授权，不影响其他事项或配置时段。
-- [ ] 计划拦截期间不计时；计划页地址不附带被拦截页面的查询参数。
-- [ ] “进入计划网站后自动完成”默认关闭；开启后仅在从计划开始事项时勾选完成。
-- [ ] 添加、编辑和批量添加事项时，到期方式选项只显示宽容 / 心流 / 严格；控件下方说明随选择更新且与配置页限制模式一致。
-
-## 本地模块
-
-- [ ] 启用 User Scripts API 并重新导入 Bilibili 1.2.3 后，相关视频屏蔽生效会关闭原生“自动连播”；播至片尾等待超过网站倒计时不会跳转下一条。已处于倒计时、晚挂载控件、SPA 换视频及尝试重新开启连播均遵守当前屏蔽状态；原视频手动播放/暂停仍可用。
-- [ ] 关闭相关视频分组/模块/全局开关、选中时段结束或退出计划后，当前页面中被脚本临时关闭的连播开关恢复原状，原本关闭的保持关闭；后退缓存恢复后重新应用。含商业或课程推荐、未知结构不操作；未启用用户脚本时仍仅隐藏卡片。
-- [ ] 每个分组统一为上方说明与开关、下方时间选择摘要，桌面双列与窄屏单列布局协调，展开选择器不拉伸邻卡。时段名称与网站/目标、每天的起止时间分层显示，键盘展开/收起保留摘要焦点，保存保留展开和滚动状态。
-- [ ] 每个分组只提供对应网站的配置时段；Bilibili 已审核子域名可共用同站时段，其他网站不互相出现。该网站未添加时段时有专属提示；旧的跨站引用显示失效、可取消且不会触发屏蔽。
-- [ ] 默认不限时间保持旧行为；任一已选起止时间命中才屏蔽，未命中恢复内容；12:00–18:00 在 12:00 生效、18:00 恢复；取消不限时间且清空选择后不屏蔽。总开关/分组开关关闭始终不屏蔽。
-- [ ] 时段进入/退出时，原生页面和已支持的开放根同步切换，无需手动刷新；验证每天起止、跨午夜、相同起止全天及结束边界；配置时段的星期、启停、额度、访问策略和分组均不影响匹配。
-- [ ] 配置中修改时段后按新时间/星期生效；停用原配置时段仍生效，删除时段/网站后失效，已删除项可取消；全部失效不扩大为全天。
-- [ ] 普通/计划时间选择独立；重启和重新导入模块保留绑定，备份往返保留选择，旧备份仍不限时间。
-- [ ] 保存失败恢复原选择，展开/焦点/滚动位置保留；窄屏、200% 缩放、键盘和中英文可操作。
-- [ ] 五个仓库模块在导入预览和屏蔽页只显示网站名称：Bilibili、小红书、X、YouTube、百度贴吧；重新导入后保留普通/计划分组偏好。
-- [ ] Bilibili 开启“相关视频”时隐藏侧栏及新旧播放器的播放结束推荐卡片；关闭后恢复，重新播放和播放器必要控件正常。
-- [ ] Bilibili 开启“动态信息流”时隐藏普通动态卡片、支持的导航布局中的动态按钮悬停弹窗、动态页热搜榜；关闭后恢复。收藏、历史、通知等其他悬停弹窗不受影响；含商业标记的区域保持可见。动态更新红点/数字及消息入口提醒标识同步隐藏，导航入口和通知内容保留；关闭分组或选中时段结束后标识恢复。普通/计划偏好均需检查。
-- [ ] 商店初始状态没有网站专用模块；独立“屏蔽”页显示“导入本地模块”、GitHub Release 下载、源码目录、自制插件规范和第三方内容免责声明，设置页不再显示导入按钮。
-- [ ] 扩展不会根据 GitHub URL 下载模块；只接受用户通过文件选择器提供的本地 `.json`、`.css`、`.user.js`。
-- [ ] 导入预览显示名称、版本、精确网站范围和能力；拒绝授权时不安装模块。
-- [ ] 缺少作者或 `hourleaf.local-module` 规范格式时拒绝；授权前必须明确勾选“安全检测不能保证安全、风险自行承担”的免责声明。
-- [ ] `eval`、动态代码、网络 API、扩展特权 API、脚本注入和 CSS 外部资源等已知危险能力被轻量检测拒绝。
-- [ ] 启用、停用、删除本地模块后，CSS 和 User Scripts 状态立即对齐，旧版自有 DNR 注册被清理。
-- [ ] 通配主机、远程 CSS、任何非空 DNR、缺失引用文件和超限内容会被拒绝。
-- [ ] Chromium 未允许用户脚本、Firefox 未授予可选权限或平台不支持时，模块保留但给出明确降级提示。
-- [ ] Safari 商店候选拒绝包含用户脚本的模块，但 JSON/域名策略/自包含 CSS 仍可使用。
-- [ ] 模块导入弹窗不重复显示格式规范或“规范化风险”标题；文件选择、预览、安全免责确认和授权动作层级清晰。
-- [ ] 含 `filterGroups` 的模块按网站显示独立屏蔽开关；关闭分组立即恢复该组选择器，新模块版本增加分组时默认开启，已保存的其他分组选择保持不变。
-
-## 平台与可访问性
-
-- [ ] Chromium Service Worker 被回收后可恢复；Firefox event page 恢复后状态一致。
-- [ ] Firefox `web-ext lint` 无 error，正式 XPI 经 AMO 签名。
-- [ ] Safari packager 的 warning 均处理；测试拒绝、允许一天、始终允许和撤销权限。
-- [ ] 只用键盘完成主要流程；焦点可见，控件有名称，状态不只靠颜色。
-- [ ] 200% 缩放、窄屏、深浅色、减少动态和 VoiceOver 下无功能丢失。
-- [ ] Storage 不含普通浏览完整 URL/标题/正文；运行全流程时无遥测、广告或分析请求。
-- [ ] Popup 不包含插件或计划模式开关，只显示当前网站额度摘要、未完成待办和进入计划页面的按钮。
-- [ ] Popup 打开后切换标签、SPA 路由或完整 URL 时，网站名、命中时间段、组进度与剩余时间随即更新；持续计时时剩余数字每秒可见变化且不造成每秒存储写入。
-- [ ] Popup 的当前网站用时摘要紧凑显示当前组/总组数，按排序展示最多三项未完成待办及其余数量；单组只显示一个剩余时间，多组显示本组、当前时段和今日总剩余；主操作进入计划页面，且跟随设置页所选主题色。
-- [ ] 工具栏角标默认显示当前命中时间段向上取整的剩余分钟，最后 1–60 秒显示 `1`，耗尽显示 `0`；关闭设置、无限额、未配置或非网页标签时清空。
-- [ ] 切换 English 后 popup、仪表盘、计划、配置、设置、结束页和 manifest 文案使用英文；切回跟随系统即时生效。
-- [ ] 设置页常规、结束页面和数据管理分组可用键盘展开/收起；导入配置和导出配置只位于数据管理，预设生成的时间段与命名自定义预设可完整往返；“在插件图标显示剩余分钟”默认开启并可保存。
-- [ ] 设置页可选择森林绿、海洋蓝、紫罗兰、琥珀黄、玫瑰红主题色；切换后五个完整页面立即使用所选强调色，刷新和配置备份后保持。
-
-权限、隐私、数据丢失、无法退出屏蔽、错误计时、签名或升级失败均阻断发布。
-
-## 开放 Shadow DOM 首页兼容回归
-
-更新核心并重新导入 Bilibili 1.2.1 模块，或重载最新 Debug 版。在原生首页与已支持的开放根首页验证“首页推荐”开关，分别检查不同推荐来源和三种网格布局。检查刷新、分页、挂载顺序、重新挂载及开关恢复；搜索输入、搜索结果、收藏、历史、商业标记、非标准链接及未知内容应保留。首页内使用相同网格结构的关注/热门普通视频也受首页开关管理。记录实际插件版本、登录状态及浏览器；无用户脚本权限时首页 CSS 屏蔽仍应生效。
-
-## 访问确认、计划屏蔽与工具栏（2026-09-12）
-
-- 配置页关闭自定义提示语后隐藏输入区并保留原值，重新开启恢复；访问确认仍使用设置页共同策略，继续自动保存。
-- 访问配置网站，等待结束后点击“确认打开”返回原页面；同标签刷新不重复，共享/重复模式按当前选项判断重入；变更相关策略后重新确认。无全量 `tabs` 权限时也可工作。
-- 设置页新计划屏蔽选项默认开启。普通模式关闭模块或分组，开始计划后初次全开；计划中关闭某组，结束后恢复普通设置，再次开始恢复计划调整。关闭新选项立即使用普通偏好。陈旧屏蔽页的写入不能修改另一组偏好。
-- 模块升级、后台重启与配置备份往返保留两组偏好。观察计划模式不能清理启动中的授权；无权限的网站和未安装模块不自动获得权限或安装。
-- 检查深色工具栏及 1x/2x 显示下的透明圆角白底小图标，四角不再呈实心方块且 badge 分钟仍可见；页面 favicon 和扩展管理页主图保持原资源。
-
-自动化覆盖：`focus-flows-extension.spec.ts` 使用临时复制的真实 MV3 构建和受控网站，验证确认放行及计划屏蔽往返，临时权限不进入正式 manifest。Chromium UI 回归检查字段折叠、新设置与 Shadow DOM 行为。
-
-## 统一暂停页回归（2026-09-28，人工执行）
-
-- 在 Debug 工具栏配置测试站，再访问 Example / 本地视频站。确认默认等待 30 秒、等待不计时、倒计时结束仍需点击；默认同网站当前可用时段内重入和新标签不重复确认，开启重复确认后逐标签核对。
-- 设置不同等待秒数、普通方程、微积分、分组密码；检查错误答案/空答案/错误密码不放行，刷新不更换题目，两个标签同时解锁不会跨越多组。
-- 3 分钟/3 组逐次耗尽：核对已用/剩余分组、实际时长、剩余额度及各网站今天总用时；检查最后一组无“下一组”。激励语为空不占位，存在时显示。
-- 心流每组只允许一次延长；默认不扣后续额度，开启扣减后检查部分占用、跨多组及全部额度耗尽。仪表盘额外时间与暂停页一致，实际总时间不双计。分钟到期、视频结束、切后台再回来均应重新暂停。
-- 本地视频播放中触发暂停，确认覆盖页保留进度；选择视频结束后恢复同一视频并在 ended 后暂停。独立预览页不提供无视频上下文的该选项。
-- 宽容模式总额度结束后主动确认仍可继续，严格模式不能继续。始终允许/始终屏蔽、时段切换、跨午夜、撤销权限、计划独立计时及旧设置迁移分别核对。
-- 新建/编辑计划目标备注；开始先显示确认时长和目标，不混入网站分组、日统计或数学题。确认前不产生计划授权，确认后才开始。三个到期模式与播放结束选项都检查；工具栏先读取到期状态不能吞掉暂停通知。
-- 关闭保护默认关闭；分别选择 1/3/5/10 分钟和专用密码，等待中规则继续生效、取消保留开启。尝试刷新、重复提交及改保护，确认后台仍检查旧条件。分组密码与关闭密码不得混用。
-- 清空/恢复弹窗必须先警告，满 120 秒前输入和确认都禁用，完整输入指定文字才放行；取消后无修改。恢复默认后关闭密码消失但统计、计划和模块保留；清空后这些数据都删除。Debug 重启不应自动把清空的站点重建。
-- 工具栏在五种主题与系统明暗模式下检查背景、按钮、进度、当前状态和计划图标；后台暂时不可用时也应应用已读取的主题。关闭扩展后现有用户脚本的页面效果必要时刷新核对。
-
-## 暂停页可视化（2026-09-30，人工执行）
-
-- 分别配置 1、3、24 组，在未使用、部分使用、组结束及全部用完时查看：段数始终与配置一致，已耗尽空心、未耗尽实心，文字计数准确；心流扣减跨多组时同步变化。
-- 检查今日总量、24 小时柱状图和网站排行；选择网站切换到该站小时分布，再选择全部网站恢复。被删除网站的历史用量归到其他网站，仍计入总数。
-- 柱条可用鼠标/触屏点击，也可用 Tab 进入，再用左右/Home/End 键选择；详情显示对应小时区间与用时，选中状态可见。空小时和全零日仍有完整坐标轴。
-- 更新前已有用量应保留总数并显示小时明细缺失说明；更新后使用只进入实际发生的小时，不平均摊分历史数据。跨整点、跨午夜、心流免费/扣额度分别核对，统计不双计。
-- 检查全部主题、系统深浅色、320px 窄屏与 200% 缩放；小时轴与时间文本可读，分组条不换行，网站名称可折行。计划页进入的暂停界面仍只显示目标与确认时长。
-
-本次仅执行 TypeScript 与正式/Debug 构建，不执行以上交互验收或自动化测试。
-
-## 分组记录修复（2026-09-30，待人工执行）
-
-- 配置 1 分钟 / 7 组，以及 1 分钟 / 24 组，逐组核对：不会提前跨组或卡在剩余不足 1 秒；暂停页、工具栏、耗尽分组计数一致，最后总额度为 60 秒。
-- 域名规则设为始终允许时，实际用时继续累计但不消耗分组；始终屏蔽不计时。恢复默认设置前最后一段正常用时应先落盘。
-- 连续快速打开工具栏、读取统计并切换标签，检查多次小于 1 秒的计时能累计，暂停页读取前已完成所有在途写入，不漏记、不重复计时。
-- 一个心跳跨越两个不同额度的相邻时段、允许/屏蔽切换及午夜，分别核对两个时段和两个日期的额度；午夜后的第一组不得继承昨天的解锁或延时。
-- 同时打开两个暂停页，重复点击解锁/心流继续，检查同一组只转换一次，失败后可刷新读取正确状态。
-- 心流默认不扣下一组；开启扣减后分别延长到下一组中间、跨过多个组和超出总额度，核对统计注记、实际总时间和下一次解锁组号。延时中更改扣减设置，本次延时仍按授权时选项记录。
-- 上一组视频结束回调延迟到下一组/次日，或旧标签仍在播放时新标签已开启新延时，检查旧回调不会撤销新授权；普通心跳不会替换已绑定视频的监听。
-- 使用中编辑额度/组数/时段范围，核对旧时间已结算、历史仍保留、新分组依据当前额度重新判定；只改名称不重置分组。心流切严格、宽容切严格后旧放行无效。
-- 保留超过 512 条历史分组运行态后继续新的一天，检查新等待、解锁和延时可以正常持久化。暂停页刷新与浏览器后台重启后计数保持一致。
-
-本节未执行自动化或交互测试；仅进行编译与构建检查。
-
-## 同网站新标签页确认（2026-09-30，待人工执行）
-
-- 新安装或升级后，“设置 → 访问确认与解锁 → 新标签页重复确认”默认关闭。确认网站 A 后打开多个同站新标签（包括已授权 Bilibili 家族子域），当前可用时段内不再确认；切换活动标签后继续累计，用原额度而不重置。
-- 打开网站 B 仍须单独确认。未授权来源及不属于已审核站点家族的子域不能复用 A 的确认。
-- 开启重复确认，网站的新标签都须单独完成当前等待/数学题/密码，同标签刷新不重复；关闭后重新完成一次确认即可供同站新标签复用。切换主题不使已完成确认失效。
-- 同组额度耗尽后开新标签，仍显示分组暂停；总额度耗尽、始终屏蔽、关闭时段等规则仍生效。解锁下一组后，新标签使用新的剩余额度，不额外进行一次访问确认。
-- 跨午夜、切换生效时段或修改相关策略后，确认缓存失效；关闭浏览器重启后重新确认。默认模式关闭原标签再打开，同一作用域内继续复用确认；重复确认模式离开来源再返回需确认。
-- 两个确认页并发打开，先在一个完成确认，另一个刷新应直接返回网站；仅开始倒计时或输错答案不能授权其他标签。
-- 计划独立计时不会被网站共享确认覆盖；备份保存“新标签页重复确认”开关，旧备份缺少该字段时默认关闭；计划独立计时兼容字段统一为 true。
-
-本节未执行交互或自动化测试，仅做编译和构建检查。
-
-## 暂停页布局与时长可视化（2026-09-30，待人工执行）
-
-- 在 1440×900、1366×768、1280×720 的浏览器内容区域打开普通确认、分组结束、严格耗尽及心流暂停页；检查本次用量、今日统计、操作区并排显示，常规内容无需纵向下滑，确认按钮始终可见。
-- 在 1024×768、800×600、390×844、320×568，以及网站中的心流 iframe 检查三个分区切换；切换不重置等待、题目输入、网站选择或额度。矮窗口操作区并排展示，按钮可用键盘操作。
-- 环形图分别检查未开始、部分使用、用完、无限额、心流免费延时、心流扣额、宽容超时；准确文本与原统计一致，圆环表达“实际已用 + 剩余额度”构成，不混淆为分组进度。零值不出现 NaN、无限额度不显示虚假百分比。
-- 1、3、24 组依旧为空心已用、实心未用；小时图仍完整显示 24 小时并可键盘选中。三种图形在五种主题、系统明暗与强制颜色下可区分。
-- 网站超过 3 个时按页访问所有网站，翻页不改变今日总量或当前选中图表；最后一页和单页的按钮状态正确。长网站名称可通过提示和辅助标签读取；长备注/激励文本逐页完整可读。
-- 分别在同时提供“下一组”和“心流延时”的状态下检查等待、方程、微积分及密码控件，含错误反馈和视频结束选项；计划暂停页仍仅展示计划目标、时长和必要操作。
-- 极小窗口、软键盘及 200%/400% 缩放检查可访问性兜底：允许必要滚动，不裁掉按钮或把文字强行缩小。此类尺寸不要求三栏同时展示。
-
-上述为人工验收清单，本次未执行交互或视觉测试。
-
-## 居中布局与心流恢复（2026-09-30，待人工执行）
-
-- 普通确认、下一组、最终耗尽、计划结束分别检查：操作列在页面正中，左右信息面板同宽等高，按钮居中且不拉满整列；小窗口切换分区后同样居中。数学题、错误反馈和长按钮文字不能挤出面板。
-- 在 Debug 本地视频站和 Bilibili 视频目标耗尽分组，选择 1/5/15 分钟并确认，检查遮罩移除、原视频恢复、计时恢复，所选分钟到期再暂停；不得因首页目标的额度状态而拒绝视频目标的恢复。
-- 选择视频结束后确认，检查保留播放位置、同一视频结束时停止。暂停期间视频元素替换后，恢复监听应绑定有效媒体；没有视频时不提供视频结束选项。
-- 分别检查配置心流和计划心流。在 Chromium、Firefox、Safari 手动核对扩展 iframe 的按钮能触发恢复；恢复失败应显示重试反馈，不永久停留在禁用按钮且不重复增加延时。
-- 快速连击确认、同时尝试下一组/关闭，不能产生重复授权或多次解锁。暂停期间导航、删除目标或更改为禁止状态，旧暂停页不得解除新页面限制。
-- 验证“选择已保存但恢复失败”后重试，时长仍按原授权截止计算，不能通过重试续时。存在有效计划时，普通心流操作的返回值仍遵守独立计划访问，不能错误切换为普通结束页。
-
-仅编译及构建已执行，上述人工场景未运行。
-
-## 计划暂停与主题更新（2026-10-01，待人工执行）
-
-- 在计划中开始同一个 Bilibili 视频，确认前显示 Hour Leaf 暂停页、事项标题和备注；空备注使用设置激励文字，两者为空显示默认激励文字。等待确认期间不开始计划计时。
-- 有效计划中切换分 P、同源其他视频、分页、查询参数、刷新及前进后退仍沿用截止时间；其他标签不继承，离开原来源销毁授权，不按 BV 或资源参数重新发放时间。
-- 宽容、严格、心流及心流分钟延时到期后，原网页出现暂停页；先打开工具栏或计划页读取到期状态后也应显示。返回原分 P 保留视频位置；宽容确认后不重复暂停，心流确认失败重试不重复延时。
-- 开启计划“视频结束暂停”或选择心流视频结束继续，核对结束后原页面显示暂停页、退出计划访问；再次导航或刷新后清理结束通知并按普通网站配置判定。关闭相关标签页应清除授权和通知。
-- 普通暂停页检查大标题 Hour Leaf 和红圈文字移除；中间上方菱形时钟的今日本站用时等于该网站所有目标的今日总量，关闭相关标签按钮使用主题填充色。小时选择、网站选择及长文本分页仍可用。
-- 在工具栏检查单组/多组、空待办/三项待办、中英文及 Debug 折叠/展开；窗口宽度稳定，内容过长可滚动到主按钮，所有操作可访问。
-- 五个主题逐一切换并检查系统明暗；色标始终代表自身主题，尤其森林绿不会跟随当前主题变蓝或变紫。暂停页、工具栏和其他页面共用新配色。
-
-本节仅记录人工验收项，未运行交互、视觉或自动化测试。
-
-## 同标签页通用计划访问（2026-10-07，待人工执行）
-
-- 重新开始一个计划，确认后在同一标签页内依次访问 `?page=2`、`?p=3`、`/page/4`、不同 fragment 和 SPA 路由；原计划持续，截止时间不变，刷新及前进/后退也不增加时间。
-- Bilibili 分 P、文章分页、课程章节以及同网站不同内容均沿用当前标签页的计划；同源但不同标签页，包括复制相同 URL、新打开或复制标签，不继承独立计划计时，仍遵守普通配置。
-- 访问不同 origin 会销毁本次计划授权；返回原标签页原网站后按普通配置判定，重新从计划开始才创建新截止时间。计划不会主动申请其他来源权限。
-- 分页后等待宽容/严格/心流到期，核对统一暂停页；先打开工具栏读取到期或后台休眠恢复后，原页面仍能显示通知。到期后整页刷新或再次导航清理旧通知。心流继续与宽容确认应恢复当前页，不跳回最初计划 URL。
-- 计划绑定标签页不消耗配置额度，其他标签页继续正常计时；旧版关闭独立计时的配置也保持独立。计划标签页工具栏角标显示原计划剩余时间，其他标签页按普通配置显示。
-- 关闭计划所属标签页后计划退出；关闭不相关标签页不影响计划。完成/删除事项、清空数据、恢复配置清除绑定；浏览器重启后不把旧编号授权给新标签。
-- 路由切换替换播放器，旧播放器的迟到 ended 事件不得停止新页；明确开启的视频结束暂停和心流视频结束继续仍在当前视频真正结束时暂停。重开同一事项不复用上一轮的媒体监听。
-- 更新前已经运行且无 visitId 的授权保留原匹配方式；重新开始后采用新行为，原计划清单、备注与时长保持不变。
-
-以上仅为人工检查清单，本次未运行交互、自动化或视觉测试。
-
-## 普通访问不跳计划清单（2026-10-07，待人工执行）
-
-- 没有活动计划、存在其他标签页计划、存在旧版无 visitId 的授权，分别直接打开网站首页、搜索页和不同内容；网页不得自动进入计划清单，普通访问确认和额度规则仍生效。
-- 原计划标签页离开原来源后打开另一个已配置/已授权网站，应按该网站普通配置处理；不获得独立计划计时，不重置原计划的截止时间。回到原来源继续按原授权与截止时间判定。
-- 原计划内翻页、刷新仍可持续；宽容/严格/心流到期仍显示统一暂停页，心流选择可恢复。其他标签页不会出现该计划的暂停页。
-- 更新或恢复旧数据时，旧后台的未授权/非视频响应不再触发自动计划页跳转。手动点击主导航或工具栏的计划按钮仍能正常打开清单。
-
-本节只记录人工检查项，没有执行交互或自动化测试。
-
-## Bilibili 动态精选评论（2026-10-07，待人工执行）
-
-- Debug 重新加载扩展并刷新动态页；正式版重新导入 Bilibili 1.2.5 的全部模块文件。关闭动态信息流屏蔽、开启评论区屏蔽，检查原视频及转发视频卡片下方的精选评论消失，视频卡片、动态正文、点赞互动及底部操作栏保留。
-- 滚动追加动态、切换动态标签和刷新页面，后加载的精选评论同样隐藏。关闭评论屏蔽后评论恢复；不开启相关视频或动态信息流屏蔽也应生效。
-- 分别检查普通/计划偏好、评论分组启用时间段的开始与结束边界、全局开关及模块停用；原视频、动态详情与文章完整评论区屏蔽保持正常。
-- 检查带商业标记和未知互动图标的节点保持可见，在 Chromium / Firefox 上人工核对深浅色和窄窗口。
-
-仅编译、构建和打包检查已执行，以上人工场景未运行。
-
-## 标签页组白名单（人工验收）
-
-本次仅执行类型编译与构建，以下交互由人工检查：
-
-- 配置页顶部添加入口与添加网站同级；左侧网站和白名单为独立目录模块，分别显示数量，右侧只展示当前选中项目；没有网站配置时白名单目录仍可用。
-- 在网站与白名单之间切换后各自保留上次选择和侧栏滚动位置；新增保存后选中新项，删除选中白名单后显示剩余首项或空状态；外部删除、绑定失效和快速切换不会被旧异步响应覆盖选择。
-- 窄屏下两个目录按原顺序放在详情上方；较长桌面目录可以滚动，中英文、键盘和深色主题可用。
-- 白名单规则行、开关、编辑/删除图标和表单输入框与普通时间段风格一致；星期按钮有选中与键盘焦点状态；配置页底部无额外功能说明，同名组不会显示内部组 ID。
-- 已有两个同名浏览器组能明确区分；添加后可编辑、启停、删除；可给同组建立多条不同时段，重叠部分取并集。
-- 单日、工作日、全天、跨午夜及开始/结束分钟边界符合半开区间；停用全部规则后回到普通规则。
-- 普通网站原本禁用、额度耗尽、等待下一组或待首次确认时，组内在白名单窗口可使用；组外同网站仍按普通配置。新加入组的已授权网站生效；未配置网站仍沿用原有行为，未授权来源不会被自动授权。
-- 白名单用时进入实际网站及小时统计，不扣普通时间段额度；进入/移出组、时段结束、跨午夜时无误扣或重复结算；离开白名单恢复原分组状态。
-- 检查独立计划及旧版关闭独立计时的设置迁移：白名单内的计划仍按原截止时间结束，心流只能按原计划授权继续，视频结束暂停仍触发；组外计划和其他标签页不受影响。
-- 常规心流延时、分组确认与白名单重叠时不复用或重置额度；计划暂停不会被白名单自动解除，普通暂停在白名单开始后可恢复。
-- 模块域名黑名单仍有效；隐藏元素及 CSS 不因白名单而关闭。
-- 关闭/解散组、移走最后一个标签页后，原规则显示绑定失效并停止放行；新建同名组不会继承；手动重绑后按原时段生效。
-- MV3 worker 休眠/唤醒保留当前浏览器会话的绑定；浏览器重启、关闭后恢复组、跨窗口移动导致原组销毁时需要重绑。
-- 删除白名单、删除网站、撤销网站权限、关闭扩展、恢复默认及备份恢复后无旧放行；旧备份可导入，新备份保留时段并要求重新绑定。
-- 浏览器不支持组 API 或会话存储时只显示不可用说明，不影响普通网站与计划。
-
-## 配置布局、24 小时制与设置分类（人工验收）
-
-- 在右侧较短和较长详情下，长网站目录与白名单目录可在左侧独立滚动；到达顶部或底部时不带动右侧。缩放、窗口调整及反复切换后高度正常，窄屏恢复整页滚动；短详情下不会因高度更新持续延长页面。
-- 中文、英文、跟随系统及系统偏好 12 小时制时，普通时段、自定义预设、白名单及计划时间戳均使用 24 小时；检查 `00:00`、`12:00`、`23:59`、跨午夜，输入 `0900` 自动变为 `09:00`，无效时间不能保存。
-- 访问前确认位于网站详情底端；新增网站的提示语开关关闭、输入区隐藏。已有提示文字的旧配置保持启用；关闭不丢文字且确认页不显示，再开启可继续编辑；快速切换与保存失败保留重试机制。访问确认规则不受该文案开关影响。
-- 限制模式的紧凑标题、说明列及选择框比例协调；长英文说明、窄屏和键盘操作仍可用。
-- 设置页六类内容各在独立卡片，类目对应正确；编辑语言、主题、计划和解锁选项后保留展开状态；数据导入、恢复默认和清空数据的保护流程仍完整。
-
-## 用时来源切换及组内标签保护（人工验收，2026-10-13）
-
-- 普通网站额度用完、等待下一组或首次确认时，把该网站移入有效白名单组，立即可访问；多网站共用同一个白名单窗口，实际统计增加而原时段额度、分组状态和解锁次数不变。
-- 白名单窗口的结束分钟落在两次心跳之间，检查之前的实际用时准确结算，之后的时间不转扣普通额度；普通确认未完成时不继续计时。全天跨日、跨午夜、重叠规则取并集、禁用/删除规则及移出组分别核对。
-- 在有效白名单组里显式开始计划，计划使用本次新倒计时，既不扣普通额度也不延长白名单；计划到期、视频结束和心流选项仍由原计划暂停处理，白名单不能自动解除计划暂停。结束通知确认后按当前白名单或普通规则恢复。
-- 普通浏览过程中开始、替换、停止、完成、修改或删除计划，确认切换前旧区间只结算一次，计划时间不会写入普通用量；其他标签页导航不打断当前有效会话。旧计划或普通心流的视频 ended 回调不能暂停新的白名单/计划访问。
-- 保存重绑时销毁所选组、最后一个标签移出、快速销毁后新建同名组，规则保留但旧绑定不复活；手动重新选择已有组才能生效。Worker 休眠保留会话，浏览器重启及备份恢复不继承运行授权。
-- 同网站同时存在组外页面、配置白名单的组内页面、未配置白名单的组内页面和已耗尽普通额度的组内页面；从普通结束页点击关闭，只关闭组外相关页面，全部组内页面保留。不同来源及无关网站保留。
-- 发起关闭的普通暂停页本身位于组内时也保留；显示关闭数量且按钮可再次使用。关闭候选在查询期间被移入组时，最终复核排除；没有可关闭页面不报错；浏览器未提供 groupId 时保留无法确认归属的页面。计划结束页原关闭范围另行检查。
-
-本轮只执行 TypeScript 编译、三平台正式构建及本机 Debug 构建；本节交互由人工检查。
-
-## 网站模块双语显示（人工验收）
-
-- 切换英文后检查五个模块的名称、说明、每个过滤组名称/说明、开关读屏名称、删除确认和启用时间段选择器；切回中文恢复原说明。无需重新导入已有模块，启停状态、时间段选择与计划偏好不变。
-- 在导入预览检查小红书和百度贴吧的英文名称，以及单独导入已发布脚本时的说明；确认导入保存的是原始模块而非语言投影。
-- 第三方未知 ID 或新增未知分组保持原文，不能显示其他网站的过滤说明。键盘、长英文换行和窄屏布局留待人工检查。
-- 本次本地只执行类型编译、正式三平台及 Debug 构建；GitHub 上传后的检查结果以相应提交记录为准。
-
-## 关闭窗口后的白名单恢复（2026-10-15）
-
-以下按当前恢复契约验收，取代旧清单中关闭窗口/重启后一律重新绑定的预期：
-
-- [ ] 关闭含白名单组的窗口后重新打开，待组名称、颜色及成员完整恢复且特征唯一时恢复绑定；浏览器重启和后台休眠分别检查，不能复用另一会话的旧组编号。
-- [ ] 未恢复完整时显示等待，两个特征相同的组不得任选其一；同名但成员不同、私密页、无法读取成员时不得凭名称放行。
-- [ ] 明确解散组、最后一个标签移出、删除配置及导入备份不恢复已撤销绑定；窗口关闭期间并发保存不能复活已销毁的组。
-- [ ] 组内成员停在扩展暂停页时仍可按返回网站参与唯一恢复；恢复后按当前网站权限、域名黑名单及计划资格决定是否进入网站。
-
-## 配置、屏蔽和设置的目录与时段交互（2026-10-15）
-
-- [ ] 配置页左侧选择组，右侧管理多个时间段；逐项添加、编辑、启停、删除立即保存，刷新及切换项目不丢失；旧单时段配置与备份保留原窗口和绑定。
-- [ ] 删除最后一个时段保留组配置，无时段或全部停用时不放行；重叠时段取并集，跨午夜和星期符合网站时间规则。快速操作和多页同时修改不覆盖其他配置。
-- [ ] 屏蔽页左侧选择屏蔽插件，设置页左侧选择大类，右侧只显示所选内容；导入、保存、删除和背景更新后选中项与滚动位置合理，键盘焦点仍可见。
-- [ ] 长右栏滚动到底时左栏仍完整可滚动，顶部导航不遮挡目录末项；缩放、窗口变化、窄屏和极短窗口无裁切、无法触达内容或多余嵌套滚动。
-
-## 默认外观、目录图标和网站名称（2026-10-15）
-
-- [ ] 新安装、恢复默认及无效主题值使用蓝色，已有合法主题保留；首帧颜色一致。
-- [ ] 配置、屏蔽、设置左侧目录默认无图标；设置页开启后同步显示，刷新、备份往返和旧设置迁移正确，顶栏及操作按钮不受影响。
-- [ ] 网站和普通整站目标显示域名，旧插件/调试名称不覆盖域名；专用模块板块名与网站权限、稳定身份和规则不变。
-- [ ] 五个内置屏蔽插件及其导入预览使用网站名称、具体屏蔽内容描述；中英文、已有安装、脚本导入和未知第三方插件分别检查，不需要重新导入已有插件。
-
-## 心流与同网站多个暂停页（2026-10-15）
-
-仅执行编译与正式/Debug 构建，以下场景待人工检查：
-
-- [ ] 同一网站、目标和时间段的两个标签均进入心流暂停；在 A 选择 1–15 分钟继续，切回 B 后恢复网站而非停在无效的继续按钮上；两个标签共用原授权 ID 与截止时间，不增加延时次数或重新起算。不同网站、目标或时段不继承此延时。
-- [ ] B 分别为嵌入式暂停、独立暂停页、后台标签、重新聚焦窗口及 BFCache 恢复页面，重复以上检查；延时已过期再切回时保持暂停，不能靠切换标签重新获得时间。
-- [ ] A 开启下一组、完成宽容确认、获得白名单或普通规则重新可用后，B 依当前访问判定恢复；关闭插件、修改模式、删除规则和模块域名策略变化也触发复核，显式黑名单始终阻断。
-- [ ] 默认共享访问确认后其他确认页可恢复；开启逐标签重复确认、确认作用域变更或新一天时，各标签仍须自己的确认。待确认挑战写入不会触发无限消息/存储循环，原等待截止与题目保持。
-- [ ] 宿主恢复与 iframe 的继续/重试同时发生，恢复只执行一次，不重复授时或解锁；保存授权期间切换标签、快速反复聚焦、后台休眠后唤醒均不丢失最后一次状态。导航或替换暂停实例后旧响应不能恢复新页面。
-- [ ] 有活动计划、计划到期暂停及宽容计划待确认时，普通心流或其他标签页放行不能关闭计划暂停；旧计划暂停不能恢复新事项。视频结束延时只在真实媒体存在时恢复，跨时段后结束事件按新授权的 target/period/grant 处理。
-- [ ] 延时精确到期、分钟规则边界及跨午夜后重新复核，保持原每组一次、实际统计、额外时间与是否扣后续额度的约定；其他标签页恢复不会重置这些状态。
-
-## 暂停操作后的同网站同步（2026-10-18，待人工执行）
-
-- [ ] 同网站多个标签同时进入暂停，在 A 选择 1/5/15 分钟或开启下一组，B 为前台、后台及另一窗口时均同步资格；嵌入暂停解除且保留视频位置，后台媒体不自动播放，切回时按原截止时间检查，不能额外获时。
-- [ ] B 使用独立暂停页时，后台更新状态、显示后返回网站；授权已过期则显示当前分组及可用操作，不停留在旧继续按钮。修改时段起止/刷新边界、跨时段及跨午夜后取当前活动时段。
-- [ ] A 确认宽容继续或共享访问确认后，B 同步恢复；开启逐标签确认、独立计划到期、域名屏蔽或其他目标耗尽时，仍遵守各自资格，不能被同网站通知越过。
-- [ ] 开多个网站及同站不同目标的暂停页；等待初始化、刷新生成题目、用时统计心跳不造成其他页持续重绘，保留正在输入的答案与等待截止。连续聚焦和短时间重复通知不出现查询风暴或消息循环。
-- [ ] 通知时关闭或导航某个标签、浏览器后台休眠唤醒、iframe 恢复和原确认同时发生，其他相关标签继续同步；旧响应不恢复新页面，同一授权不重复发放，失败后仍可重试。
-
-## 多个标签页组白名单（2026-10-17）
-
-本轮仅进行编译和构建，以下项目待人工检查：
-
-- [ ] 创建两个不同浏览器组，各含已配置且已授权的网站，先使网站进入普通额度/心流/访问确认暂停；依次新增两个全天白名单。两个配置均显示已绑定，切回各组后网站恢复；删除第一项、交换操作顺序和切换左侧选择不影响第二项。
-- [ ] 同一组绑定多条配置，第一条停用或时段外、后续条目命中时仍放行；多个组分别只取自身全部启用时段，不相互继承。
-- [ ] 分别覆盖独立暂停页、嵌入暂停页、后台标签、跨窗口组及浏览器后台休眠；保存/重新绑定/移动到第二组后复核最新归属，移出组或时段结束后恢复普通限制。
-- [ ] 新增时选择组自动填入组名；切换组同步建议，手动改名后不覆盖；未命名组、超长组名、编辑已有配置保持可保存且名称正确。
-- [ ] 域名黑名单、未授权网站、计划到期暂停保持原限制；暂停页接收通知不抢占配置保存的响应、不重复授时、不出现消息循环。
-
-## 仪表盘与暂停页展示（2026-10-19，待人工执行）
-
-- [ ] 切换今日/本周/本月/本年，四张摘要卡、日期趋势、小时分布及网站占比同步变化；今日只显示一张 24 小时趋势，不重复单根日柱。周/月按日、年按月；零值不绘制正高度柱，空数据有明确说明。
-- [ ] 日均以已过日历日（包含无记录日期）为分母，未来日期不稀释平均值；有记录天数不包含零值日期。单日峰值和心流延时与原始汇总一致，延时不重复计算组级镜像。
-- [ ] 网站行显示名次、时长、百分比及占比条；展开可查看完整来源。移除网站配置后，历史用量仍出现在“其他网站”，总量与分项能对齐；无记录域名不计入“有记录域名”数量。
-- [ ] 计划卡按整个当前清单展示待办预计时长、完成数和进度，切换统计范围不会冒充区间内完成量；空清单及请求不可用时有对应说明。
-- [ ] 仪表盘可见时数据持续更新，切换范围不被旧请求覆盖；网站展开、列表滚动及小时选择保留，键盘焦点不因刷新丢失，后台短暂不可用保留已有数据。
-- [ ] 普通暂停页保留三分区、余额圆环、空心/实心分组与菱形时钟；网站用时新增百分比，小时图默认显示峰值小时。选单站保持总量和纵轴不变，翻页不改变筛选；缺失小时记录仍显示总量及缺失提示。
-- [ ] 仪表盘与暂停页小时图均支持 Tab 进入、左右方向键、Home/End 选柱并读出钟点及用时；趋势图同样支持方向键。中英文、五主题、深色、高对比度、320px 窄屏、短窗口、200% 缩放和长域名下，数值与按钮可读且不截断。
-- [ ] 计划暂停和普通暂停的确认、等待、下一组、心流及关闭仍保持原行为；现有跨标签页同步改动不受展示更新影响。
-
-### 暂停页心流与分组条恢复（待人工执行）
-
-- [ ] 普通心流模式在有延时资格时可见“指定时长”、1–15 分钟选项及确认按钮；有原视频上下文时显示“视频结束”，计划心流同样保留原操作。
-- [ ] 分组进度条恢复为与配置数量一致的等宽空心/实心段，保留已用/剩余摘要，不显示空心/实心图例文字；今日统计卡恢复边框、内边距与总用时字号。
-- [ ] 固定三栏及窄/矮窗口中，时长余额、分组进度、心流和下一组操作、今日统计均可见，导航仅滚动定位，不隐藏区域或重启等待；长内容可自然滚动。
-
-### 暂停页紧凑展示与视频心流默认项（待人工执行）
-
-- [ ] 保持用量、操作、统计三栏，操作列在页面正中；窄窗口整体横向滚动并在首次显示时居中操作列。所有布局均保留分组条、心流、下一组及关闭操作，长文案自然滚动。
-- [ ] 仪表盘移除区块解释、日均口径说明、模块身份提示和底部整段说明；总时间卡改为主题顶线、独立数字/单位和计时状态，短于一分钟、零值、长小时数及中英文/深色主题均可读。
-- [ ] 普通和计划的嵌入式心流暂停前，实际正在播放的视频默认选择“视频播放完毕后停止”，分钟字段初始不显示；切到指定时长显示 1–15 分钟和原默认 5 分钟，再切回视频结束隐藏分钟字段。确认前不授时，恢复后在对应视频结束时停止。
-- [ ] 无视频、只有音频、视频手动暂停或已结束时默认指定时长；独立预览页保持无视频选项，不因页面有 video 元素就默认视频结束。恢复失败的重试继续只恢复，不重复授时。
-
-- [ ] 对照用户提供的暂停页截图，在宽窗口中确认统计仍在右侧、交互按钮仍在正中，左侧及中间按钮上方由真实时段/本站数据填充；分组条下方无“空心/实心”解释文字，进度数值、确认/关闭、心流及下一组控件完整保留，分页和单站筛选不变。
-
-- [ ] 左侧新增活动时段名称、起止、总额度、本组额度、本组剩余和开启组数，使用与后台一致的额度桶；免费心流额外用时不重复扣额度。中间按钮上方显示本站今日占比和峰值小时，缺失小时明细时不伪造数据。实心/空心图例文字继续隐藏，心流、下一组、关闭及计划原操作均保留。
-
-### 暂停页尺寸、按钮位置和下一可用时段（待人工执行）
-
-- [ ] 三栏外框等宽等高，右侧统计撑满自身框；中间确认、心流、下一组、关闭按钮均位于下方，长文字或操作较多时自然增高，窄窗口保持完整三栏及横向滚动，不裁剪控件。
-- [ ] 设置激励话语后，中间独立文字区可见完整内容；激励话语与访问提示均为空时不保留空文字区，由本站分布及各数据行自适应填补空缺，不生成替代话语；三框仍等宽等高，按钮仍靠下。超过 120 个 Unicode 字符时分页有效，自定义访问提示和激励话语均可查看，切换分页不重建等待或授权。
-- [ ] 完全不在任何启用时段内时，左侧显示下一个可用时段名称、日期、星期及 24 小时起止时刻。覆盖当日稍后、跨午夜、周末/下周、全天、禁用/一直禁用、零额度、今日额度耗尽及 deny 与 timed 重叠的情况，不把不可用的时段标为可用；无后续可用配置显示暂无可用时间段。
-- [ ] 到达下一时段边界后通过原有复核刷新；下次时段展示不提前授时、不绕过访问确认、心流限制或域名策略。计划暂停保持原确认时长、备注及操作。
-
-## 关于与文档（2026-10-19）
-
-- [ ] 设置 → 关于包含隐私政策、开源许可及联系开发者三项；开源许可说明为 MIT，中英文名称一致，支持键盘操作。
-- [ ] 链接跳转到对应公开 GitHub 页面，使用独立标签页；拒绝网站权限不影响打开文档。
-- [ ] Firefox / Safari 拒绝包含用户脚本的导入，保留 JSON/CSS 能力；升级后旧脚本不再执行，界面不提供脚本授权按钮。
-- [ ] 商店资料、隐私政策、README 与候选包的平台能力和许可一致；截图及最终签名版本另行人工验收。
+# Hourleaf manual acceptance
+
+Source synchronized: 2026-10-19. See [features](./FEATURES.md). Every unchecked scenario below remains for a human to execute. Historical dates identify development rounds, not completed acceptance. Apply current contracts rather than removed controls or superseded identity/layout rules.
+
+For each candidate record commit, version, browser/OS, build commands, and SHA-256. Use a clean profile and an upgrade profile with v0.4 data. Local automated validation remains compilation/builds only; CI results are separate evidence.
+
+<a id="核心流程"></a>
+
+## Core flow
+
+- [ ] All three browser builds load. Popup, dashboard, plans, configuration, filtering, and settings show no crash, blank page, or permanent loading state.
+- [ ] Five full pages share centered sticky Dashboard/Plans/Configuration/Filtering/Settings navigation, current state, title size/alignment, and reachable narrow-screen navigation. Configuration/filtering/settings omit duplicate subtitles. Rightmost help opens concise page descriptions with keyboard/accessibility support.
+- [ ] Dashboard contains statistics only, aggregates ordinary sites by domain with expandable subdomains, and applies module visibility without hiding manually configured sites. View radios select Today/Week/Month/Year with one complete date range above content.
+- [ ] Configuration owns site periods, filtering owns imports/content groups, and settings owns global options. No tutorial steps, first-use cards, raw exceptions, schemas, or provider jargon.
+- [ ] Configuration autosaves mode/period edits, enablement, add/delete immediately. Rapid edits queue without loss; errors remain visible; no manual Save or navigation status button; leaving does not silently drop edits.
+- [ ] Preset action is primary and manual add secondary. Left-hand presets include Meals, Split, Morning, Afternoon, Evening, Early bird, Night owl, saved custom presets, and Custom. Preview includes 24 cells (gray unavailable, colors per period), text times/budgets/groups, and a persistent Add preset button.
+- [ ] Built-ins match the [preset table](./ARCHITECTURE.md#presets). Custom presets require preset/period names, support multiple add/delete/edit operations and live preview, survive reopen and backup. Replace only an untouched default all-day period; preserve other periods; reject a 64-period overflow without partial writes.
+- [ ] There is no site-wide enable switch. Previously disabled legacy sites normalize to registered sites; individual period switches govern access.
+- [ ] Bottom-of-detail prompt switch defaults off for new sites; enabled shows input, disabled retains text but hides it on confirmation. Old nonempty prompts migrate enabled. This switch never disables access confirmation.
+- [ ] Default confirmation is shared within the current site/scope. Repeat-in-new-tabs requires each tab; same-origin refresh/SPA does not repeat, origin departure/re-entry does. Day/period/policy changes invalidate it, unrelated theme changes do not. Worker sleep retains session state; browser restart does not.
+- [ ] Entry/next-group share immediate, 1–10800-second waiting (default 30), equation, calculus, or password rules. Waiting does not count as use, expiry still needs a click, and cancel does not create a return-loop.
+
+## Sites and permissions
+
+- [ ] Fresh install requests no host access. Adding `https://example.com` requests only `https://example.com/*`.
+- [ ] Bilibili root/www/reviewed subdomains normalize to its reviewed HTTPS family; `t.bilibili.com` and `space.bilibili.com` work. `evilbilibili.com`, `bilibili.com.example.org`, and unrelated sites never match that scope.
+- [ ] Rejection writes no site; another explicit action can request again. Browser revocation stops timing/filtering and removes registrations; deletion cleans matching local state while restart restores remaining authorized registrations.
+- [ ] HTTP/HTTPS/different ports remain distinct origins. Reject file/browser-internal/credential URLs and malformed input.
+- [ ] Adding an already-open authorized site activates it without reload. Reconciliation is idempotent: no doubled heartbeat or overlays; popup/badge update on tab return.
+
+<a id="规则与计时"></a>
+
+## Rules and accounting
+
+- [ ] Independent sites/targets/periods have separate quotas and local-midnight reset. Overlap priority is allow, block, timed. Enabled periods with no current match deny access.
+- [ ] Empty/all-disabled periods allow unlimited ordinary access, hide finite badges, and record actual time without period charge. Re-enable restores prior ranges/groups/budgets. Explicit domain blocks and daily content schedules remain active.
+- [ ] Check weekdays/workdays/weekends, all-day equal endpoints, start-inclusive/end-exclusive boundaries, and overnight dates.
+- [ ] Groups divide the exact budget. Every exhausted group pauses; immediate/wait/equation/password unlock occurs only at its real boundary and returns to a validated scope. Worker restart cannot unlock early or skip groups.
+- [ ] Flexible final exhaustion requires explicit continuation; strict cannot continue. Flow is once per group, 1–15 minutes or real video end; video-end grants do not expire at fifteen minutes.
+- [ ] “Use / 再用” is outside duration options. Choosing minute flow immediately updates popup/badge from the grant deadline; plan badges remain independent even with ordinary quota exhausted. Video-end grants show no false zero/huge minute count.
+- [ ] Ordinary pause retains usage/actions/statistics and optional messages regardless of legacy `endPage.view`. Plan pause contains only its own duration/goal/actions.
+- [ ] Ordinary close removes only related ungrouped tabs; preserve grouped pause pages and unknown membership, display close counts, allow retry, and never close similar/unrelated domains. Recheck a candidate moved into a group during the query; empty candidates are not an error. Plan close uses item origin separately.
+- [ ] Only visible/focused/active-device intervals count. Tab changes, minimize, lock, sleep, routing, reload, back/forward, and multiple windows neither duplicate sessions nor backfill long gaps.
+- [ ] Settle each heartbeat before the subsequent decision. Popup/badge/end page agree on usage; total and subparts agree across ranges/midnight. Clearing updates all open pages.
+- [ ] Check 60 seconds / 7 groups and / 24 groups: no premature jump or subsecond deadlock; last total is exactly 60 seconds. Partial groups remain available.
+- [ ] Several subsecond intervals accumulate without rounding drift. Reading statistics/pause state waits for pending writes, even with no new active interval.
+- [ ] A heartbeat crossing adjacent periods, allow/block boundaries, or midnight charges each correct owner/date. New-day runtime inherits no old unlock/flow.
+- [ ] Concurrent unlock/flow clicks across two pauses advance only once; retry reads state without duplicate grants.
+- [ ] Free/charged flow, partial next-group consumption, multiple-group consumption, and exhausted total produce consistent actual/extra/quota figures. Changing the charging setting during flow affects only later grants.
+- [ ] Late prior-group/day/media callbacks cannot revoke a new grant. Normal heartbeat does not replace a valid bound video listener.
+- [ ] Editing budget/groups/range settles old time and recalculates compatible runtime; rename does not reset it. Switching to strict revokes old flexible/flow access. More than 512 runtime entries still permit new states; reload/worker restart preserves them.
+
+<a id="计划"></a>
+
+## Plans
+
+- [ ] Accept arbitrary valid HTTP(S) URLs with per-item duration/end mode; reject malformed/duplicate/overlong entries. Add/edit/bulk import require duration but request no host permissions until Start.
+- [ ] Start requests only the item's exact origin. Rejection creates no grant/navigation. Confirmation shows duration and goal before timing, without ordinary groups/statistics/math challenges.
+- [ ] There is no plan-mode switch. Start is explicit; grants bind the confirmed tab/origin and deadline. Complete/delete/edit authorization fields/stop/replace/global disable/restore/reset clear matching runtime.
+- [ ] Same-tab queries (`?page=2`, `?p=3`), paths (`/page/4`), fragments, SPA routes, different same-origin content, reload, and back/forward keep the original unexpired deadline. Different tabs, copies, and duplicate URLs inherit no plan grant.
+- [ ] Origin departure revokes the visit; returning follows ordinary rules until a new explicit plan start. No automatic permission expansion or ordinary-page redirect to the plan queue.
+- [ ] Independent plan access works on a site absent from ordinary configuration and during ordinary blocked/exhausted periods, without increasing ordinary statistics/quota. Old `independentAccessTiming=false` settings/backups migrate true and expose no toggle.
+- [ ] Only the plan's fixed registration changes on start/stop/end/delete/replace; ordinary focus registrations remain. Browser worker sleep restores current-session visits; full browser restart drops grants/notices but preserves queue/durations. Legacy local grants are cleared; missing session APIs use current background memory only.
+- [ ] Flexible/strict/flow expiry and minute/video-end flow show the original page's pause even after popup/plan reads expiry first. Continue restores current validated same-origin location/video position, not the initial queue URL. Failed recovery retries without more time.
+- [ ] After expiry/video end, same-URL reload/new navigation clears stale notices and returns to ordinary rules. Restarting the item creates a fresh duration. Closing related tabs clears grant/notice; unrelated tabs do not.
+- [ ] Per-item pause-on-video-end and post-expiry video-end flow are distinct. A real current media end stops the correct visit; late route/replaced-player events do not stop new content/items. No misleading fifteen-minute cap on video-end grants.
+- [ ] Plans do not count while blocked. Plan-page addresses do not append blocked-page query strings. Auto-complete-on-start defaults off and applies only to explicitly started items.
+- [ ] Mode options are short Flexible/Flow/Strict names with matching live descriptions below in add/edit/bulk forms.
+- [ ] List/mind-map View radios, drag/keyboard ordering, and persisted ordering work. List cards adapt columns; empty queue has no decorative plus icon, while the header Add action remains.
+- [ ] Completed items remain below/outside both canvases, initially collapsed; expanding/restoring retains sensible focus. Only pending nodes affect map fit/signature; editing completed items does not reset viewport.
+- [ ] Map supports pointer-centered zoom, blank-space pan, Ctrl/Command-wheel zoom, normal page wheel, keyboard `+`/`-`/`0`/arrows, and fit. Check 50/500 nodes, 500-character URLs, long words, narrow widths, and 200% zoom without node overflow or incorrect connectors.
+- [ ] Legacy active grants without `visitId` retain compatibility until end; restarted visits use current tab/origin behavior without changing stored goals/URLs/durations.
+
+<a id="本地模块"></a>
+
+## Local modules
+
+- [ ] Fresh stores contain no site-specific modules. Filtering supplies import, release downloads, source/development links, and third-party disclaimer; settings contains no import control. URLs never trigger module installation/download.
+- [ ] Explicit file selection shows name, author, version, exact sites, capabilities, and required safety acknowledgement. Missing author/format, rejected permission, missing references, wildcard hosts, remote CSS, nonempty DNR, or over-limit inputs do not install.
+- [ ] Lightweight validation rejects known eval/dynamic/network/privileged API/script-injection/CSS external-resource patterns without claiming complete safety.
+- [ ] Chromium with user scripts disabled gives a clear unavailable state. Firefox/Safari reject script-bearing imports in UI/background, expose no script-permission action, and retain script-free JSON/domain/CSS support. Old scripts are not registered after upgrading; refresh already-open pages to inspect residual executed effects.
+- [ ] Enable/disable/delete reconciles CSS and future script registrations; legacy owned DNR is cleaned. Filter-group changes immediately restore/remove their selectors; new groups default enabled without changing other saved choices.
+- [ ] Each group has description/switch above schedule summary/expandable selection. Desktop two-column/narrow one-column layouts do not stretch neighbors; preserve focus, expanded state, and scroll through saves; failure restores selection.
+- [ ] Show corresponding-site periods only; reviewed Bilibili subdomains may share family periods, unrelated sites cannot. Missing site periods have a useful empty state; stale cross-site references are invalid/removable and never apply.
+- [ ] Absent schedules remain unlimited; an empty selection is inactive. Any selected daily range applies filtering, with 12:00 inclusive/18:00 exclusive, overnight/equal endpoints, independent of referenced weekday, enabled flag, budget, policy, and usage group.
+- [ ] Daily boundaries update native document and supported open roots without reload, including when the access period is disabled. Editing start/end updates filtering; weekday changes do not. Removing period/site/matching module scope invalidates references without expanding to all-day.
+- [ ] Ordinary/plan schedules remain separate; restart/reimport/backup preserves surviving bindings; old backups remain unlimited. Turning a module/group/global switch off always restores content.
+- [ ] Five repository modules use site names and bilingual metadata by stable IDs; existing installations switch without reimport and preserve both profiles. Unknown third-party IDs/groups retain author text; translated projections are not stored.
+
+### Site regressions
+
+- [ ] With current Bilibili files (1.2.5; earlier autoplay work began in 1.2.3), related-video filtering hides sidebar/end recommendations in old/new players. Required controls/replay remain; disabling restores content.
+- [ ] With Chromium user-script access, related filtering disables the native autoplay control. Already-running countdowns, late controls, SPA changes, and user attempts to re-enable obey current filtering without breaking manual playback. Stop suppressing when group/module/global state, schedule, or plan context changes; restore only controls the script changed, retain originally-off state, and reapply after BFCache.
+- [ ] Dynamic feed filtering hides ordinary feed cards, supported hover popups, trending lists, feed update dots/counts, and message reminder marks while retaining navigation, notification content, unrelated history/favorite popups, and commercial/unknown areas. Check ordinary and plan profiles and end-of-window restoration.
+- [ ] With feed filtering off and comments on, hide featured comments under original/reposted feed videos while retaining video/body/like/actions. Appended cards, route tabs, reload, full comments in video/detail/article pages, and schedule/profile/global/module changes behave correctly; unknown/commercial structures remain visible.
+- [ ] Reimport current module or reload Debug; check native/open-shadow home recommendations across supported recommendation sources/three grid layouts, late attachment, reattachment, pagination, and toggle restore. Keep searches/results/favorites/history/commercial marks/nonstandard links/unknown content. Record module version, login state, and browser. Homepage CSS still works without user scripts.
+
+## Protected actions and data
+
+- [ ] Disable protection defaults off. Test dedicated wait 1/3/5/10 minutes and password, with ordinary rules still active during waiting; cancellation keeps the extension on. Refresh/replay/changed protection cannot bypass old conditions; group and disable passwords are distinct.
+- [ ] Clear/reset warns first; confirm input/action remains disabled before 120 seconds, and exact requested text is required. Cancellation changes nothing; reopening restarts waiting; replay is rejected.
+- [ ] Reset removes site rules/passwords/runtime but retains statistics, queue, and imports. Clear removes them all and returns defaults. Both settle the last interval first and retain browser host permissions.
+- [ ] Debug does not reseed cleared/reset data after restart until explicit test configuration. Global disable stops timing/plan/filtering/future script registrations; already-executed script effects may require refresh.
+- [ ] Export/import is confined to Data management and local files. Round-trip rules, named presets, whitelist periods, plans, and identical-version module preferences/schedules; exclude history, grants, confirmations, bindings, and source.
+- [ ] Reject oversized/malformed/unknown backup fields. Permission refusal makes zero writes. Restore waits for saves/old timing, clears bindings, atomically replaces data, resets runtime, and reports reconciliation warnings without reviving old grants or replacing protected disable settings.
+- [ ] Absent/different-version modules are skipped, not installed/replaced. Restored whitelist periods require real group rebinding. Retained browser host permissions do not keep removed content registrations active.
+
+## Tab-group whitelists
+
+- [ ] Add whitelist is a peer of Add site. Separate left directories show counts; selected details appear on the right even without any sites. Each type retains its last selection/scroll; new save selects it, delete selects the first remaining/empty state; stale responses cannot overwrite newer selection.
+- [ ] Existing same-name groups are distinguishable without internal IDs. Name suggestions track selected groups until user edits, handle unnamed/80-character names, and never rename browser groups or overwrite saved custom names.
+- [ ] Each stable rule has separate identity/binding and up to 64 periods. New rule gets one all-day period; old single-period settings/backups retain windows and binding. Add/edit/enable/delete immediately persist; deleting the last period keeps the rule but grants no access.
+- [ ] Single-day/workdays/all-day/overnight/start/end boundaries and union of overlapping periods are correct. All-off/no-match returns to ordinary rules without introducing a group blacklist.
+- [ ] Configured, authorized sites in an active bound group bypass ordinary exhaustion/group waiting/entry confirmation without resetting budgets; outside-group same-site pages remain ordinary. No new host permission or behavior on unconfigured sites.
+- [ ] Whitelist time enters actual/site/hour totals only. Group entry/exit, boundary between heartbeats, midnight, rule edit/delete, and multiple overlaps settle exactly once; after leaving, original groups/confirmation resume. Time after a whitelist interval ends is not silently charged to ordinary quota.
+- [ ] Plans in whitelisted groups remain independently timed, keep deadlines, and retain all end/media/flow pauses. Whitelist never closes plan pauses or bypasses module domain blocks; filtering CSS remains active.
+- [ ] Dissolving a group/last-member removal clears its binding and access; an unrelated same-name group does not inherit it. Mid-save deletion/window closure cannot revive a revoked group.
+- [ ] Worker sleep retains active session validation. Closing/reopening windows or full browser restart may restore only one complete unique name/color/member-hash match, never old numeric IDs. Incomplete restoration waits; duplicate features, unreadable/private members, and same-name different members fail closed.
+- [ ] Members on Hourleaf pause pages may contribute validated return sites to recovery; actual permission/domain/plan eligibility still decides navigation. Explicit dissolution, config deletion, and backup restore never revive revoked bindings.
+- [ ] Two different groups and multiple rules per group work independently regardless of insertion order/selection/deleting the first rule. A later active rule still grants when an earlier rule is off/outside its window; reads use current real membership.
+- [ ] Standalone/embedded/background pauses, cross-window groups, rebind/move, and worker sleep synchronize after save. Notifications neither steal save replies nor cause duplicate grants/message loops. Removing a tab/window or an ambiguous/missing API fails closed.
+- [ ] Delete rule/site, revoke permission, disable extension, reset, and restore leave no stale access. Missing group/session APIs show unavailable state without breaking ordinary sites/plans.
+
+## Cross-tab pause recovery
+
+- [ ] Two pauses for the same site/target/period share A's minute grant ID/deadline when B returns; no duplicate duration/use count. Other sites/targets/periods inherit none.
+- [ ] Repeat for embedded/standalone/background/another-window/BFCache pauses. Hidden embedded overlays may clear, but media resumes only when visible. Standalone hidden pages update state and recheck before navigation. Expired grants never revive through focus changes.
+- [ ] A's next-group, flexible confirmation, shared entry confirmation, whitelist, or newly available ordinary rule updates eligible B pages. Per-tab confirmation, explicit domain denial, exhausted other targets, and all plan-pause boundaries remain effective.
+- [ ] Flow/video-end grants obey original deadline/once-only/charging rules across minute/period/midnight changes. Media end uses the current target/period/grant after recovery.
+- [ ] Concurrent host recovery and iframe confirmation/retry share one recovery; tab changes, repeated focus, worker sleep, navigation, and replaced instances do not lose the latest state or authorize a new page from a stale response.
+- [ ] Grant/unlock success sends relevant same-site notices. Waiting initialization, generated questions, and usage heartbeats cause no continuous redraw/query storm; retain answer inputs/wait deadline. Short bursts coalesce without losing a follow-up check.
+- [ ] Failure offers retry without granting/unlocking again; actions are mutually exclusive. Check real media resume on Debug video and Bilibili targets across Chromium/Firefox/Safari; original target identity is retained.
+
+## Statistics and layout
+
+- [ ] Range cards, dates, trends, hours, and site shares change together. Today has a single hourly trend, week/month daily and year monthly. Zero values have no positive-height bars; empty data is clear.
+- [ ] Average uses elapsed local calendar days including zero days, excluding future dates. Recorded days exclude zero values. Peak day and extras match raw aggregates without group-mirror double counting.
+- [ ] Rank/time/percentage/share bars and expandable origins agree with total; removed sites remain under Other websites; unrecorded domains do not inflate recorded-site counts.
+- [ ] Current-plan summary covers the entire queue, not invented per-range completion. Pending duration/completion count/progress and empty/unavailable states are accurate.
+- [ ] Visible dashboard refresh retains expansion, list scroll, hour selection, and keyboard focus; old range responses are discarded; temporary failure retains last good data.
+- [ ] Pause preserves balance ring, group segments, diamond clock, all-site total, percentages, shared vertical scale, peak-hour default, site pagination, and missing-hour history without inventing hourly data. Select-site/page changes preserve total/scale/selection.
+- [ ] Group segment count matches 1/3/24 configured groups: exhausted hollow, nonexhausted solid, accurate accessible values/used/remaining summary, no visible hollow/solid legend. Flow spanning groups updates correctly.
+- [ ] Hourly charts support mouse/touch/Tab/arrows/Home/End and explicit time/duration readings, including empty hours/all-zero days. Trend selection also supports keyboard. Repeated DST hours and local midnight aggregate correctly.
+- [ ] Balance ring expresses actual elapsed plus remaining quota, including extras, not group progress. Check unused/partial/exhausted/unlimited/free-flow/charged-flow/flexible overrun and zeros; no NaN or false unlimited percentage.
+- [ ] Current pause is fixed equal-width/equal-height usage/actions/statistics, max 1180px, with a centered action column. Narrow/short windows retain the full layout through necessary scrolling and initially center actions. Navigation only scrolls, never hides/recreates controls or restarts waits. Older single-region/two-row expectations are obsolete.
+- [ ] Current period/group detail uses authoritative buckets without charging free extras twice. Site share/peak above actions is real; missing hours produce no invented peak. Right statistics fill their frame; all actions stay bottom-centered; long content grows frames naturally.
+- [ ] Encouragement/custom prompts appear in the middle message slot. Empty text hides the slot, distribution rows fill space, and frames remain equal. More than 120 Unicode characters paginate completely without recreating wait/grant state.
+- [ ] Only when no enabled period matches, show next available name/date/weekday/24-hour times. Check later today, overnight, next week/weekends, all-day, disabled/always-block, zero/exhausted quota, priority intersections, and no-future empty state. Boundary redraw never grants access or bypasses confirmation/domain/flow rules.
+- [ ] Dashboard omits explanatory block/average/module/footer prose. Total card uses theme top line, separate digits/units, timing state; check zero, subminute, long hours, English/Chinese, light/dark.
+- [ ] Embedded flow defaults video end only for actually playing main video; minutes hidden initially, switch restores 1–15/default five minutes. Paused/ended/audio/no-video/standalone cases default minutes. Confirmation grants once; recovery retry does not extend.
+
+<a id="平台与可访问性"></a>
+
+## Appearance, popup, and accessibility
+
+- [ ] New/reset/invalid themes use ocean blue on the first frame; preserve valid saved forest/ocean/violet/amber/rose themes. Fixed palette swatches represent their own colors; all pages/popup update and survive refresh/backup.
+- [ ] Sidebar icons default off with no reserved empty column; Appearance toggles all three directories without changing header/action icons. Old settings and backups normalize correctly.
+- [ ] Sites/whole-site targets display canonical domains with origins distinguishing scheme/port; legacy module/debug labels cannot override them. Dedicated section labels/IDs/permissions remain unchanged.
+- [ ] Long desktop directories scroll independently without moving details or being obscured by sticky navigation at document bottom. Redraw/resize/zoom retain scroll/focus and do not grow the page indefinitely. Width ≤860px or height ≤360px restores document flow.
+- [ ] Settings shows seven categories with only selected details; save/language/theme preserve category/scroll/focus. Long English descriptions and narrow mode/control grids remain usable.
+- [ ] All clocks, periods, presets, whitelists, timestamps use 24-hour time even under system 12-hour settings. Check `00:00`, `12:00`, `23:59`, overnight, `0900` -> `09:00`, and invalid input.
+- [ ] Popup contains no global/plan toggle, only current-site summary, pending items, and Plans action. On tab/SPA/URL changes, refresh site/period/group/remainder; tick visibly only while timed without per-second storage writes.
+- [ ] Popup shows at most three ordered pending items plus remaining count; one remainder for single-group, group/period/today values for multi-group. Fixed 380px/max600px popup scrolls to all actions; Debug expansion persists.
+- [ ] Badge uses rounded-up minutes, `1` for 1–60 seconds, `0` when exhausted; plan uses independent deadline. Clear when display disabled, unlimited/unconfigured/non-page/globally paused or whitelist access. Flow updates immediately.
+- [ ] Selected C-series rounded white toolbar icons are legible in light/dark browser chrome at 1×/2×; corners retain transparency; badge stays readable; favicon/manager icons retain intended assets.
+- [ ] Chinese/English/system language reaches popup, all five pages, end pages, and manifest without mixed text. Existing module names/groups/delete/accessibility/schedules switch live; unknown author copy remains.
+- [ ] Keyboard-only flow, visible focus, named controls, status beyond color, reduced motion, VoiceOver, forced colors, light/dark, five themes, long domains/titles, 320px width, short windows, 200%/400% zoom, and soft keyboard retain every action. Check common 1440×900/1366×768/1280×720 plus 1024×768/800×600/390×844/320×568 without assuming all columns fit at once.
+
+## Platforms and documents
+
+- [ ] Chromium worker recycling and Firefox event-page recovery retain valid state. AMO lint has no errors and final XPI is signed. Resolve Safari converter warnings and verify denied/one-day/always/revoked permission states on submitted devices.
+- [ ] Storage contains no ordinary complete URLs/titles/page text; full workflow produces no telemetry/ad/analytics requests. Privacy disclosure matches local recovery hashes and explicit plan URLs.
+- [ ] Settings -> About has privacy, MIT license, and developer contact links, with bilingual names and keyboard access. Public GitHub documents open in separate tabs; rejecting host permissions does not block documents.
+- [ ] English/Chinese README and privacy links resolve publicly. MIT and actual platform capabilities agree across README/privacy/store metadata/candidate notices. Screenshots and final signed candidates are reviewed separately.
+
+Permission/privacy/data-loss/unescapable-filter/wrong-timing/signing/upgrade failures block publication. Automated build success cannot close these checks.
+
+<a id="开放-shadow-dom-首页兼容回归"></a>
+<a id="访问确认计划屏蔽与工具栏2026-09-12"></a>
+<a id="统一暂停页回归2026-09-28人工执行"></a>
+<a id="暂停页可视化2026-09-30人工执行"></a>
+<a id="分组记录修复2026-09-30待人工执行"></a>
+<a id="同网站新标签页确认2026-09-30待人工执行"></a>
+<a id="暂停页布局与时长可视化2026-09-30待人工执行"></a>
+<a id="居中布局与心流恢复2026-09-30待人工执行"></a>
+<a id="计划暂停与主题更新2026-10-01待人工执行"></a>
+<a id="同标签页通用计划访问2026-10-07待人工执行"></a>
+<a id="普通访问不跳计划清单2026-10-07待人工执行"></a>
+<a id="bilibili-动态精选评论2026-10-07待人工执行"></a>
+<a id="标签页组白名单人工验收"></a>
+<a id="配置布局24-小时制与设置分类人工验收"></a>
+<a id="用时来源切换及组内标签保护人工验收2026-10-13"></a>
+<a id="网站模块双语显示人工验收"></a>
+<a id="关闭窗口后的白名单恢复2026-10-15"></a>
+<a id="配置屏蔽和设置的目录与时段交互2026-10-15"></a>
+<a id="默认外观目录图标和网站名称2026-10-15"></a>
+<a id="心流与同网站多个暂停页2026-10-15"></a>
+<a id="暂停操作后的同网站同步2026-10-18待人工执行"></a>
+<a id="多个标签页组白名单2026-10-17"></a>
+<a id="仪表盘与暂停页展示2026-10-19待人工执行"></a>
+<a id="暂停页心流与分组条恢复待人工执行"></a>
+<a id="暂停页紧凑展示与视频心流默认项待人工执行"></a>
+<a id="暂停页尺寸按钮位置和下一可用时段待人工执行"></a>
+<a id="关于与文档2026-10-19"></a>
+
+## Historical regression rounds
+
+These rounds remain unexecuted unless a separate candidate-specific record supplies evidence. The current checklists above consolidate their surviving scenarios.
+
+| Date       | Scope                                                                                                                                                                       |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-09-12 | Same-tab confirmation, ordinary/plan filter profiles, toolbar alpha/dark rendering; `focus-flows-extension.spec.ts` records automated fixtures, not new execution here      |
+| 2026-09-28 | Unified pauses, group challenges, once-only flow, media recovery, protected disable/reset/clear                                                                             |
+| 2026-09-30 | Usage/group/ring visualization, precision fixes, new-tab confirmation, centered pause/recovery                                                                              |
+| 2026-10-01 | Plan notices/goals/themes and popup dimensions                                                                                                                              |
+| 2026-10-07 | General same-origin plan visits, no forced plan redirects, Bilibili dynamic featured comments                                                                               |
+| 2026-10-13 | Timing-source boundaries, grouped-tab preservation, bilingual module projection                                                                                             |
+| 2026-10-15 | Unique-feature whitelist recovery replacing compulsory restart rebind; directories/multiple periods, blue default/icons/domain names, cross-tab pauses                      |
+| 2026-10-17 | Multiple whitelist groups, latest real membership, naming, nonblocking notices                                                                                              |
+| 2026-10-18 | Same-site post-action synchronization and retained pause inputs                                                                                                             |
+| 2026-10-19 | Range/hour/plan statistics, restored group/flow controls, fixed compact panels, video default, equal frames/messages/next available period, About/MIT/platform restrictions |
+
+Historical notes record TypeScript/CSS compilation, release/Debug builds, and some packaging checks only. They do not establish browser interactions, screenshots, visual fidelity, or signed-store acceptance.

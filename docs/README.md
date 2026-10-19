@@ -1,39 +1,47 @@
-# Hourleaf 文档目录
+# Hourleaf documentation
 
-功能与源码同步日期：2026-10-19。先按任务定位入口，只阅读受影响模块；修改行为后同步功能说明、开发契约及人工验收。
+Contracts synchronized with source: 2026-10-19. Use this index to locate the affected module before editing. Update the feature description, development contract, and manual acceptance items when behavior changes.
 
-## 产品与使用
+<a id="产品与使用"></a>
 
-- [项目概览与安装](../README.md)、[完整功能说明](./FEATURES.md)。
-- [更新日志](../CHANGELOG.md)、[1.0.0 版本说明](./releases/1.0.0.md)。
-- [可选模块与导入](../optional-modules/README.md)。
-- [隐私政策](../PRIVACY.md)、[MIT 许可证](../LICENSE)、[安全报告](../SECURITY.md)。
+## Product and usage
 
-## 按功能定位开发模块
+- [English overview and installation](../README.md) · [简体中文](../README.zh-CN.md) · [Feature reference](./FEATURES.md).
+- [Changelog](../CHANGELOG.md) · [1.0.0 release notes](./releases/1.0.0.md).
+- [Optional modules and imports](../optional-modules/README.md).
+- [Privacy policy](../PRIVACY.md) · [隐私政策](../PRIVACY.zh-CN.md) · [MIT license](../LICENSE) · [Security reports](../SECURITY.md).
 
-| 功能                     | 源码入口（相对 `src/`）                                                                                                                                                                                                | 开发契约                                                                                               |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| 网站与权限               | `core/sites.ts`、`shared/site-scope.ts`                                                                                                                                                                                | [通用网站模型](./ARCHITECTURE.md#通用网站模型)                                                         |
-| 时间段、额度、分组、心流 | `shared/schedule.ts`、`shared/next-available-period.ts`、`shared/group-quota.ts`、`shared/period-runtime.ts`                                                                                                           | [时间规则](./ARCHITECTURE.md#时间规则)                                                                 |
-| 实际用时与统计           | `background/tracker.ts`、`background/period-accounting.ts`、`shared/analytics.ts`                                                                                                                                      | [计时模型](./ARCHITECTURE.md#计时模型)                                                                 |
-| 仪表盘与暂停统计展示     | `dashboard/index.ts`、`dashboard/total-time-card.ts`、`dashboard/usage-panels.ts`、`shared/usage-insights.ts`、`shared/screen-time.ts`、`ui/hourly-usage-chart.ts`、`ui/screen-time-summary.ts`、`ui/pause-details.ts` | [数据展示契约](./ARCHITECTURE.md#仪表盘与暂停页数据展示2026-10-19)、[样式](./UI_STYLE.md)              |
-| 标签页组白名单           | `shared/tab-group-whitelist.ts`、`background/tab-group-whitelist.ts`、`ui/tab-group-whitelist.ts`                                                                                                                      | [白名单契约](./ARCHITECTURE.md#标签页组白名单)                                                         |
-| 独立计划与访问会话       | `background/plan.ts`、`background/plan-visit.ts`、`background/plan-registration.ts`                                                                                                                                    | [计划契约](./ARCHITECTURE.md#计划)                                                                     |
-| 访问确认、暂停与关闭     | `background/visit-confirmation.ts`、`background/website-access.ts`、`background/related-tabs.ts`、`shared/pause-access.ts`、`content/index.ts`、`end/index.ts`                                                         | [时间规则](./ARCHITECTURE.md#时间规则)、[暂停同步](./ARCHITECTURE.md#暂停操作后的同网站同步2026-10-18) |
-| 模块导入、偏好与定时     | `modules/local/`、`ui/local-module-copy.ts`、`ui/filter-time-periods.ts`                                                                                                                                               | [模块规范](./LOCAL_MODULES.md)、[开发准则](./MODULE_DEVELOPMENT.md)                                    |
-| 本地配置备份             | `shared/configuration-backup.ts`、`background/configuration-backup.ts`、`ui/configuration-backup.ts`                                                                                                                   | [存储与迁移](./ARCHITECTURE.md#存储与迁移)                                                             |
-| 双栏目录与时段表单       | `ui/configuration-directory.ts`、`ui/configuration-workspace.ts`、`ui/time-period-controls.ts`、`ui/theme.ts`                                                                                                          | [交互契约](./ARCHITECTURE.md#配置屏蔽和设置的目录与时段交互2026-10-15)、[样式](./UI_STYLE.md)          |
-| 设置与保护               | `home/index.ts`、`background/protected-actions.ts`                                                                                                                                                                     | [架构](./ARCHITECTURE.md)、[功能说明](./FEATURES.md#设置备份与删除)                                    |
-| 界面、主题、语言         | `ui/`、`styles/`、`shared/i18n.ts`                                                                                                                                                                                     | [样式](./UI_STYLE.md)、[文案](./UX_WRITING.md)、[图标](./ICONS.md)                                     |
+<a id="按功能定位开发模块"></a>
 
-消息验证位于 `shared/messages.ts`，协调及串行状态边界位于 `background/index.ts`，浏览器端口位于 `shared/browser.ts`。保持领域、协调、存储与 UI 各层职责，复用共享组件。
+## Find the implementation
 
-## 开发与交付
+Paths below are relative to `src/`.
 
-- [贡献说明](../CONTRIBUTING.md)、[本地 Debug 构建](./LOCAL_DEBUG_BUILD.md)。
-- [商店提交材料](./STORE_SUBMISSION.md)：Chrome、Firefox、Safari 填报、素材、源码包与签名准备。
-- [质量基线](./QUALITY.md)、[威胁模型](./THREAT_MODEL.md)、[发布清单](./RELEASE_CHECKLIST.md)。
-- [人工验收](./MANUAL_ACCEPTANCE.md)：未勾选项不代表已验收。
-- [站点研究记录](./SITE_MODULE_RESEARCH.md)：修改具体站点能力时查阅。
+| Area                                   | Source entry points                                                                                                                                                                                                    | Contract                                                                                                                 |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Sites and permissions                  | `core/sites.ts`, `shared/site-scope.ts`                                                                                                                                                                                | [Site model](./ARCHITECTURE.md#site-model)                                                                               |
+| Periods, budgets, groups, flow         | `shared/schedule.ts`, `shared/next-available-period.ts`, `shared/group-quota.ts`, `shared/period-runtime.ts`                                                                                                           | [Time rules](./ARCHITECTURE.md#time-rules)                                                                               |
+| Usage accounting                       | `background/tracker.ts`, `background/period-accounting.ts`, `shared/analytics.ts`                                                                                                                                      | [Timing](./ARCHITECTURE.md#timing-and-accounting)                                                                        |
+| Dashboard and pause statistics         | `dashboard/index.ts`, `dashboard/total-time-card.ts`, `dashboard/usage-panels.ts`, `shared/usage-insights.ts`, `shared/screen-time.ts`, `ui/hourly-usage-chart.ts`, `ui/screen-time-summary.ts`, `ui/pause-details.ts` | [Statistics](./ARCHITECTURE.md#statistics-and-pause-data), [Styles](./UI_STYLE.md)                                       |
+| Tab-group whitelists                   | `shared/tab-group-whitelist.ts`, `background/tab-group-whitelist.ts`, `ui/tab-group-whitelist.ts`                                                                                                                      | [Whitelist contract](./ARCHITECTURE.md#tab-group-whitelists)                                                             |
+| Independent plans and visits           | `background/plan.ts`, `background/plan-visit.ts`, `background/plan-registration.ts`                                                                                                                                    | [Plans](./ARCHITECTURE.md#plans)                                                                                         |
+| Confirmation, pause, and close         | `background/visit-confirmation.ts`, `background/website-access.ts`, `background/related-tabs.ts`, `shared/pause-access.ts`, `content/index.ts`, `end/index.ts`                                                         | [Confirmation](./ARCHITECTURE.md#confirmation-and-pause), [Cross-tab updates](./ARCHITECTURE.md#cross-tab-pause-updates) |
+| Module imports, preferences, schedules | `modules/local/`, `ui/local-module-copy.ts`, `ui/filter-time-periods.ts`                                                                                                                                               | [Module format](./LOCAL_MODULES.md), [Development guide](./MODULE_DEVELOPMENT.md)                                        |
+| Local configuration backup             | `shared/configuration-backup.ts`, `background/configuration-backup.ts`, `ui/configuration-backup.ts`                                                                                                                   | [Storage and migration](./ARCHITECTURE.md#storage-and-migration)                                                         |
+| Directories and period forms           | `ui/configuration-directory.ts`, `ui/configuration-workspace.ts`, `ui/time-period-controls.ts`, `ui/theme.ts`                                                                                                          | [UI contract](./ARCHITECTURE.md#ui-and-settings), [Styles](./UI_STYLE.md)                                                |
+| Settings and protection                | `home/index.ts`, `background/protected-actions.ts`                                                                                                                                                                     | [Protected actions](./ARCHITECTURE.md#protected-actions)                                                                 |
+| Appearance and language                | `ui/`, `styles/`, `shared/i18n.ts`                                                                                                                                                                                     | [Styles](./UI_STYLE.md), [Writing](./UX_WRITING.md), [Icons](./ICONS.md)                                                 |
 
-本地自动检查范围为 TypeScript 编译与构建，交互验证留给人工。GitHub Actions 保留现有格式、类型、Lint、单元覆盖、构建与打包流程；发布前核对对应提交的远端结果及人工验收记录。
+Message validation lives in `shared/messages.ts`; coordination and serialized state changes in `background/index.ts`; browser ports in `shared/browser.ts`. Keep domain, coordination, storage, and UI responsibilities separate, and reuse shared components.
+
+<a id="开发与交付"></a>
+
+## Development and delivery
+
+- [Contributing](../CONTRIBUTING.md) · [Local Debug build](./LOCAL_DEBUG_BUILD.md).
+- [Store submissions](./STORE_SUBMISSION.md): Chrome, Firefox, and Safari metadata, assets, review sources, and signing preparation.
+- [Quality baseline](./QUALITY.md) · [Threat model](./THREAT_MODEL.md) · [Release checklist](./RELEASE_CHECKLIST.md).
+- [Manual acceptance](./MANUAL_ACCEPTANCE.md): unchecked items remain unverified.
+- [Site research](./SITE_MODULE_RESEARCH.md): consult when changing site-specific behavior.
+
+Local automated validation is limited to TypeScript compilation and builds. Interaction checks remain manual. GitHub Actions retains formatting, type, lint, unit-coverage, build, and packaging checks; verify the results for the release commit separately from manual acceptance.

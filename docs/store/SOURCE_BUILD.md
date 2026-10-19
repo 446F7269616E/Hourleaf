@@ -1,6 +1,6 @@
 # Hourleaf review-source build instructions
 
-This archive contains the matching extension source, license notices, privacy policy, manifest templates, assets, scripts, and lockfile for the submitted version. `BUILD_ENVIRONMENT.json` records the Node.js/npm versions, operating system, and architecture of the packaging machine.
+This archive contains the matching extension source, MIT license notice, English/Chinese README and privacy policies, manifest templates, assets, scripts, and lockfile for the submitted version. `BUILD_ENVIRONMENT.json` records the Node.js/npm versions, operating system, and architecture of the packaging machine.
 
 Requirements: Node.js 22 or later, npm, and an internet connection to install the development dependencies pinned in `package-lock.json`. The extension itself does not contact the npm registry. Use a clean extracted directory with no pre-existing `node_modules` or `dist`.
 
@@ -15,7 +15,7 @@ The generated browser directories are:
 - `dist/firefox`: Firefox AMO candidate.
 - `dist/safari`: Safari web-extension resources for the Apple converter.
 
-The build uses esbuild to bundle TypeScript into local JavaScript. It does not use obfuscation, production source maps, remote scripts, or build secrets. Browser manifests come from `manifests/`; UI files come from `static/`, `src/styles/`, and `_locales/`. License and policy notices are copied into every browser directory.
+The build uses esbuild to bundle TypeScript into local JavaScript. It does not use obfuscation, production source maps, remote scripts, or build secrets. Browser manifests come from `manifests/`; UI files come from `static/`, `src/styles/`, and `_locales/`. The MIT license and both `PRIVACY.md` / `PRIVACY.zh-CN.md` are copied into every browser directory. The source archive also includes `README.md` and `README.zh-CN.md`.
 
 To produce upload ZIPs and checksums, install the system `zip` command and run:
 

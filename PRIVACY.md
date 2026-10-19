@@ -1,39 +1,42 @@
-# Hourleaf 隐私政策
+# Hourleaf Privacy Policy
 
-生效日期：2026-10-19
+English · [简体中文](./PRIVACY.zh-CN.md)
 
-Hourleaf 在本机运行，不收集或向开发者、第三方上传用户数据，无账户、云同步、遥测、广告或第三方分析。
+Effective date: October 19, 2026
 
-## 本地数据与用途
+Hourleaf runs locally. It does not collect or upload user data to the developer or third parties. It has no accounts, cloud sync, telemetry, advertising, or third-party analytics.
 
-为执行专注规则、管理计划和展示统计，扩展在浏览器本地保存：
+## Local data and purposes
 
-- 网站、时间段、额度、白名单及界面设置；
-- 你主动添加的计划 URL、标题、备注和完成状态；
-- 按日期、小时、网站及时间段汇总的用时，不建立逐次浏览历史；
-- 自行导入的组件文件及其设置、可选解锁密码的 SHA-256 摘要，不保存密码明文；
-- 标签页组恢复所需的组信息及成员 URL 集合的联合摘要，不保存成员 URL 明文。
+To apply focus rules, manage plans, and display usage, Hourleaf stores the following in the browser's local storage:
 
-访问授权和确认状态仅保存在浏览器会话或内存中。普通计时不保存完整 URL、网页标题或正文；不从网页保存搜索词、表单、Cookie、账号或私信。你自行填写的内容仍只保存在本机。
+- Website, time-window, allowance, whitelist, and interface settings.
+- Ordinary group and Flow runtime state, including extension deadlines.
+- Plan URLs, titles, notes, and completion status you enter.
+- Usage totals by date, hour, website, and time window; no visit-by-visit browsing history.
+- Files and settings for components you import, and SHA-256 verifiers for optional unlock passwords. Passwords are not stored in plain text.
+- Tab-group details and a combined digest of member URLs for restoring bindings. Member URLs are not stored in plain text.
 
-## 权限与数据使用
+Plan access grants and access-confirmation state remain in browser session storage or memory. Ordinary tracking does not retain full URLs, page titles, or page contents. It does not save search terms, forms, cookies, accounts, or private messages from webpages. Content you enter stays on your device.
 
-`storage` 保存本地数据；`activeTab` 预览主动点击时的当前页面；`scripting` 在已授权网站执行专注规则；`idle` 在空闲或锁定时暂停计时；`tabGroups` 用于组白名单。网站权限按需申请，可随时撤销。
+## Permissions and data use
 
-具体权限依浏览器支持而定；Chromium 使用 `userScripts` 运行主动导入的本地脚本，Firefox、Safari 商店版拒绝脚本导入，仅接受不含脚本的组件。扩展不自动下载组件或远程代码。
+`storage` saves local data; `activeTab` previews the current page when you click the extension; `scripting` applies focus rules on authorized websites; `idle` pauses tracking when the device is idle or locked; `tabGroups` supports the group whitelist. Website permissions are requested as needed and can be revoked.
 
-通过浏览器接口获取的数据仅用于上述功能，遵守 [Chrome Web Store 用户数据政策及 Limited Use 要求](https://developer.chrome.com/docs/webstore/program-policies/limited-use)，不出售、共享或用于广告。
+Available permissions vary by browser. Chromium uses `userScripts` for local scripts you explicitly import. Firefox and Safari store builds reject script imports and accept only components without scripts. Hourleaf does not automatically download components or remote code.
 
-## 保留、备份与删除
+Data accessed through browser APIs is used only for these features, in accordance with the [Chrome Web Store User Data Policy and Limited Use requirements](https://developer.chrome.com/docs/webstore/program-policies/limited-use). It is not sold, shared, or used for advertising.
 
-数据保留至你在扩展中删除、清空或卸载。可分别删除网站、计划、组件或统计；“恢复默认”保留统计、计划和已导入组件，“清空全部数据”删除这些业务数据。卸载后的清理受浏览器和设备备份机制影响。
+## Retention, backup, and deletion
 
-配置备份由你主动导出至本机，包含设置、计划及兼容组件偏好，不包含用时统计、临时授权、组绑定或组件源码。已导出的文件需自行删除。撤销网站权限会停止对应功能，不自动删除已有本地数据。维护者无法远程读取或删除本机数据。
+Data remains until you delete it, clear it, or uninstall the extension. You can delete websites, plans, and components separately. Restore defaults retains usage, plans, and imported components. Usage records are deleted through Clear all data, together with the other application data. Cleanup after uninstall is subject to browser and device backup behavior.
 
-## 外链与联系
+Configuration backups are exported to your device at your request. They contain settings, plans, and compatible component preferences, excluding usage statistics, temporary grants, group bindings, and component source code. You must delete exported files yourself. Revoking website permission stops the corresponding features but does not automatically delete existing local data. Maintainers cannot remotely read or delete data on your device.
 
-主动打开 GitHub、商店或其他链接后，对方按其政策处理访问请求；Hourleaf 不附加本机设置、计划或统计。通过 GitHub 提交问题时，维护者会收到你主动提交的内容；请勿公开个人信息或敏感材料。
+## External links and contact
 
-维护者：[446F7269616E](https://github.com/446F7269616E)。隐私问题通过 [Issues](https://github.com/446F7269616E/Hourleaf/issues) 联系；漏洞按[安全政策](./SECURITY.md)私密报告。
+When you open GitHub, a store, or another external link, that service handles the request under its own policy. Hourleaf does not attach local settings, plans, or statistics. Maintainers receive information you choose to submit through GitHub; do not post personal or sensitive material publicly.
 
-数据处理方式变更时会更新本政策，并在需要时取得明确同意。
+Maintainer: [446F7269616E](https://github.com/446F7269616E). Contact the developer through [Issues](https://github.com/446F7269616E/Hourleaf/issues) for privacy questions. Report vulnerabilities privately under the [security policy](./SECURITY.md).
+
+This policy will be updated if data handling changes, with explicit consent obtained where required.

@@ -1,26 +1,32 @@
-# C 版图标规范
+# C-series icon specification
 
-用户最终选定 C 版「叶片沙漏」。靛蓝沙漏表达时间边界，薄荷绿叶片表达专注和适度浏览。主图和原工具栏母版保留透明 PNG；工具栏按钮使用新增白底变体。
+The selected identity is C, the leaf hourglass: indigo expresses time boundaries and mint leaves express focus and moderate browsing. Keep transparent PNG masters; toolbar buttons use the white-background derivative.
 
-| 位置                 | 资源                                                 | 适配方式                                                 |
-| -------------------- | ---------------------------------------------------- | -------------------------------------------------------- |
-| 扩展管理页、安装信息 | `public/icons/icon-{16,32,48,128}.png`               | 保留 C 版完整双叶构图                                    |
-| 工具栏按钮           | `public/icons/toolbar-white-{16,19,24,32,38,48}.png` | 透明圆角白底、加粗轮廓，适配深浅工具栏及不同像素密度     |
-| 扩展页面 favicon     | `toolbar-32.png`                                     | 使用小尺寸简化版                                         |
-| 顶栏、弹窗品牌       | `src/ui/brand-mark.ts`                               | 34/32 CSS px，提供高密度资源，邻接品牌文字时图像为装饰性 |
-| 结束页、访问确认     | `createBrandMark(true)`                              | 64 CSS px，使用 128px 资源                               |
+| Surface                               | Resource                                             | Treatment                                                                                     |
+| ------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Extension manager/install information | `public/icons/icon-{16,32,48,128}.png`               | Complete C-series two-leaf composition                                                        |
+| Toolbar                               | `public/icons/toolbar-white-{16,19,24,32,38,48}.png` | Transparent rounded white backing, stronger outline, light/dark toolbars and density variants |
+| Extension-page favicon                | `toolbar-32.png`                                     | Simplified small-size derivative                                                              |
+| Header/popup brand                    | `src/ui/brand-mark.ts`                               | 34/32 CSS px, high-density assets; decorative beside brand text                               |
+| End/confirmation pages                | `createBrandMark(true)`                              | 64 CSS px using the 128px asset                                                               |
 
-工具栏剩余分钟由现有 action badge 负责，不嵌入静态图像。功能按钮继续使用图表、日历、时钟、盾牌、设置等语义符号，避免用品牌标记混淆操作含义。
+Remaining minutes use the existing action badge, not static icon pixels. Function buttons retain semantic chart/calendar/clock/shield/settings icons rather than the brand mark.
 
-## 来源与导出
+<a id="来源与导出"></a>
 
-- 主图母版：`assets/icon-masters/hourleaf-c-app.png`，来自已选定的 C 版。
-- 工具栏母版：`assets/icon-masters/hourleaf-c-toolbar.png`，使用内置 imagegen 参照 C 版生成。
-- 工具栏提示词：保留直立靛蓝沙漏和两枚相向薄荷绿叶片；加粗框架和横梁，移除细叶脉、纹理和阴影；透明背景、居中、无文字；用于 16px 浏览器工具栏。
-- 在 macOS 运行 `sh scripts/export-icons.sh` 可从母版重新导出尺寸；此步骤仅用于素材制作。正式构建直接复制提交的 PNG，无额外图像依赖。
+## Sources and export
 
-三平台正式版与本地 Debug 版共用 `public/icons/`。缺失资源或尺寸错误必须修复后构建，不再回退到旧候选图。原始候选和旧母版留存用于设计追溯，不参与打包。
+- App master: `assets/icon-masters/hourleaf-c-app.png`, from selected candidate C.
+- Toolbar master: `assets/icon-masters/hourleaf-c-toolbar.png`, generated from C with built-in image generation.
+- Toolbar brief: upright indigo hourglass, two opposing mint leaves; stronger frame/crossbars; no fine veins, texture, shadows, or text; transparent background, centered, readable at 16px.
+- On macOS, `sh scripts/export-icons.sh` regenerates sizes from masters. This is an asset-production step; release builds directly copy committed PNGs without image-tool dependencies.
 
-## 深色工具栏辨识（2026-09-12）
+Release targets and Debug share `public/icons/`. Fix missing/incorrect dimensions rather than falling back to archived candidates. Original candidates and earlier masters remain design history and are not packaged.
 
-白底母版为 `assets/icon-masters/hourleaf-c-toolbar-white.png`，通过 imagegen 参照现有工具栏标志生成，并使用约 20% 半径的透明圆角遮罩，导出 16/19/24/32/38/48 px。三平台 `action.default_icon` 统一引用 `toolbar-white-*`，圆角白底在深浅浏览器主题下均保留，不依赖网页主题、不增加后台主题检测或权限。扩展管理页主图、页面 favicon 与品牌元素继续使用原资源。正式版和 Debug 使用同一图标文件，导出脚本同时维护原图与白底变体；构建会拒绝缺少 alpha 通道的白底工具栏图标，避免重新出现实心方块。
+<a id="深色工具栏辨识2026-09-12"></a>
+
+## Dark-toolbar legibility — 2026-09-12
+
+The white-backed master is `assets/icon-masters/hourleaf-c-toolbar-white.png`, generated from the existing mark with an approximately 20%-radius transparent corner mask and exported at 16/19/24/32/38/48px. All manifests reference `toolbar-white-*`. The backing stays visible in light/dark browser themes without page-theme detection or new permissions.
+
+Manager icons, favicons, and in-page branding retain their existing resources. Release and Debug share the files; the exporter maintains original and white-backed variants. Builds reject white-backed toolbar PNGs without alpha channels to prevent solid square corners.
