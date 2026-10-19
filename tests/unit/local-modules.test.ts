@@ -578,7 +578,7 @@ describe("local module boundary", () => {
       { name: "hourleaf-module.json", text: JSON.stringify({ ...manifest, cssFiles: [] }) },
       { name: "focus.user.js", text: "document.body.dataset.focus = 'on';" }
     ]);
-    const service = new LocalModuleService(new LocalModuleRepository(storage));
+    const service = new LocalModuleService(new LocalModuleRepository(storage), "chromium");
     await service.import(definition);
     await service.setEnabled(definition.id, true);
 
