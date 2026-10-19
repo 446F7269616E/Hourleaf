@@ -1,6 +1,8 @@
 # Hourleaf 公开发布清单
 
-功能与文档同步：2026-10-14。候选行为按 [FEATURES.md](./FEATURES.md) 核对；本地仅编译/构建，远端 CI 与人工验收分别记录，不因文档更新勾选发布门禁。
+功能与文档同步：2026-10-19。候选行为按 [FEATURES.md](./FEATURES.md) 核对；本地仅编译/构建，远端 CI 与人工验收分别记录，不因文档更新勾选发布门禁。
+
+操作入口及各平台材料见 [商店提交说明](./STORE_SUBMISSION.md)。Safari ZIP 仅供转换，不能直接提交 App Store。
 
 ## 候选冻结
 
@@ -16,7 +18,7 @@
 - [ ] 可选网站范围没有转化为默认全站访问；每次请求为精确 origin。
 - [ ] 没有远程 JS/Wasm、动态执行、CDN、生产 source map 或复杂远程指令。
 - [ ] 本地模块在 UI/后台双重校验；远程 CSS、通配主机、任何非空 DNR 和超限内容被拒绝。
-- [ ] Chromium 用户脚本只走 User Scripts API；Firefox 使用可选权限；Safari 明确拒绝脚本文件。
+- [ ] Chromium 用户脚本只走 User Scripts API；Firefox 与 Safari 不声明该权限，UI/后台均拒绝含脚本导入，旧存储脚本不执行。
 - [ ] 停用/删除模块会注销 User Scripts；初始化会清理 Hourleaf 旧版自有动态 DNR ID 范围。
 - [ ] 升级迁移、权限拒绝/撤销、清空、删除网站、卸载和回滚已验证。
 - [ ] `PRIVACY.md`、商店数据披露、Storage 和抓包结果一致。
@@ -47,14 +49,15 @@
 ### Firefox
 
 - [ ] manifest 保留稳定 Gecko ID 和准确 `data_collection_permissions`。
-- [ ] `userScripts` 仅在平台所需权限范围；未授权时域名策略、元素隐藏与 CSS 仍可使用。
+- [ ] 不声明 `userScripts`，只接收不含用户脚本的 JSON/CSS 模块；升级前存储的脚本不执行。
 - [ ] 在有/无组 API、会话存储的实际版本分别验证白名单可用性与安全降级，不能只根据 Firefox 名称承诺支持。
 - [ ] `web-ext lint` 通过；构建说明和可审计源码按 AMO 要求提交。
 - [ ] 使用最终 AMO 签名 XPI 验证安装、升级、禁用、启用和卸载。
 
 ### Safari
 
-- [ ] 用当前 Xcode 转换 `dist/safari`，所有 warning 都有决议。
+- [ ] 使用真实 Bundle ID 执行 `npm run prepare:safari -- <BundleID>` 转换 `dist/safari`，所有 warning 都有决议。
+- [ ] 将 `PrivacyInfo.xcprivacy` 加入承载 App 和扩展 target；归档后隐私报告与 App Store Connect 声明一致。
 - [ ] entitlements、网站权限和隐私信息只包含必要能力；签名资料不进 Git。
 - [ ] Safari 候选导入 `.user.js` 时明确拒绝，包内不声明 `userScripts`。
 - [ ] 不声明 `tabGroups` 或 `idle`；组白名单显示不可用且不放行，普通计时按已有可用信号运行。
@@ -64,7 +67,7 @@
 
 - [ ] 默认分支保护、必需 CI、最小维护权限和私密漏洞报告启用。
 - [ ] CI 先执行 `npm run package`，再上传 `dist/packages`；缺失产物时任务失败。
-- [ ] 创建受保护 tag 和 GitHub Release，上传三平台商店候选包、源码、`dist/packages/SHA256SUMS`，以及与扩展包分离的 `dist/modules/` 模块 ZIP 和 `MODULE-SHA256SUMS`。
+- [ ] 创建受保护 tag 和 GitHub Release，上传 Chromium/Firefox 商店候选包、Safari 转换输入 ZIP、可复现审核源码包、`dist/packages/SHA256SUMS`，以及与扩展包分离的 `dist/modules/` 模块 ZIP 和 `MODULE-SHA256SUMS`。
 - [ ] Release 只记录产品变更、已知限制与平台状态，不包含内部协作说明或面向单个用户的建议。
 - [ ] README、功能说明、文档目录、架构、模块规范、隐私和人工验收无过期功能约定；Unreleased 与已发布资产范围分清。
 - [ ] 小比例发布后观察错误计时、权限和站点兼容问题；保留上一安全版本和数据兼容路径。

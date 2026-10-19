@@ -34,3 +34,8 @@
 - [站点研究记录](./SITE_MODULE_RESEARCH.md)：修改具体站点能力时查阅。
 
 本地自动检查范围为 TypeScript 编译与构建，交互验证留给人工。GitHub Actions 保留现有格式、类型、Lint、单元覆盖、构建与打包流程；发布前核对对应提交的远端结果及人工验收记录。
+
+## 条款与上架材料
+
+- [隐私政策](../PRIVACY.md)、[用户使用协议](../TERMS.md)、[源码使用许可](../LICENSE)、[历史 MIT 许可](../LICENSE-MIT)。
+- [条款维护](./LEGAL.md)、[商店提交材料](./STORE_SUBMISSION.md)、[独立组件介绍与下载](../optional-modules/README.md)。
