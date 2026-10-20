@@ -56,7 +56,7 @@ Store packages contain no executable site modules. Legacy `SiteModuleDescriptor`
 Only `.json`, `.css`, and `.user.js` files selected together enter the importer. There is no remote dependency, URL installer, GitHub API loader, auto-update, `eval`, `Function`, remote `import`, or instruction interpreter.
 
 - One Hourleaf extension per browser; no second extension requirement.
-- Show author/version/sites/capabilities and require explicit acknowledgement before requesting site permission.
+- Show selected files/author/version/sites/capabilities and require explicit acknowledgement before requesting site permission. `ui/local-module-guidance.ts` shares import requirements, documentation URLs, and disclaimer/contact/license notices. Changing the file selection clears acknowledgement; only the latest read may populate the preview, and submission locks the selection.
 - Generic content scripts apply selectors/CSS; reject CSS external-resource syntax.
 - `content/local-page-rules.ts` owns document/open-shadow-root styles. Respect each module's `shadowRoots`; scan declared hosts and added subtrees, handle late roots through declared events and page-state refresh, and clean removed hosts/disabled rules. Do not reactivate legacy adapters.
 - Chromium scripts run in isolated `USER_SCRIPT`, top frame, at `document_idle`.

@@ -4,6 +4,11 @@ All notable changes to Hourleaf will be documented in this file. The format foll
 
 ## [Unreleased]
 
+### Changed
+
+- Clarify add-on import files and browser compatibility in both languages, with collapsible requirements, shared disclaimers, and specification/license/contact links. Downloads open the component catalog first.
+- Reset import acknowledgement when files change, ignore stale asynchronous previews, and lock file selection during submission.
+
 ## [1.0.0] - 2026-10-20
 
 ### Added

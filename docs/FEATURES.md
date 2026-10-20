@@ -70,6 +70,8 @@ Store candidates do not bundle website-specific modules. Download and review fil
 
 The Block page lists installed modules and a download entry on the left, with the selected module or download instructions on the right. Import selects the new module. Deletion selects the first remaining module or displays an empty state.
 
+The download entry opens the component catalog first. Import includes collapsible file requirements, visible browser compatibility, documentation links, and a shared concise disclaimer with licensing and rights-contact links. Preview lists the chosen files, author, version, exact websites, and capabilities. Changing files requires a new acknowledgement; confirming requests permissions and imports/enables the reviewed component. Files are read locally and are not uploaded.
+
 Modules support exact-origin policies, selectors, self-contained CSS, and isolated user scripts where the platform permits. Domain policies are independent of content groups. Scripts run only on Chromium through the User Scripts API; Firefox and Safari store candidates reject script imports. Disabling or deleting unregisters future execution. Effects of scripts already executed follow their page lifecycle and may require a refresh.
 
 Content groups run at all times by default. They can reference multiple existing windows for the corresponding website, using only start/end times as daily filtering windows. Weekdays, enable state, access mode, allowances, and group counts do not affect filtering. Deleted websites or windows invalidate references; when all references are invalid, filtering stops. Unlimited website access still applies these content rules.
