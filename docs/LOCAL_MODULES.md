@@ -84,7 +84,11 @@ CSS can use the same metadata fields. Every selected standalone file needs the c
 
 ## Import confirmation and safety
 
-The confirmation view must show the module name, author, format, version, exact website scope, and capabilities. Users must acknowledge that static checks are limited, do not certify third-party content, and require them to review and trust the source. No website permission request or import may precede acknowledgement.
+The confirmation view shows the selected files, module name, author, version, exact website scope, and capabilities. Collapsible file requirements explain ZIP extraction, one module and at most 16 files per import, and metadata for standalone CSS/scripts. Browser-specific file hints and compatibility remain visible beside the picker; unsupported platforms omit scripts from its accepted types and still reject script-bearing definitions.
+
+`ui/local-module-guidance.ts` owns shared documentation URLs, import guidance, and the disclaimer reused by the download panel and import dialog. Documentation, MIT licensing for repository components, and rights-related contact open externally without uploading or prefetching local files. Other sources retain their authors' licenses. The notice explains unofficial status, intended use, website compatibility, limited validation, and legally required liability without an unconditional waiver.
+
+Acknowledgement is enabled only after a valid preview and confirms review of the source, files, website scope, and risks. Every file selection clears both preview eligibility and acknowledgement. Only the latest asynchronous selection may populate the preview; file selection and acknowledgement are locked during submission. No website permission request or import may precede acknowledgement. Confirmation requests necessary permissions, imports the component, and enables it, as stated by the action label.
 
 `createLocalModuleImportPreview()` returns nonpersistent preview data: `author`, `format`, `version`, `matches`, `capabilities`, `hasUserScript`, and `riskDisclosure`. Its `code` is `review-content-and-assume-risk`, with `acknowledgementRequired: true`. Display localized text rather than internal codes or capability identifiers. `IMPORT_LOCAL_MODULE` must carry the same fixed acknowledgement code; the privileged boundary rejects missing or forged values.
 

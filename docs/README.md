@@ -32,7 +32,7 @@ Paths below are relative to `src/`.
 | Settings and protection                | `home/index.ts`, `background/protected-actions.ts`                                                                                                                                                                     | [Protected actions](./ARCHITECTURE.md#protected-actions)                                                                 |
 | Appearance and language                | `ui/`, `styles/`, `shared/i18n.ts`                                                                                                                                                                                     | [Styles](./UI_STYLE.md), [Writing](./UX_WRITING.md), [Icons](./ICONS.md)                                                 |
 
-Message validation lives in `shared/messages.ts`; coordination and serialized state changes in `background/index.ts`; browser ports in `shared/browser.ts`. Keep domain, coordination, storage, and UI responsibilities separate, and reuse shared components.
+Message validation lives in `shared/messages.ts`; coordination and serialized state changes in `background/index.ts`; browser ports in `shared/browser.ts`. Shared module import guidance, document links, and disclaimers live in `ui/local-module-guidance.ts`. Keep domain, coordination, storage, and UI responsibilities separate, and reuse shared components.
 
 <a id="开发与交付"></a>
 

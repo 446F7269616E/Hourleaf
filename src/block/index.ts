@@ -33,11 +33,12 @@ import { createFilterTimePeriodPicker } from "../ui/filter-time-periods";
 import { configuredFilterTimePeriods, filterScheduleReferences } from "../modules/local/schedules";
 import type { FocusSettings } from "../shared/types";
 import { addManagedSite, requestLocalModulePermissions } from "../ui/site-management";
-
-const MODULE_RELEASES_URL = "https://github.com/446F7269616E/Hourleaf/releases/latest";
-const MODULE_SOURCE_URL = "https://github.com/446F7269616E/Hourleaf/tree/main/optional-modules";
-const MODULE_GUIDE_URL =
-  "https://github.com/446F7269616E/Hourleaf/blob/main/docs/MODULE_DEVELOPMENT.md";
+import { createExternalLink as externalLink } from "../ui/external-link";
+import {
+  createLocalModuleDisclaimer,
+  createLocalModuleImportGuidance,
+  LOCAL_MODULE_LINKS
+} from "../ui/local-module-guidance";
 
 const app = assertAppRoot();
 let localModules: LocalModuleSnapshot | null = null;
@@ -204,24 +205,12 @@ function createDownloadPanel(): HTMLElement {
       element("div", {
         className: "block-download__actions",
         children: [
-          externalLink(MODULE_RELEASES_URL, t("block.openReleases"), "btn btn--soft"),
-          externalLink(MODULE_SOURCE_URL, t("settings.openCatalog"), "btn"),
-          externalLink(MODULE_GUIDE_URL, t("block.openGuide"), "btn")
+          externalLink(LOCAL_MODULE_LINKS.catalog, t("block.openCatalog"), "btn btn--soft"),
+          externalLink(LOCAL_MODULE_LINKS.releases, t("block.openReleases")),
+          externalLink(LOCAL_MODULE_LINKS.guide, t("block.openGuide"))
         ]
       }),
-      element("aside", {
-        className: "block-disclaimer",
-        attrs: { "aria-label": t("block.disclaimerTitle") },
-        children: [
-          icon("info"),
-          element("div", {
-            children: [
-              element("strong", { text: t("block.disclaimerTitle") }),
-              element("p", { text: t("block.disclaimer") })
-            ]
-          })
-        ]
-      })
+      createLocalModuleDisclaimer()
     ]
   });
 }
@@ -420,12 +409,16 @@ function detail(label: string, value: string): HTMLElement {
 
 function openImportDialog(): void {
   let candidate: LocalModuleDefinition | null = null;
+  let selectionGeneration = 0;
+  const allowsScripts = localModuleAllowsUserScripts(resolveLocalModulePlatform());
   const fileInput = element("input", {
     className: "input",
     attrs: {
       type: "file",
       multiple: true,
-      accept: ".json,.css,.user.js,application/json,text/css,text/javascript",
+      accept: allowsScripts
+        ? ".json,.css,.user.js,application/json,text/css,text/javascript"
+        : ".json,.css,application/json,text/css",
       "data-testid": "module-import-files"
     }
   });
@@ -437,6 +430,7 @@ function openImportDialog(): void {
   const acknowledgement = element("input", {
     attrs: { type: "checkbox", "aria-label": t("settings.importDisclaimer") }
   });
+  acknowledgement.disabled = true;
   const confirm = element("button", {
     className: "btn btn--primary",
     text: t("settings.importConfirm"),
@@ -445,7 +439,10 @@ function openImportDialog(): void {
   confirm.disabled = true;
   const dialog = element("dialog", {
     className: "dialog home-import-dialog",
-    attrs: { "aria-labelledby": "module-import-title" },
+    attrs: {
+      "aria-labelledby": "module-import-title",
+      "aria-describedby": "module-import-description"
+    },
     children: [
       element("div", {
         className: "home-import-dialog__surface",
@@ -459,7 +456,10 @@ function openImportDialog(): void {
                     attrs: { id: "module-import-title" },
                     text: t("settings.importTitle")
                   }),
-                  element("p", { text: t("settings.importDescription") })
+                  element("p", {
+                    attrs: { id: "module-import-description" },
+                    text: t("settings.importDescription")
+                  })
                 ]
               }),
               closeButton(() => dialog.close())
@@ -468,15 +468,35 @@ function openImportDialog(): void {
           element("div", {
             className: "home-import-dialog__body",
             children: [
+              createLocalModuleImportGuidance(),
               element("label", {
                 className: "home-import-picker",
                 children: [
                   element("strong", { text: t("settings.importFiles") }),
-                  element("span", { text: t("settings.importFilesDescription") }),
+                  element("span", {
+                    text: t(
+                      allowsScripts
+                        ? "settings.importFilesDescription"
+                        : "settings.importDeclarativeFilesDescription"
+                    )
+                  }),
                   fileInput
                 ]
               }),
+              element("p", {
+                className: "home-import-local-note",
+                text: t(
+                  allowsScripts
+                    ? "settings.importPlatformChromium"
+                    : "settings.importPlatformDeclarative"
+                )
+              }),
               preview,
+              element("p", {
+                className: "home-import-local-note",
+                text: t("settings.importLocal")
+              }),
+              createLocalModuleDisclaimer(),
               element("label", {
                 className: "home-import-acknowledgement",
                 children: [
@@ -504,9 +524,14 @@ function openImportDialog(): void {
   const cancel = dialog.querySelector<HTMLButtonElement>("footer .btn:not(.btn--primary)");
   cancel?.addEventListener("click", () => dialog.close());
   fileInput.addEventListener("change", () => {
+    const generation = ++selectionGeneration;
+    candidate = null;
+    acknowledgement.checked = false;
+    acknowledgement.disabled = true;
+    confirm.disabled = true;
+    preview.textContent = t("settings.importReading");
+    preview.setAttribute("aria-busy", "true");
     void (async () => {
-      candidate = null;
-      confirm.disabled = true;
       try {
         const files = await Promise.all(
           [...(fileInput.files ?? [])].map(async (file): Promise<LocalModuleFile> => ({
@@ -514,6 +539,7 @@ function openImportDialog(): void {
             text: await file.text()
           }))
         );
+        if (generation !== selectionGeneration || !dialog.isConnected) return;
         const parsed = parseLocalModuleFiles(files);
         if (
           parsed.userScript.trim() &&
@@ -526,18 +552,24 @@ function openImportDialog(): void {
         const value = createLocalModuleImportPreview(localizeLocalModuleCopy(candidate));
         preview.replaceChildren(
           element("strong", { text: `${value.name} ${value.version}` }),
+          element("p", {
+            text: `${t("settings.importSelectedFiles")}: ${files.map(({ name }) => name).join(", ")}`
+          }),
           element("p", { text: `${t("settings.moduleAuthor")}: ${value.author}` }),
           element("p", { text: `${t("settings.moduleSites")}: ${value.matches.join(", ")}` }),
           element("p", {
             text: `${t("settings.moduleCapabilities")}: ${formatCapabilities(value.capabilities) || t("settings.metadataOnly")}`
           })
         );
-        confirm.disabled = !acknowledgement.checked;
+        acknowledgement.disabled = false;
       } catch (error) {
+        if (generation !== selectionGeneration || !dialog.isConnected) return;
         preview.textContent =
           error instanceof LocalModuleImportError
             ? describeImportError(error)
             : describeError(error);
+      } finally {
+        if (generation === selectionGeneration) preview.removeAttribute("aria-busy");
       }
     })();
   });
@@ -545,8 +577,14 @@ function openImportDialog(): void {
     confirm.disabled = !candidate || !acknowledgement.checked;
   });
   confirm.addEventListener("click", () => {
-    if (!candidate || !acknowledgement.checked) return;
-    void importModule(candidate, confirm, dialog);
+    if (!candidate || !acknowledgement.checked || fileInput.disabled) return;
+    fileInput.disabled = true;
+    acknowledgement.disabled = true;
+    void importModule(candidate, confirm, dialog).finally(() => {
+      fileInput.disabled = false;
+      acknowledgement.disabled = !candidate;
+      confirm.disabled = !candidate || !acknowledgement.checked;
+    });
   });
   dialog.addEventListener("close", () => dialog.remove());
   document.body.append(dialog);
@@ -748,14 +786,6 @@ function createToggle(
       children: [input, element("span", { className: "sr-only", text: labelText })]
     })
   };
-}
-
-function externalLink(href: string, label: string, className: string): HTMLAnchorElement {
-  return element("a", {
-    className,
-    attrs: { href, target: "_blank", rel: "noopener noreferrer" },
-    children: [element("span", { text: label }), icon("external")]
-  });
 }
 
 function closeButton(close: () => void): HTMLButtonElement {

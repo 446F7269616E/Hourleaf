@@ -74,6 +74,7 @@ Content aligns left; pause actions center. Card padding is 20px, falling to 16px
 - Settings has seven categories: operation/protection, appearance, plan access, confirmation/unlock, pause/end pages, data management, About. Show only the selected category and retain it through saves/theme/language changes. Wide control columns are 220–320px with a 24px gap; field cards have 16px padding; stack below 700px. About uses the same field cards for privacy/license/contact links.
 - Plans always use independent timing; do not restore the obsolete coupling switch. Ordinary close copy specifies related ungrouped tabs and reports preserved grouped pages.
 - Filtering lists modules and downloads on the left; show only the selected module or download instructions on the right. Import remains a header action. Successful imports select the new module; deletion and plan-context refresh preserve sensible selection/scroll.
+- Import uses native collapsible file requirements, persistent platform compatibility, a file preview, and a shared concise disclaimer with external specification/license/contact links. Keep the dialog header/footer fixed and its body scrollable; long file names wrap. Acknowledgement is disabled until a valid preview and resets on every selection.
 
 ### Plans and popup
 

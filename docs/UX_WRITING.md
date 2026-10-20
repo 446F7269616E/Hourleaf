@@ -19,7 +19,7 @@ Copy states the current condition, necessary reason, and available action. Keep 
 9. Do not rely on color alone. Visible text, accessible name, and control state agree.
 10. Delete, clear, and reset identify the object and require confirmation.
 11. Mode options contain only short names; persistent explanatory text below the control updates with selection.
-12. Import dialogs describe the action, files, and responsibility to acknowledge. Show format-specific errors only when validation fails; no internal risk-normalization headings.
+12. Import dialogs identify the required files and current browser compatibility, link to full specifications, and state that confirmation imports and enables the add-on after permissions. Keep detailed file requirements collapsible. Acknowledge review of the source, files, websites, and risks; avoid blanket liability waivers or safety guarantees. Share concise disclaimers, MIT scope, and rights-contact links with the download page. Show format-specific errors only when validation fails; no internal risk-normalization headings.
 13. Flow minute options contain durations only. Keep “Use / 再用” outside the select. Use a complete close action when continuation is unavailable.
 14. Dashboard and plan selectors have a visible View label; each option names its range/layout only.
 15. Whitelists are peers of sites. Do not expose browser group IDs. Explain invalid binding directly; do not imply name-only restoration.

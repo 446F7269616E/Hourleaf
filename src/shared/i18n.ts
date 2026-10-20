@@ -480,12 +480,12 @@ const ZH_MESSAGES = {
   "block.description": "按网站管理可选插件，并决定需要隐藏的分心内容。",
   "block.download": "获取可选插件",
   "block.downloadDescription":
-    "从 GitHub Release 下载独立插件包，阅读源码后再回到此页手动导入。Hourleaf 不会自动下载或更新插件。",
-  "block.openReleases": "前往 GitHub 下载",
+    "在插件目录查看功能、版本和兼容平台，下载以 hourleaf-module- 开头的 ZIP，解压并核对文件后导入。Hourleaf 不会自动下载或更新插件。",
+  "block.openReleases": "查看全部发布文件",
   "block.openGuide": "自制插件规范",
-  "block.disclaimerTitle": "导入前请确认来源",
+  "block.disclaimerTitle": "使用说明与免责声明",
   "block.disclaimer":
-    "可选插件可能由第三方维护，与对应网站不存在隶属、授权或背书关系。安全检查只能过滤部分已知风险，不能保证兼容性、持续可用或内容安全；请先阅读清单、样式和脚本，并自行决定是否授权和使用。",
+    "这些非官方适配用于交流、学习和提升效率，与网站运营方无隶属或背书关系。使用时请遵守法律、网站规则及他人合法权益。",
   "block.installed": "网站屏蔽设置",
   "block.installedDescription": "已导入 {count} 个可选插件。",
   "block.emptyDescription": "下载并解压插件包，阅读文件后使用上方按钮手动导入。",
@@ -536,14 +536,36 @@ const ZH_MESSAGES = {
   "settings.importError.reference": "清单引用的本地文件缺失或类型不匹配。",
   "settings.importError.metadata": "独立文件必须包含一致的完整屏蔽插件元数据。",
   "settings.importError.unsafe": "内容包含不允许的外部资源或危险功能，无法导入。",
-  "settings.importInitial": "请选择屏蔽插件清单及其引用的本地文件。",
-  "settings.importConfirm": "确认导入并授权",
+  "settings.importInitial": "选择文件后，将显示插件作者、版本、适用网站和能力。",
+  "settings.importConfirm": "导入并启用",
   "settings.importTitle": "导入屏蔽插件",
-  "settings.importDescription": "选择本地文件，核对网站范围与能力后再授权。",
-  "settings.importDisclaimer":
-    "安全检测只能过滤已知危险格式，不能保证自定义内容安全。导入前请阅读文件；导入和使用产生的风险仍由你承担。",
+  "settings.importDescription": "核对文件和网站范围后确认；获得所需权限后，插件将导入并启用。",
+  "settings.importDisclaimer": "我已确认来源可靠，核对文件内容和适用网站，并了解导入及使用风险。",
   "settings.importFiles": "本地屏蔽插件文件",
-  "settings.importFilesDescription": "选择清单及其引用的文件。用户脚本仅 Chromium 版支持。",
+  "settings.importFilesDescription":
+    "选择 JSON 清单及其引用的 CSS、.user.js 文件；不要选择 ZIP、README 或 LICENSE。",
+  "settings.importDeclarativeFilesDescription":
+    "选择 JSON 清单及其引用的 CSS 文件；不要选择 ZIP、README 或 LICENSE。",
+  "block.openCatalog": "选择并下载插件",
+  "block.openImportSpec": "查看导入规范",
+  "block.openLicense": "仓库插件 MIT 许可",
+  "block.contactDeveloper": "权益问题联系开发者",
+  "block.disclaimerLimits":
+    "本仓库插件按 MIT 许可原样提供，其他来源以作者许可为准。网页改动可能影响效果，导入校验不保证安全；本声明不免除依法应承担的责任。",
+  "settings.importReading": "正在读取插件文件…",
+  "settings.importSelectedFiles": "已选文件",
+  "settings.importRequirements": "文件要求与兼容说明",
+  "settings.importManifestFiles":
+    "先解压插件包。每次导入一个插件，一并选择 hourleaf-module.json 和它引用的文件，最多 16 个。",
+  "settings.importStandaloneFiles":
+    "不含 JSON 清单的 CSS 或 .user.js 文件必须带有完整的 Hourleaf 插件元数据；普通样式和脚本不能直接导入。",
+  "settings.importPlatformChromium":
+    "当前 Chromium 版支持 JSON、CSS 和用户脚本。含脚本的插件还需浏览器支持，并单独授予用户脚本权限。",
+  "settings.importPlatformDeclarative":
+    "当前版本仅支持不含用户脚本的 JSON/CSS 插件。含脚本的插件包无法导入，请使用作者提供的无脚本版本。",
+  "settings.importTrust":
+    "导入前请自行确认发布者和来源可靠，核对作者、版本及文件内容；如提供校验文件，请一并核对。校验通过不代表内容安全。",
+  "settings.importLocal": "导入文件只在本机读取，不会上传。Hourleaf 不会自动下载或更新插件。",
   "settings.moduleAuthor": "作者",
   "settings.moduleFormat": "内容格式",
   "settings.moduleVersion": "版本",
@@ -552,7 +574,7 @@ const ZH_MESSAGES = {
   "settings.moduleRemoveDetail": "屏蔽插件注册会从本机移除，网站时间配置会保留。",
   "settings.permissionDenied": "未获得屏蔽插件所需的网站权限",
   "settings.userScriptUnsupported":
-    "Firefox 和 Safari 版不支持用户脚本，请选择不含脚本的屏蔽插件。",
+    "当前版本不支持用户脚本，请使用作者提供的无脚本插件包，不要删改原包中的文件。",
   "settings.moduleImported": "本地屏蔽插件已导入并启用",
   "settings.moduleRemoved": "本地屏蔽插件已删除",
   "settings.moduleEnabled": "屏蔽插件已启用",
@@ -1263,12 +1285,12 @@ const EN_MESSAGES: Record<MessageKey, string> = {
     "Manage optional website add-ons and choose which distracting content to hide.",
   "block.download": "Get optional add-ons",
   "block.downloadDescription":
-    "Download a separate add-on package from GitHub Releases, inspect its source, then return here to import it manually. Hourleaf never downloads or updates add-ons automatically.",
-  "block.openReleases": "Download from GitHub",
+    "Check features, versions, and browser support in the catalog. Download a ZIP named hourleaf-module-…, extract it, and review its files before importing. Hourleaf never downloads or updates add-ons automatically.",
+  "block.openReleases": "View all release files",
   "block.openGuide": "Add-on authoring guide",
-  "block.disclaimerTitle": "Verify the source before importing",
+  "block.disclaimerTitle": "Use and disclaimer",
   "block.disclaimer":
-    "Optional add-ons may be maintained by third parties and are not affiliated with, authorized by, or endorsed by the websites they support. Safety checks catch only some known risks and cannot guarantee compatibility, continued operation, or content safety. Read the manifest, styles, and scripts before deciding whether to authorize and use them.",
+    "These unofficial adaptations are for discussion, learning, and productivity. They are not affiliated with or endorsed by website operators. Respect applicable law, website rules, and third-party rights.",
   "block.installed": "Website blocking settings",
   "block.installedDescription": "{count} optional add-ons imported.",
   "block.emptyDescription":
@@ -1325,16 +1347,40 @@ const EN_MESSAGES: Record<MessageKey, string> = {
   "settings.importError.metadata": "Standalone files need complete, matching add-on metadata.",
   "settings.importError.unsafe":
     "The content uses a disallowed external resource or dangerous capability.",
-  "settings.importInitial": "Choose an add-on manifest and its referenced local files.",
-  "settings.importConfirm": "Import and authorize",
+  "settings.importInitial":
+    "Choose files to review the author, version, websites, and capabilities.",
+  "settings.importConfirm": "Import and enable",
   "settings.importTitle": "Import blocking add-on",
   "settings.importDescription":
-    "Choose local files, review the website scope and capabilities, then authorize them.",
+    "Review the files and website scope before confirming. The add-on will be imported and enabled after the required permissions are granted.",
   "settings.importDisclaimer":
-    "Safety checks can filter known dangerous formats, but cannot guarantee custom content is safe. Read the files first; you remain responsible for importing and using them.",
+    "I have verified the source, reviewed the files and websites, and understand the risks of importing and using this add-on.",
   "settings.importFiles": "Local add-on files",
   "settings.importFilesDescription":
-    "Choose the manifest and its referenced files. User scripts are supported only in Chromium.",
+    "Select the JSON manifest and its referenced CSS or .user.js files, excluding ZIP, README, and LICENSE files.",
+  "settings.importDeclarativeFilesDescription":
+    "Select the JSON manifest and its referenced CSS files, excluding ZIP, README, and LICENSE files.",
+  "block.openCatalog": "Choose and download add-ons",
+  "block.openImportSpec": "Import specification",
+  "block.openLicense": "Repository add-ons: MIT license",
+  "block.contactDeveloper": "Contact developer about rights",
+  "block.disclaimerLimits":
+    "Repository add-ons are provided as is under MIT; other sources retain their authors' licenses. Website changes may affect functionality, and import checks do not guarantee safety. This notice does not exclude liability that cannot lawfully be excluded.",
+  "settings.importReading": "Reading add-on files…",
+  "settings.importSelectedFiles": "Selected files",
+  "settings.importRequirements": "File requirements and browser support",
+  "settings.importManifestFiles":
+    "Extract the ZIP first. Import one add-on at a time by selecting hourleaf-module.json and every file it references, up to 16 files.",
+  "settings.importStandaloneFiles":
+    "CSS or .user.js files without a JSON manifest require complete Hourleaf add-on metadata. Ordinary styles and scripts cannot be imported directly.",
+  "settings.importPlatformChromium":
+    "This Chromium build supports JSON, CSS, and user scripts. Script-bearing add-ons also require browser support and a separate user-script permission.",
+  "settings.importPlatformDeclarative":
+    "This build accepts JSON/CSS add-ons without user scripts only. Use a script-free edition supplied by the author for packages containing scripts.",
+  "settings.importTrust":
+    "Confirm that the publisher and source are reliable, and review the author, version, and files. Check any supplied checksums. Passing validation does not mean the content is safe.",
+  "settings.importLocal":
+    "Imported files are read on this device and are not uploaded. Hourleaf never downloads or updates add-ons automatically.",
   "settings.moduleAuthor": "Author",
   "settings.moduleFormat": "Content format",
   "settings.moduleVersion": "Version",
@@ -1344,7 +1390,7 @@ const EN_MESSAGES: Record<MessageKey, string> = {
     "The add-on registration will be removed; website time settings will remain.",
   "settings.permissionDenied": "The required website permission was not granted",
   "settings.userScriptUnsupported":
-    "Firefox and Safari builds do not support user scripts. Choose an add-on without scripts.",
+    "This build does not support user scripts. Use a script-free package from the author; do not remove files from the original package.",
   "settings.moduleImported": "Local add-on imported and enabled",
   "settings.moduleRemoved": "Local add-on removed",
   "settings.moduleEnabled": "Add-on enabled",

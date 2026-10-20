@@ -115,6 +115,12 @@
   color: inherit;
 }
 
+.block-disclaimer .block-download__actions,
+.home-import-guidance .block-download__actions {
+  justify-content: flex-start;
+  margin-top: var(--space-3);
+}
+
 .block-library {
   display: grid;
   gap: var(--space-4);
