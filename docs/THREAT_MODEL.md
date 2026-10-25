@@ -34,7 +34,7 @@ Pages, DOM, URLs, module events, and content-script messages are untrusted. Exte
 | Treating optional patterns as default access | Broader browsing exposure                | Explicit requests for validated origins/reviewed site families; unregister after revocation                                                     |
 | Executable remote modules/configuration      | Bypassing review                         | No URL installation/auto-update; local file selection; no remote JS/Wasm/eval/interpreter                                                       |
 | Local module expands hosts or capabilities   | Unauthorized access                      | Exact origins, bounded validation at two boundaries, explicit permission; reject DNR that cannot preserve origins                               |
-| User script gains extension privileges       | Reading settings or browser control      | User Scripts API isolated world, no privileged API bridge; disabled on Firefox/Safari                                                           |
+| User script gains extension privileges       | Reading settings or browser control      | User Scripts API isolated world, no privileged API bridge; disabled on Safari                                                                   |
 | CSS requests or abusive selectors            | Disclosure or unusable pages             | Reject remote import/url, bound sizes/selectors, provide disable/remove paths                                                                   |
 | Forged page messages                         | Privileged actions or disclosure         | Validate sender, origin, permission, version, type, and value bounds                                                                            |
 | DOM XSS/CSS escape                           | Code execution or unusable overlay       | Safe DOM APIs, strict CSP, bounded selectors, preserve unknown DOM, exit paths                                                                  |
@@ -67,6 +67,6 @@ Group recovery uses hashed combined features, not a browser-guaranteed persisten
 - Site changes can break selectors/scripts; safe degradation limits damage.
 - Focus, freeze, mobile background, and idle signals vary. Statistics support focus, not audited timekeeping.
 - Device/profile access permits reading or modifying local data.
-- Safari/Firefox lifecycle and prompts differ from Chromium; verify signed candidates manually.
+- Safari lifecycle and prompts differ from Chromium; verify signed candidates manually.
 
 Review this model and `PRIVACY.md` before adding accounts, sync, telemetry, remote APIs/configuration, third-party SDKs, permissions, MAIN-world execution, or new executable formats.

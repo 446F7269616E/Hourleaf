@@ -91,7 +91,7 @@ export class LocalModuleService {
 
   async import(definition: LocalModuleDefinition): Promise<LocalModuleSnapshot> {
     if (!localModuleAllowsUserScripts(this.platform) && definition.userScript.trim()) {
-      throw new Error("Firefox 和 Safari 商店版不导入或执行用户脚本");
+      throw new Error("当前浏览器不支持导入或执行用户脚本");
     }
     return this.enqueue(async () => this.reconcile(await this.repository.import(definition)));
   }

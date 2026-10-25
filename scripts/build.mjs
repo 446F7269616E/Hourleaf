@@ -2,15 +2,14 @@ import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { build } from "esbuild";
+import { browserTargets, supportedTargets } from "./browser-targets.mjs";
 
 const root = process.cwd();
-/** @typedef {"chromium" | "firefox" | "safari"} BrowserTarget */
+/** @typedef {import("./browser-targets.mjs").BrowserTarget} BrowserTarget */
 /** @typedef {"release" | "debug"} BuildFlavor */
 /** @typedef {{id: string, name: string, matches: string[]} & Record<string, unknown>} DebugModule */
 /** @typedef {{url: string, label: string}} DebugSite */
 /** @typedef {{modules: DebugModule[], sites: DebugSite[], hostPermissions: string[]}} DebugPreset */
-/** @type {BrowserTarget[]} */
-const supportedTargets = ["chromium", "firefox", "safari"];
 const requestedTarget = process.argv[2] ?? "all";
 if (
   requestedTarget !== "all" &&
@@ -78,7 +77,7 @@ async function buildExtension(target, flavor, outdir, preset) {
     outdir,
     bundle: true,
     format: "iife",
-    target: browserTarget(target),
+    target: browserTargets[target],
     entryNames: "[name]",
     plugins: flavor === "release" ? [releaseDebugBootstrapPlugin()] : [],
     sourcemap: false,
@@ -139,13 +138,6 @@ async function buildExtension(target, flavor, outdir, preset) {
     `${JSON.stringify(manifest, null, 2)}\n`,
     "utf8"
   );
-}
-
-/** @param {BrowserTarget} target */
-function browserTarget(target) {
-  if (target === "firefox") return "firefox121";
-  if (target === "safari") return "safari17";
-  return "chrome121";
 }
 
 /** @returns {import("esbuild").Plugin} */

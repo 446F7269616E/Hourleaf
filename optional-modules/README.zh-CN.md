@@ -8,13 +8,13 @@
 
 以下文件对应 [Hourleaf v1.0.0](https://github.com/446F7269616E/Hourleaf/releases/tag/v1.0.0)，组件版本独立于扩展版本。Release 处于草稿状态时，公开下载链接须等正式发布后才可访问。
 
-| 组件     | 版本  | 导入文件            | 支持的商店版本            | 下载                                                                                                           |
-| -------- | ----- | ------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Bilibili | 1.2.5 | JSON、CSS、用户脚本 | Chromium                  | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-bilibili-1.2.5.zip)    |
-| 小红书   | 1.0.1 | JSON、用户脚本      | Chromium                  | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-xiaohongshu-1.0.1.zip) |
-| X        | 1.0.1 | JSON                | Chromium、Firefox、Safari | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-x-1.0.1.zip)           |
-| YouTube  | 1.0.1 | JSON                | Chromium、Firefox、Safari | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-youtube-1.0.1.zip)     |
-| 百度贴吧 | 1.0.1 | JSON                | Chromium、Firefox、Safari | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-baidu-tieba-1.0.1.zip) |
+| 组件     | 版本  | 导入文件            | 支持的商店版本   | 下载                                                                                                           |
+| -------- | ----- | ------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------- |
+| Bilibili | 1.2.5 | JSON、CSS、用户脚本 | Chromium         | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-bilibili-1.2.5.zip)    |
+| 小红书   | 1.0.1 | JSON、用户脚本      | Chromium         | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-xiaohongshu-1.0.1.zip) |
+| X        | 1.0.1 | JSON                | Chromium、Safari | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-x-1.0.1.zip)           |
+| YouTube  | 1.0.1 | JSON                | Chromium、Safari | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-youtube-1.0.1.zip)     |
+| 百度贴吧 | 1.0.1 | JSON                | Chromium、Safari | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-baidu-tieba-1.0.1.zip) |
 
 请与同一版本的 [MODULE-SHA256SUMS](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/MODULE-SHA256SUMS) 核对校验值。`main` 可能与发布文件不同；本目录保留源码，执行 `npm run build` 后再运行 `npm run package` 可在 `dist/modules/` 生成独立组件包。
 
@@ -35,7 +35,9 @@
 3. 在 Hourleaf“屏蔽”页面一次选择清单和全部引用文件。不要选择 `LICENSE`、`README.md`，它们是分发说明。
 4. 核对作者、版本、网站范围和能力后，主动授予网站权限并启用。
 
-Chromium 仅通过隔离的 User Scripts API 运行用户脚本，需要浏览器支持及用户授权。Firefox 与 Safari 商店版拒绝整个含脚本组件；Bilibili 和小红书组件不能原样导入这两个平台，不应通过删除已校验文件来绕过限制。
+Firefox 构建已停用，相关文件保留在[弃用目录](../deprecated/firefox/README.md)。
+
+Chromium 仅通过隔离的 User Scripts API 运行用户脚本，需要浏览器支持及用户授权。Safari 商店版拒绝整个含脚本组件；Bilibili 和小红书组件不能原样导入 Safari，不应通过删除已校验文件来绕过限制。
 
 ## 开关与时间
 

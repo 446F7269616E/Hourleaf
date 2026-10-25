@@ -14,6 +14,8 @@ npm run typecheck
 npm run build
 ```
 
+Active targets are Chrome (Chromium) and Safari, shared through `scripts/browser-targets.mjs`. Firefox source references are retained in `deprecated/firefox/` and are outside the current build and acceptance scope.
+
 Use the scripts in the root `package.json` and retain the lockfile. Do not commit `dist`, test traces, browser profiles, signing certificates, provisioning profiles, `.env` files, or tokens.
 
 Local automated validation covers compilation and builds; browser behavior is checked manually. Unit and E2E scripts are not required local checks. GitHub Actions uses Ubuntu 24.04 ARM and Node.js 22 to run formatting, types, lint, unit coverage, builds, and packaging. Keep those remote checks.

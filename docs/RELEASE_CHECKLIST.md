@@ -1,6 +1,6 @@
 # Hourleaf public-release checklist
 
-Behavior/documentation synchronized: 2026-10-19. Compare candidates with [FEATURES.md](./FEATURES.md). Local checks cover compilation/builds; record CI and manual acceptance separately. Editing this document does not complete a gate.
+Platform scope synchronized: 2026-10-25. Compare candidates with [FEATURES.md](./FEATURES.md). Local checks cover compilation/builds; record CI and manual acceptance separately. Editing this document does not complete a gate.
 
 See [store submissions](./STORE_SUBMISSION.md) for materials and commands. The Safari ZIP is converter input, not an App Store upload.
 
@@ -17,12 +17,12 @@ See [store submissions](./STORE_SUBMISSION.md) for materials and commands. The S
 
 ## Quality and privacy
 
-- [ ] Required static, unit/component/E2E, and three-platform candidate acceptance are complete.
+- [ ] Required static, unit/component/E2E, and Chrome/Safari candidate acceptance are complete.
 - [ ] Store ZIPs contain no site-specific modules, `optional-modules/`, remote scripts, or remote update manifests.
 - [ ] Optional host patterns are not default access; requests are limited to the configured origin or explicitly reviewed site-family scope.
 - [ ] No remote JS/Wasm, dynamic execution, CDN, production source maps, or remote instruction interpreter.
 - [ ] UI and background validate local imports; reject remote CSS, wildcard hosts, nonempty DNR, and excessive input.
-- [ ] Chromium user scripts use only User Scripts API; Firefox/Safari declare no such permission, reject script-bearing imports, and do not register stored scripts.
+- [ ] Chromium user scripts use only User Scripts API; Safari declares no such permission, rejects script-bearing imports, and does not register stored scripts.
 - [ ] Disable/remove unregisters User Scripts; initialization cleans Hourleaf's legacy dynamic DNR ID range.
 - [ ] Upgrade migration, permission rejection/revocation, clearing, site deletion, uninstall, and rollback are verified.
 - [ ] `PRIVACY.md`, store disclosures, storage, and observed traffic agree.
@@ -54,14 +54,6 @@ See [store submissions](./STORE_SUBMISSION.md) for materials and commands. The S
 - [ ] Developer Dashboard single purpose, permission justifications, data usage, and privacy URL are complete.
 - [ ] Store-draft installation verifies permission prompts, Service Worker recovery, and upgrades.
 
-### Firefox
-
-- [ ] Manifest retains the stable Gecko ID and accurate `data_collection_permissions`.
-- [ ] No `userScripts` permission; only script-free JSON/CSS imports; old scripts are not registered.
-- [ ] Verify actual versions with and without group/session APIs; do not infer support from the browser name.
-- [ ] `web-ext lint` passes; matching build instructions and review source are submitted to AMO.
-- [ ] The final AMO-signed XPI passes installation, upgrade, disable, enable, and uninstall checks.
-
 ### Safari
 
 - [ ] Convert `dist/safari` with `npm run prepare:safari -- <BundleID>` using a real identifier; resolve every warning.
@@ -78,7 +70,7 @@ See [store submissions](./STORE_SUBMISSION.md) for materials and commands. The S
 - [x] `main` requires PRs, the `quality` check, an up-to-date branch, resolved discussions, linear history, and administrator protection; force pushes and deletion are prohibited.
 - [ ] Minimum maintainer access and private vulnerability reporting are verified.
 - [ ] CI packages before uploading `dist/packages`; missing artifacts fail the job.
-- [ ] Create the protected tag/Release and attach Chromium/Firefox candidates, Safari conversion ZIP, matching review-source ZIP, `SHA256SUMS`, and separate module ZIPs plus `MODULE-SHA256SUMS`.
+- [ ] Create the protected tag/Release and attach the Chromium candidate, Safari conversion ZIP, matching review-source ZIP, `SHA256SUMS`, and separate module ZIPs plus `MODULE-SHA256SUMS`.
 - [ ] Release notes describe product changes, limitations, and platform status without internal collaboration instructions.
 - [ ] README, features, index, architecture, module format, privacy, and acceptance have no obsolete contracts; distinguish Unreleased from published assets.
 - [ ] Observe timing, permission, and compatibility failures during rollout; retain the previous safe version and data-compatibility path.

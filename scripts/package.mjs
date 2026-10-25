@@ -3,6 +3,7 @@ import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
+import { supportedTargets } from "./browser-targets.mjs";
 
 const root = process.cwd();
 /** @type {unknown} */
@@ -35,7 +36,7 @@ const checksums = [];
 /** @type {string[]} */
 const moduleChecksums = [];
 
-for (const target of ["chromium", "firefox", "safari"]) {
+for (const target of supportedTargets) {
   await assertStoreCandidate(target, path.join(root, "dist", target));
   await archiveDirectory(
     path.join(root, "dist", target),
@@ -108,7 +109,8 @@ async function packageReviewSource() {
       "scripts",
       "docs",
       "tests",
-      "optional-modules"
+      "optional-modules",
+      "deprecated"
     ];
     const files = [
       "package.json",
@@ -126,7 +128,10 @@ async function packageReviewSource() {
       "CHANGELOG.md"
     ];
     for (const entry of [...directories, ...files]) {
-      await cp(path.join(root, entry), path.join(staging, entry), { recursive: true });
+      await cp(path.join(root, entry), path.join(staging, entry), {
+        recursive: true,
+        filter: (source) => source !== path.join(root, "deprecated", "firefox", "artifacts")
+      });
     }
     const reviewerInstructions = await readFile(
       path.join(root, "docs", "store", "SOURCE_BUILD.md"),
@@ -196,7 +201,7 @@ async function packageModuleArchive(sourceDir, slug, moduleVersion) {
         "LICENSE and this README are distribution notices, not import inputs.",
         "Verify the source, contents, permissions and release checksum before installation. Static validation does not guarantee safety; website changes may affect behavior.",
         "This unofficial adaptation is for discussion, learning and productivity. It is not endorsed by the website operator. Respect applicable law, website rules and third-party rights.",
-        "Firefox and Safari store builds accept packages without user scripts only.",
+        "Safari store builds accept packages without user scripts only. Firefox support is archived.",
         "Documentation, downloads and disclaimer: https://github.com/446F7269616E/Hourleaf/tree/main/optional-modules",
         "",
         "Provided as is under the MIT license included in LICENSE, subject to liability that cannot lawfully be excluded.",

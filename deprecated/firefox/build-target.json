@@ -1,0 +1,17 @@
+{
+  "status": "deprecated",
+  "archivedOn": "2026-10-25",
+  "target": "firefox",
+  "esbuildTarget": "firefox121",
+  "manifest": "manifests/firefox.json",
+  "formerNpmScript": {
+    "build:firefox": "node scripts/build.mjs firefox"
+  },
+  "formerOutputDirectory": "dist/firefox",
+  "formerPackagePattern": "dist/packages/hourleaf-<version>-firefox.zip",
+  "formerPlaywrightProject": {
+    "name": "firefox-ui",
+    "testMatch": "ui-contract\\.spec\\.ts",
+    "device": "Desktop Firefox"
+  }
+}

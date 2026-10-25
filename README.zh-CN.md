@@ -4,7 +4,7 @@
 
 Hourleaf 是一款在本机运行的网站专注扩展。为网站设置可用时间和使用额度，安排限时访问计划，并查看使用时间统计。无需注册，不收集或上传用户数据。
 
-支持 Chromium、Firefox 与 Safari 构建，界面提供简体中文、英文、系统明暗模式及五套主题色。当前版本为 `1.0.0`，未发布变更见 [更新日志](./CHANGELOG.md)。
+当前专注于 Chrome（Chromium）与 Safari 构建；Firefox 已停用，相关文件保留在[弃用目录](./deprecated/firefox/README.md)。界面提供简体中文、英文、系统明暗模式及五套主题色。当前版本为 `1.0.0`，未发布变更见 [更新日志](./CHANGELOG.md)。
 
 ## 功能
 
@@ -33,7 +33,6 @@ npm run package
 ```
 
 - Chromium：在 `chrome://extensions` 开启开发者模式，加载 `dist/chromium`。
-- Firefox：在 `about:debugging#/runtime/this-firefox` 临时加载 `dist/firefox/manifest.json`；正式安装需使用 AMO 签名版本。
 - Safari：将 `dist/safari` 转换为 Xcode 承载 App，完成签名后安装；App Store 分发另需开发者账户和审核。
 
 发布材料、平台要求及待完成事项见 [商店提交说明](./docs/STORE_SUBMISSION.md)。

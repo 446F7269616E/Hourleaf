@@ -2,7 +2,7 @@
 
 See the [component catalog](../optional-modules/README.md) and [local module specification](./LOCAL_MODULES.md). This file records historical page research, selector boundaries, and safe failure behavior. The 2026-10-20 documentation update did not revalidate live website DOM or repeat the historical checks below. Current behavior requires [manual acceptance](./MANUAL_ACCEPTANCE.md).
 
-Modules are maintained through their manifests, CSS, and user scripts. Current store policy allows user scripts on Chromium only; Firefox and Safari reject entire script-bearing packages, including the current Bilibili and Xiaohongshu editions. Historical Firefox script references below do not describe current store support.
+Modules are maintained through their manifests, CSS, and user scripts. Current store policy allows user scripts on Chromium only; Safari rejects entire script-bearing packages, including the current Bilibili and Xiaohongshu editions. Firefox support is archived in `deprecated/firefox/`; historical Firefox references below do not describe current targets.
 
 ## Selector strategy
 
@@ -16,7 +16,7 @@ Modules are maintained through their manifests, CSS, and user scripts. Current s
 
 Module: `optional-modules/xiaohongshu/`, version 1.0.1.
 
-The script maintains only `data-hourleaf-xhs-page=home|other` on the root. The `home-recommendations` group controls ordinary home cards. This edition requires a script and is Chromium-only. Firefox and Safari store builds reject it rather than importing a partially functioning package.
+The script maintains only `data-hourleaf-xhs-page=home|other` on the root. The `home-recommendations` group controls ordinary home cards. This edition requires a script and is Chromium-only. Safari store builds reject it rather than importing a partially functioning package.
 
 ## X
 
@@ -44,7 +44,7 @@ The original single `hideSelectors` set was split into home recommendations, dyn
 
 ## Reinspection checklist
 
-For selector updates, inspect signed-out and signed-in pages, home and detail views, light/dark themes, 200% zoom, and every supported browser. For script-bearing packages, verify Chromium behavior and Firefox/Safari import rejection. A separately published script-free edition needs its own acceptance record.
+For selector updates, inspect signed-out and signed-in pages, home and detail views, light/dark themes, 200% zoom, and every supported browser. For script-bearing packages, verify Chromium behavior and Safari import rejection. A separately published script-free edition needs its own acceptance record.
 
 Repository tests read actual manifests and references and import them through `parseLocalModuleFiles()` to detect protocol drift. These fixtures do not establish current website compatibility.
 
@@ -80,7 +80,7 @@ Bilibili 1.2.3 changed `focus.user.js` and `related-videos`. Hiding ending cards
 - The script creates the empty, zero-size `#hourleaf-bilibili-related-playback-guard` marker and adds its selector to the related-video group. It temporarily disables native autoplay only while the core hides that marker. Existing CSS therefore supplies normal/plan preferences, group switches, global disable state, and schedules without duplicated timing logic.
 - A local MutationObserver handles late controls, replaced recommendations, and switch-state changes. Added, changed, or removed styles trigger coalesced microtask updates. There is no polling, manual-play blocking, or video playback API use. The guard operates only on standard `/video/` pages with ordinary video cards and no known commercial/course markers; unknown structures fail safely.
 - When filtering stops, the script restores only still-present controls it previously disabled. `pagehide` disconnects observers and restores controls; back-forward-cache `pageshow` rebinds them. Native state persistence after full page unload depends on the site's event queue; restoration after forced browser termination is not guaranteed.
-- This behavior requires the User Scripts API. It was originally described for Chromium/Firefox; current store builds enable it on Chromium only. Firefox/Safari reject the package instead of silently omitting the script.
+- This behavior requires the User Scripts API. It was originally described for Chromium/Firefox; current store builds enable it on Chromium only. Safari rejects the package instead of silently omitting the script.
 
 **Historical result:** script syntax, TypeScript, and release/Debug builds were checked. No unit or browser regression tests ran. Ending countdowns, changes after a countdown has started, schedules, and actual browser behavior remained for manual acceptance.
 

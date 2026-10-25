@@ -1,4 +1,5 @@
 dist
+deprecated/firefox/artifacts
 coverage
 safari
 node_modules

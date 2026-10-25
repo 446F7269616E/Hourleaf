@@ -1,7 +1,7 @@
 # Hourleaf quality and store-compliance baseline
 
 > Status: release gate
-> Source/documentation synchronized: 2026-10-19. Platform acceptance is recorded separately.
+> Source/documentation synchronized: 2026-10-25. Platform acceptance is recorded separately.
 
 <a id="单一用途"></a>
 
@@ -18,17 +18,17 @@ Hourleaf helps users manage website time under their own rules and reduce distra
 
 ## Permission budget
 
-| Capability                    | Permission                    | Boundary                                                                                                                                             |
-| ----------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Local settings and statistics | `storage`                     | No cloud sync or telemetry                                                                                                                           |
-| Current-site toolbar preview  | `activeTab`                   | Read the origin only after a toolbar click; do not retain the page URL                                                                               |
-| Exclude time away             | `idle`, where supported       | Use only active/idle/locked state                                                                                                                    |
-| Tab-group whitelist           | `tabGroups`, Chromium/Firefox | Read metadata and membership; validate session IDs and restore only unique feature matches; fail closed without group/session APIs; absent on Safari |
-| Register authorized sites     | `scripting`                   | Only configured, authorized site scopes                                                                                                              |
-| User-selected sites           | `optional_host_permissions`   | HTTP(S) wildcards are the request ceiling; request exact origins, except explicitly reviewed site families in `shared/site-scope.ts`                 |
-| Local user scripts            | `userScripts`                 | Chromium only, with the browser's user-script setting enabled; absent on Firefox/Safari                                                              |
+| Capability                    | Permission                  | Boundary                                                                                                                                             |
+| ----------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local settings and statistics | `storage`                   | No cloud sync or telemetry                                                                                                                           |
+| Current-site toolbar preview  | `activeTab`                 | Read the origin only after a toolbar click; do not retain the page URL                                                                               |
+| Exclude time away             | `idle`, where supported     | Use only active/idle/locked state                                                                                                                    |
+| Tab-group whitelist           | `tabGroups`, Chromium       | Read metadata and membership; validate session IDs and restore only unique feature matches; fail closed without group/session APIs; absent on Safari |
+| Register authorized sites     | `scripting`                 | Only configured, authorized site scopes                                                                                                              |
+| User-selected sites           | `optional_host_permissions` | HTTP(S) wildcards are the request ceiling; request exact origins, except explicitly reviewed site families in `shared/site-scope.ts`                 |
+| Local user scripts            | `userScripts`               | Chromium only, with the browser's user-script setting enabled; absent on Safari                                                                      |
 
-Persistent `tabs`, `history`, `cookies`, `identity`, `webRequest`, `downloads`, `management`, `nativeMessaging`, `debugger`, and `unlimitedStorage` permissions are outside the budget. New permissions require an implemented need, product disclosure, and a three-platform review; do not reserve permissions for future features.
+Persistent `tabs`, `history`, `cookies`, `identity`, `webRequest`, `downloads`, `management`, `nativeMessaging`, `debugger`, and `unlimitedStorage` permissions are outside the budget. New permissions require an implemented need, product disclosure, and a Chrome/Safari review; do not reserve permissions for future features.
 
 Register content scripts only for configured sites with valid permissions. Rejection or revocation must stop the affected behavior safely, without repeated prompts or broader permission requests.
 
@@ -41,11 +41,11 @@ Register content scripts only for configured sites with valid permissions. Rejec
 - Imports require an explicit local file selection. No URL installation, remote updates, or background downloads.
 - CSS is self-contained. Reject nonempty DNR rules because they cannot preserve the exact-origin boundary.
 - User scripts use the browser User Scripts API in its isolated world, never general script injection.
-- Firefox AMO and Safari store builds reject script-bearing imports in both UI and background and do not register previously stored scripts.
+- Safari store builds reject script-bearing imports in both UI and background and do not register previously stored scripts.
 - `src/modules/local/capabilities.ts` supplies the shared policy for import, runtime, UI, and permission requests. Old storage and backup restoration cannot bypass it.
 - Main product descriptions focus on time management. Complete permission explanations and review notes must disclose optional capabilities and platform restrictions wherever the store requires them.
 
-Official boundaries: [Chrome MV3 remote code](https://developer.chrome.com/docs/extensions/develop/migrate/remote-hosted-code), [Chrome distribution](https://developer.chrome.com/docs/extensions/how-to/distribute), [Firefox signing](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/), [Safari distribution](https://developer.apple.com/documentation/safariservices/distributing-your-safari-web-extension).
+Official boundaries: [Chrome MV3 remote code](https://developer.chrome.com/docs/extensions/develop/migrate/remote-hosted-code), [Chrome distribution](https://developer.chrome.com/docs/extensions/how-to/distribute), [Safari distribution](https://developer.apple.com/documentation/safariservices/distributing-your-safari-web-extension).
 
 <a id="数据最小化"></a>
 
@@ -67,7 +67,6 @@ Official boundaries: [Chrome MV3 remote code](https://developer.chrome.com/docs/
 | Platform | Extension directory | Public distribution                                                                   |
 | -------- | ------------------- | ------------------------------------------------------------------------------------- |
 | Chromium | `dist/chromium`     | Chrome Web Store review; unpacked loading for development                             |
-| Firefox  | `dist/firefox`      | Stable Gecko ID, AMO signature, accurate data declarations                            |
 | Safari   | `dist/safari`       | Xcode host app, appropriate signing, and notarization/review for the selected channel |
 
 Business logic and UI are shared. Manifests contain only supported permissions/APIs. Optional module directories never enter `dist/<platform>`. Unsupported Safari capabilities must degrade explicitly without breaking extension pages.

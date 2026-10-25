@@ -4,7 +4,7 @@ English · [简体中文](./README.zh-CN.md)
 
 Hourleaf is a local browser extension for managing website time. Set availability windows and usage limits, schedule timed visits, and review your usage. No account or data collection.
 
-Builds are available for Chromium, Firefox, and Safari. The interface supports English, Simplified Chinese, system light/dark mode, and five color themes. The current version is `1.0.0`; see the [changelog](./CHANGELOG.md) for changes.
+Active builds target Chrome (Chromium) and Safari. Firefox files are retained in [the deprecated archive](./deprecated/firefox/README.md). The interface supports English, Simplified Chinese, system light/dark mode, and five color themes. The current version is `1.0.0`; see the [changelog](./CHANGELOG.md) for changes.
 
 ## Features
 
@@ -33,7 +33,6 @@ npm run package
 ```
 
 - Chromium: Enable developer mode at `chrome://extensions` and load `dist/chromium`.
-- Firefox: Temporarily load `dist/firefox/manifest.json` at `about:debugging#/runtime/this-firefox`. Permanent installation requires an AMO-signed version.
 - Safari: Convert `dist/safari` to an Xcode container app and sign it before installation. App Store distribution also requires a developer account and review.
 
 See [store submission materials](./docs/STORE_SUBMISSION.md) for platform requirements and remaining steps.

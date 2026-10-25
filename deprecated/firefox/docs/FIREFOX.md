@@ -1,5 +1,7 @@
 # Firefox AMO submission
 
+Archived on 2026-10-25. Historical instructions only; Firefox builds and submissions are no longer active.
+
 Official references checked: 2026-10-19.
 
 <a id="提交文件"></a>
@@ -8,7 +10,7 @@ Official references checked: 2026-10-19.
 
 - Extension: `dist/packages/hourleaf-1.0.0-firefox.zip`.
 - Matching source: `dist/packages/hourleaf-1.0.0-review-source.zip`; root `BUILDING.md` describes reproduction and `BUILD_ENVIRONMENT.json` records the packaging environment.
-- Summary/details: [LISTING.md](./LISTING.md).
+- Summary/details: [LISTING.md](../../../docs/store/LISTING.md).
 - Select MIT, matching the root `LICENSE`.
 - Privacy: [PRIVACY.md](https://github.com/446F7269616E/Hourleaf/blob/main/PRIVACY.md).
 

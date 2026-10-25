@@ -14,12 +14,12 @@ Every import must declare a nonempty author and the exact format identifier `hou
 
 ## Platform capabilities
 
-| Capability                              | Chromium store build                                   | Firefox AMO build                       | Safari App Store build                  |
-| --------------------------------------- | ------------------------------------------------------ | --------------------------------------- | --------------------------------------- |
-| Exact-origin timing and domain policies | Supported                                              | Supported                               | Supported                               |
-| Element hiding and CSS                  | Supported                                              | Supported                               | Supported                               |
-| Local DNR rules                         | Disabled                                               | Disabled                                | Disabled                                |
-| User scripts                            | User Scripts API only; user must enable browser access | Disabled; imported code is not executed | Disabled; imported code is not executed |
+| Capability                              | Chromium store build                                   | Safari App Store build                  |
+| --------------------------------------- | ------------------------------------------------------ | --------------------------------------- |
+| Exact-origin timing and domain policies | Supported                                              | Supported                               |
+| Element hiding and CSS                  | Supported                                              | Supported                               |
+| Local DNR rules                         | Disabled                                               | Disabled                                |
+| User scripts                            | User Scripts API only; user must enable browser access | Disabled; imported code is not executed |
 
 Chromium scripts run in the browser's isolated `USER_SCRIPT` world at `document_idle`, in the top frame only. They receive no access to Hourleaf storage, permissions, tabs, or other extension APIs. Imported text is never executed using `eval`, `Function`, a script element, or `scripting.executeScript({code})`.
 
@@ -147,8 +147,8 @@ Website periods, tab-group allowlists, and independent plans govern access and t
 
 Backup restoration applies preferences only to locally installed modules at the same version. It contains no CSS, scripts, or execution state. Deleted website periods stay invalid rather than becoming all-times filters.
 
-Firefox and Safari store builds reject script-bearing modules in both preview and the background service, and do not execute scripts stored before an upgrade. Authors must provide a separate script-free JSON/CSS edition for these platforms; users should not remove files from a verified package. The shared policy lives in `src/modules/local/capabilities.ts` and is used by the UI, permission entry points, and background.
+Safari store builds reject script-bearing modules in both preview and the background service, and do not execute scripts stored before an upgrade. Authors must provide a separate script-free JSON/CSS edition for Safari; users should not remove files from a verified package. The shared policy lives in `src/modules/local/capabilities.ts` and is used by the UI, permission entry points, and background.
 
-AMO's [User Scripts policy](https://extensionworkshop.com/documentation/publish/add-on-policies/#user-scripts) reserves this API for script managers. Hourleaf's purpose is focus and website time management, so its Firefox store build does not request that permission. Chromium uses the [User Scripts API](https://developer.chrome.com/docs/extensions/reference/api/userScripts) for files explicitly imported by users; review notes must disclose the full capability. Apple packages remain self-contained under [App Review Guidelines 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements).
+Chromium uses the [User Scripts API](https://developer.chrome.com/docs/extensions/reference/api/userScripts) for files explicitly imported by users; review notes must disclose the full capability. Apple packages remain self-contained under [App Review Guidelines 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements).
 
 After an upgrade, the background makes a best-effort attempt to unregister Hourleaf's existing user-script registrations if the old permission remains available; it does not request the permission again. Unregistration stops future injection but cannot undo scripts already executed in a page. Refresh previously open pages after upgrading.
