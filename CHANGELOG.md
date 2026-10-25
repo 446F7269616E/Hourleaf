@@ -6,6 +6,7 @@ All notable changes to Hourleaf will be documented in this file. The format foll
 
 ### Changed
 
+- Focus active builds and releases on Chrome (Chromium) and Safari; archive Firefox manifests, target settings, submission notes, and existing local artifacts under `deprecated/firefox/`.
 - Clarify add-on import files and browser compatibility in both languages, with collapsible requirements, shared disclaimers, and specification/license/contact links. Downloads open the component catalog first.
 - Reset import acknowledgement when files change, ignore stale asynchronous previews, and lock file selection during submission.
 

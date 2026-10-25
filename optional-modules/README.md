@@ -8,13 +8,13 @@ These optional website adaptations are distributed separately from Hourleaf. The
 
 The following files belong to [Hourleaf v1.0.0](https://github.com/446F7269616E/Hourleaf/releases/tag/v1.0.0). Component versions are independent of the extension version. While the release is a draft, the public download links become available only after publication.
 
-| Component   | Version | Files to import        | Supported store builds    | Download                                                                                                       |
-| ----------- | ------- | ---------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Bilibili    | 1.2.5   | JSON, CSS, user script | Chromium                  | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-bilibili-1.2.5.zip)    |
-| Xiaohongshu | 1.0.1   | JSON, user script      | Chromium                  | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-xiaohongshu-1.0.1.zip) |
-| X           | 1.0.1   | JSON                   | Chromium, Firefox, Safari | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-x-1.0.1.zip)           |
-| YouTube     | 1.0.1   | JSON                   | Chromium, Firefox, Safari | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-youtube-1.0.1.zip)     |
-| Baidu Tieba | 1.0.1   | JSON                   | Chromium, Firefox, Safari | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-baidu-tieba-1.0.1.zip) |
+| Component   | Version | Files to import        | Supported store builds | Download                                                                                                       |
+| ----------- | ------- | ---------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Bilibili    | 1.2.5   | JSON, CSS, user script | Chromium               | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-bilibili-1.2.5.zip)    |
+| Xiaohongshu | 1.0.1   | JSON, user script      | Chromium               | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-xiaohongshu-1.0.1.zip) |
+| X           | 1.0.1   | JSON                   | Chromium, Safari       | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-x-1.0.1.zip)           |
+| YouTube     | 1.0.1   | JSON                   | Chromium, Safari       | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-youtube-1.0.1.zip)     |
+| Baidu Tieba | 1.0.1   | JSON                   | Chromium, Safari       | [ZIP](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/hourleaf-module-baidu-tieba-1.0.1.zip) |
 
 Check each archive against [MODULE-SHA256SUMS](https://github.com/446F7269616E/Hourleaf/releases/download/v1.0.0/MODULE-SHA256SUMS) from the same release. The `main` branch may differ from released files. Source files are available in this directory; `npm run build` followed by `npm run package` produces separate archives in `dist/modules/`.
 
@@ -35,7 +35,9 @@ The five component names, descriptions, and filter groups follow Hourleaf's inte
 3. In Hourleaf's **Blocking** page, select the manifest and all referenced files together. Do not select `LICENSE` or `README.md`; they are distribution notices.
 4. Confirm the author, version, website scope, and capabilities, then grant the requested website access and enable the component.
 
-Chromium runs user scripts only through its isolated User Scripts API and requires browser support and user permission. Firefox and Safari store builds reject entire components containing scripts. Bilibili and Xiaohongshu packages cannot be imported unchanged on those platforms; do not remove files from a verified archive to bypass this restriction.
+Firefox builds are archived in [the deprecated directory](../deprecated/firefox/README.md).
+
+Chromium runs user scripts only through its isolated User Scripts API and requires browser support and user permission. Safari store builds reject entire components containing scripts. Bilibili and Xiaohongshu packages cannot be imported unchanged on Safari; do not remove files from a verified archive to bypass this restriction.
 
 ## Controls and schedules
 

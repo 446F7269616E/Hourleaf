@@ -1,6 +1,6 @@
 # Hourleaf architecture and data contracts
 
-Domain contracts were synchronized on 2026-10-14; the dated history records changes through 2026-10-19. The current contracts below take precedence over superseded historical layouts or lifecycle rules. See [features](./FEATURES.md) for product behavior and the [index](./README.md) for implementation entry points.
+Domain contracts were synchronized on 2026-10-25; the dated history records changes through 2026-10-25. The current contracts below take precedence over superseded historical layouts or lifecycle rules. See [features](./FEATURES.md) for product behavior and the [index](./README.md) for implementation entry points.
 
 <a id="目标"></a>
 
@@ -24,7 +24,7 @@ popup / dashboard / plan / options / block / home / end
                                  \/
               storage / permissions / scripting / idle
                                  |
-                 Chromium / Firefox / Safari adapters
+                 Chromium / Safari adapters
 ```
 
 - `src/shared` and `src/core`: domain models, messages, browser ports.
@@ -34,6 +34,12 @@ popup / dashboard / plan / options / block / home / end
 - `optional-modules`: repository-side examples, excluded from store packages and runtime network access.
 - UI uses versioned messages rather than arbitrary storage keys. Browser ports and manifests own platform differences; business logic does not branch on user-agent strings.
 - Branding uses the selected C-series leaf hourglass through `src/ui/brand-mark.ts`; see [icons](./ICONS.md).
+
+## Build and platform scope
+
+Active release targets are Chrome (Chromium) and Safari. `scripts/browser-targets.mjs` is the single registry of supported target IDs and esbuild minimums, consumed by `scripts/build.mjs` and `scripts/package.mjs`. `npm run build` builds both; per-target scripts build one; Debug continues to use Chromium. Unknown or archived targets fail before writing output. CI builds and packages the same registry; the default Playwright project list no longer includes Firefox.
+
+Firefox-specific manifests, target settings, and store/release references live in [`deprecated/firefox/`](../deprecated/firefox/README.md). Existing local Firefox output and old packages are retained under its ignored `artifacts/` directory. That directory is excluded from review-source archives and automated formatting/linting. Archive source records are included in review-source ZIPs for reference but are never read by active build scripts or copied into browser packages. Shared Promise API adapters, legacy platform types, and restrictive import policies remain in place for Safari and compatibility; retained Firefox identifiers do not activate a build target.
 
 <a id="通用网站模型"></a>
 
@@ -60,7 +66,7 @@ Only `.json`, `.css`, and `.user.js` files selected together enter the importer.
 - Generic content scripts apply selectors/CSS; reject CSS external-resource syntax.
 - `content/local-page-rules.ts` owns document/open-shadow-root styles. Respect each module's `shadowRoots`; scan declared hosts and added subtrees, handle late roots through declared events and page-state refresh, and clean removed hosts/disabled rules. Do not reactivate legacy adapters.
 - Chromium scripts run in isolated `USER_SCRIPT`, top frame, at `document_idle`.
-- Firefox AMO/Safari reject script-bearing imports at preview, permission, and background boundaries and do not register stored scripts. `modules/local/capabilities.ts` is the shared policy; unknown platforms fail closed.
+- Safari and retained legacy platform policies reject script-bearing imports at preview, permission, and background boundaries and do not register stored scripts. `modules/local/capabilities.ts` is the shared policy; unknown platforms fail closed.
 - Disable/delete unregisters scripts; delete removes source. Initialization cleans Hourleaf's legacy DNR range. Unregistering cannot undo already-executed page effects; refresh affected pages after upgrading.
 
 Debug shares the builder but inlines current repository modules and test sites at build time. Its separate name, fixed test hosts, marker, and outside-repository output never enter release candidates. Seeds remove only their own obsolete IDs, not unrelated manual imports. See [Debug](./LOCAL_DEBUG_BUILD.md) and [module format](./LOCAL_MODULES.md).
@@ -161,7 +167,7 @@ Every grant rereads real tab membership. If a tab lacks `groupId`, query distinc
 | Ordinary unavailable/budget exhausted/group pause/confirmation | Authorized configured sites in the bound group get unlimited ordinary access without changing quota/runtime      |
 | Window ends or tab leaves                                      | Re-evaluate ordinary rules/confirmation; other groups/ungrouped tabs never inherit access                        |
 
-Chromium/Firefox declare read-only-use `tabGroups`, not broad `tabs`; no group create/move/close operations. Safari shows unavailable state while preserving rules. Whitelists do not inject into unauthorized pages. API references: [Chrome](https://developer.chrome.com/docs/extensions/reference/api/tabGroups), [MDN](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabGroups), [MDN identity caveats](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabGroups/TabGroup).
+Chromium declares read-only-use `tabGroups`, not broad `tabs`; no group create/move/close operations. Safari shows unavailable state while preserving rules. Whitelists do not inject into unauthorized pages. API references: [Chrome](https://developer.chrome.com/docs/extensions/reference/api/tabGroups), [MDN](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabGroups), [MDN identity caveats](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabGroups/TabGroup).
 
 <a id="计划"></a>
 
@@ -349,3 +355,5 @@ The following dates preserve development history. Current sections above incorpo
 - **2026-10-17:** Read real membership for every configured group; notify pause pages without stealing replies; suggest group names without overwriting user edits.
 - **2026-10-18:** Post-commit same-site notices, 30ms recheck coalescing, retained inputs and original grant deadlines.
 - **2026-10-19:** Shared usage projections/charts and dashboard refresh; recovered pause controls; compact fixed three-column layout; separated total digits/units; actual-playing-video default; equal frames/messages/next-period details; About privacy/MIT/contact links. Only compilation/CSS/release/Debug builds were recorded for these rounds; visual and interaction acceptance remains manual.
+
+- **2026-10-25:** Restricted active builds, packaging, and browser acceptance to Chrome/Chromium and Safari. Archived Firefox manifests, target settings, store/release references, and existing local artifacts under `deprecated/firefox/`; retained shared compatibility code.

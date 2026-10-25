@@ -1,6 +1,8 @@
 # Hourleaf manual acceptance
 
-Source synchronized: 2026-10-19. See [features](./FEATURES.md). Every unchecked scenario below remains for a human to execute. Historical dates identify development rounds, not completed acceptance. Apply current contracts rather than removed controls or superseded identity/layout rules.
+Source synchronized: 2026-10-25. See [features](./FEATURES.md). Every unchecked scenario below remains for a human to execute. Historical dates identify development rounds, not completed acceptance. Apply current contracts rather than removed controls or superseded identity/layout rules.
+
+Current development and acceptance cover Chrome (Chromium) and Safari. Firefox is [archived](../deprecated/firefox/README.md); references in dated release notes describe historical builds.
 
 For each candidate record commit, version, browser/OS, build commands, and SHA-256. Use a clean profile and an upgrade profile with v0.4 data. Local automated validation remains compilation/builds only; CI results are separate evidence.
 
@@ -80,7 +82,7 @@ For each candidate record commit, version, browser/OS, build commands, and SHA-2
 - [ ] In both languages, import explains ZIP extraction/file exclusions and standalone metadata; visible platform compatibility matches the picker and rejection behavior. Specification, authoring, license, and rights-contact links open separately. Download and import share the concise disclaimer without implying third-party MIT licensing or guaranteed safety.
 - [ ] Acknowledgement remains disabled until a valid preview. Switching files clears it; fast overlapping selections and closing during a read never display a stale preview. Submission locks file selection and acknowledgement; rejected permissions allow retry without automatically changing the selected files.
 - [ ] Lightweight validation rejects known eval/dynamic/network/privileged API/script-injection/CSS external-resource patterns without claiming complete safety.
-- [ ] Chromium with user scripts disabled gives a clear unavailable state. Firefox/Safari reject script-bearing imports in UI/background, expose no script-permission action, and retain script-free JSON/domain/CSS support. Old scripts are not registered after upgrading; refresh already-open pages to inspect residual executed effects.
+- [ ] Chromium with user scripts disabled gives a clear unavailable state. Safari rejects script-bearing imports in UI/background, exposes no script-permission action, and retains script-free JSON/domain/CSS support. Old scripts are not registered after upgrading; refresh already-open pages to inspect residual executed effects.
 - [ ] Enable/disable/delete reconciles CSS and future script registrations; legacy owned DNR is cleaned. Filter-group changes immediately restore/remove their selectors; new groups default enabled without changing other saved choices.
 - [ ] Each group has description/switch above schedule summary/expandable selection. Desktop two-column/narrow one-column layouts do not stretch neighbors; preserve focus, expanded state, and scroll through saves; failure restores selection.
 - [ ] Show corresponding-site periods only; reviewed Bilibili subdomains may share family periods, unrelated sites cannot. Missing site periods have a useful empty state; stale cross-site references are invalid/removable and never apply.
@@ -131,7 +133,7 @@ For each candidate record commit, version, browser/OS, build commands, and SHA-2
 - [ ] Flow/video-end grants obey original deadline/once-only/charging rules across minute/period/midnight changes. Media end uses the current target/period/grant after recovery.
 - [ ] Concurrent host recovery and iframe confirmation/retry share one recovery; tab changes, repeated focus, worker sleep, navigation, and replaced instances do not lose the latest state or authorize a new page from a stale response.
 - [ ] Grant/unlock success sends relevant same-site notices. Waiting initialization, generated questions, and usage heartbeats cause no continuous redraw/query storm; retain answer inputs/wait deadline. Short bursts coalesce without losing a follow-up check.
-- [ ] Failure offers retry without granting/unlocking again; actions are mutually exclusive. Check real media resume on Debug video and Bilibili targets across Chromium/Firefox/Safari; original target identity is retained.
+- [ ] Failure offers retry without granting/unlocking again; actions are mutually exclusive. Check real media resume on Debug video and Bilibili targets across Chromium/Safari; original target identity is retained.
 
 ## Statistics and layout
 
@@ -170,7 +172,7 @@ For each candidate record commit, version, browser/OS, build commands, and SHA-2
 
 ## Platforms and documents
 
-- [ ] Chromium worker recycling and Firefox event-page recovery retain valid state. AMO lint has no errors and final XPI is signed. Resolve Safari converter warnings and verify denied/one-day/always/revoked permission states on submitted devices.
+- [ ] Chromium worker recycling retains valid state. Resolve Safari converter warnings and verify denied/one-day/always/revoked permission states on submitted devices.
 - [ ] Storage contains no ordinary complete URLs/titles/page text; full workflow produces no telemetry/ad/analytics requests. Privacy disclosure matches local recovery hashes and explicit plan URLs.
 - [ ] Settings -> About has privacy, MIT license, and developer contact links, with bilingual names and keyboard access. Public GitHub documents open in separate tabs; rejecting host permissions does not block documents.
 - [ ] English/Chinese README and privacy links resolve publicly. MIT and actual platform capabilities agree across README/privacy/store metadata/candidate notices. Screenshots and final signed candidates are reviewed separately.

@@ -1,6 +1,6 @@
 # Hourleaf store submissions
 
-Prepared: 2026-10-19. Current version: 1.0.0. Store dashboards determine publication status; generated artifacts do not imply review, signing, or availability.
+Platform scope updated: 2026-10-25. Current version: 1.0.0. Store dashboards determine publication status; generated artifacts do not imply review, signing, or availability.
 
 <a id="材料目录"></a>
 
@@ -10,12 +10,13 @@ Prepared: 2026-10-19. Current version: 1.0.0. Store dashboards determine publica
 | ------------------------------------------ | ---------------------------------------------- |
 | English/Chinese product descriptions       | [LISTING.md](./store/LISTING.md)               |
 | Chrome metadata, permissions, review notes | [CHROME.md](./store/CHROME.md)                 |
-| Firefox metadata, source, signing          | [FIREFOX.md](./store/FIREFOX.md)               |
 | Safari host app, privacy, signing          | [SAFARI.md](./store/SAFARI.md)                 |
 | Reproducible source instructions           | [SOURCE_BUILD.md](./store/SOURCE_BUILD.md)     |
 | Release gates                              | [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) |
 
 <a id="构建与打包"></a>
+
+Firefox submission files are retained in [the deprecated archive](../deprecated/firefox/README.md) and are outside current release requirements.
 
 ## Build and package
 
@@ -31,7 +32,6 @@ npm run package
 | Artifact                                         | Purpose                                                                              |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------ |
 | `dist/packages/hourleaf-1.0.0-chromium.zip`      | Chrome Web Store upload                                                              |
-| `dist/packages/hourleaf-1.0.0-firefox.zip`       | AMO upload; AMO supplies the signed XPI                                              |
 | `dist/packages/hourleaf-1.0.0-safari.zip`        | Safari converter input, not an App Store upload                                      |
 | `dist/packages/hourleaf-1.0.0-review-source.zip` | Matching source, MIT license, bilingual README/privacy, lockfile, build instructions |
 | `dist/packages/SHA256SUMS`                       | Checksums of the files above                                                         |
@@ -57,7 +57,7 @@ Verify default-branch links are public without sign-in. The publisher supplies s
 - Create listings through developer accounts and complete identity/contact verification.
 - Capture final-candidate screenshots and review authorized imagery/icons/store previews.
 - Manually accept the target browsers, devices, and OS versions.
-- Complete Firefox validation/signing; supply real Apple identifiers/team/signatures, archive, and upload.
+- Supply real Apple identifiers/team/signatures, archive, and upload.
 - Complete store data, permissions, age/content, region, and encryption questionnaires; verify final preview and submit for review.
 
 Main introductions describe the focus product. Permission fields, full behavior disclosures, and review notes must still disclose every optional capability wherever required; separate documentation cannot conceal required information.

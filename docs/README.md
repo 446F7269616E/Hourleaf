@@ -1,6 +1,6 @@
 # Hourleaf documentation
 
-Contracts synchronized with source: 2026-10-19. Use this index to locate the affected module before editing. Update the feature description, development contract, and manual acceptance items when behavior changes.
+Contracts synchronized with source: 2026-10-25. Use this index to locate the affected module before editing. Update the feature description, development contract, and manual acceptance items when behavior changes.
 
 <a id="产品与使用"></a>
 
@@ -39,7 +39,8 @@ Message validation lives in `shared/messages.ts`; coordination and serialized st
 ## Development and delivery
 
 - [Contributing](../CONTRIBUTING.md) · [Local Debug build](./LOCAL_DEBUG_BUILD.md).
-- [Store submissions](./STORE_SUBMISSION.md): Chrome, Firefox, and Safari metadata, assets, review sources, and signing preparation.
+- [Build/platform contract](./ARCHITECTURE.md#build-and-platform-scope): `scripts/browser-targets.mjs` defines Chrome/Chromium and Safari for builds and packages. [Firefox archive](../deprecated/firefox/README.md) retains deprecated source and local artifacts.
+- [Store submissions](./STORE_SUBMISSION.md): Chrome and Safari metadata, assets, review sources, and signing preparation.
 - [Quality baseline](./QUALITY.md) · [Threat model](./THREAT_MODEL.md) · [Release checklist](./RELEASE_CHECKLIST.md).
 - [Manual acceptance](./MANUAL_ACCEPTANCE.md): unchecked items remain unverified.
 - [Site research](./SITE_MODULE_RESEARCH.md): consult when changing site-specific behavior.

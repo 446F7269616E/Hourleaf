@@ -1,6 +1,8 @@
 # Hourleaf Features
 
-Describes the source and `1.0.0` behavior as of October 20, 2026. Platform signing, store publication, and manual acceptance are separate steps.
+Describes the source and `1.0.0` behavior as of October 25, 2026. Platform signing, store publication, and manual acceptance are separate steps.
+
+Current development and acceptance cover Chrome (Chromium) and Safari. Firefox is [archived](../deprecated/firefox/README.md); references in dated release notes describe historical builds.
 
 ## Websites and time windows
 
@@ -48,7 +50,7 @@ During an allowed window, configured and authorized websites in the bound group 
 
 Rules persist, but numeric group IDs are trusted only within the current browser session. After a window closes or the browser restarts, bindings restore only when the saved name, color, and member-URL digest identify one group. Incomplete or ambiguous restoration waits rather than authorizing by name alone. Dissolving a group, removing its last tab, or restoring a backup requires rebinding. Background suspension retains session bindings.
 
-Supported on Chromium and Firefox with group APIs and session storage. Safari and browsers without the required APIs show an unavailable state; ordinary rules and plans remain usable. The feature reads existing groups and membership without changing groups or expanding website permissions.
+Supported on Chromium with group APIs and session storage. Safari and browsers without the required APIs show an unavailable state; ordinary rules and plans remain usable. The feature reads existing groups and membership without changing groups or expanding website permissions.
 
 ## Plan access
 
@@ -72,7 +74,7 @@ The Block page lists installed modules and a download entry on the left, with th
 
 The download entry opens the component catalog first. Import includes collapsible file requirements, visible browser compatibility, documentation links, and a shared concise disclaimer with licensing and rights-contact links. Preview lists the chosen files, author, version, exact websites, and capabilities. Changing files requires a new acknowledgement; confirming requests permissions and imports/enables the reviewed component. Files are read locally and are not uploaded.
 
-Modules support exact-origin policies, selectors, self-contained CSS, and isolated user scripts where the platform permits. Domain policies are independent of content groups. Scripts run only on Chromium through the User Scripts API; Firefox and Safari store candidates reject script imports. Disabling or deleting unregisters future execution. Effects of scripts already executed follow their page lifecycle and may require a refresh.
+Modules support exact-origin policies, selectors, self-contained CSS, and isolated user scripts where the platform permits. Domain policies are independent of content groups. Scripts run only on Chromium through the User Scripts API; Safari store candidates reject script imports. Disabling or deleting unregisters future execution. Effects of scripts already executed follow their page lifecycle and may require a refresh.
 
 Content groups run at all times by default. They can reference multiple existing windows for the corresponding website, using only start/end times as daily filtering windows. Weekdays, enable state, access mode, allowances, and group counts do not affect filtering. Deleted websites or windows invalidate references; when all references are invalid, filtering stops. Unlimited website access still applies these content rules.
 

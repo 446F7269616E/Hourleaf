@@ -37,7 +37,7 @@ jobs:
       - name: Run unit tests
         run: npm run test:coverage
 
-      - name: Build all browser targets
+      - name: Build Chrome and Safari
         run: npm run build
 
       - name: Package store candidates

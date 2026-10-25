@@ -28,11 +28,6 @@ export default defineConfig({
       name: "chromium-ui",
       testMatch: /ui-contract\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] }
-    },
-    {
-      name: "firefox-ui",
-      testMatch: /ui-contract\.spec\.ts/,
-      use: { ...devices["Desktop Firefox"] }
     }
   ]
 });

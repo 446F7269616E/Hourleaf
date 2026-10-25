@@ -48,6 +48,6 @@ Availability depends on your browser. Safari does not support tab-group whitelis
 
 ## Categories and screenshots
 
-Suggested categories: Chrome Productivity, AMO Tabs or Other, App Store Productivity. Verify the available dashboard choices and select the closest match.
+Suggested categories: Chrome Productivity, App Store Productivity. Verify the available dashboard choices and select the closest match.
 
 Show the dashboard, site periods/budgets, independent plans, and settings using demo data. Exclude real accounts/history and unauthorized third-party imagery. Screenshots must match the actual candidate and must not imply unverified platform support.

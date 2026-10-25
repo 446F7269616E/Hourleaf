@@ -108,7 +108,7 @@ Prefer manifests and CSS. Use scripts only when necessary:
 - Do not use `eval`, `Function`, string timers, dynamic import, or WebAssembly code generation.
 - Do not use `fetch`, XHR, WebSocket, EventSource, Beacon, or other networking.
 - Do not access `chrome.*`, `browser.*`, cookies, extension messaging, or injected `<script>` elements.
-- Scripts are Chromium-only. Firefox AMO and Safari App Store builds accept modules without scripts; provide a separate JSON/CSS edition when cross-platform support is needed.
+- Scripts are Chromium-only. Safari App Store builds accept modules without scripts; provide a separate JSON/CSS edition when cross-platform support is needed.
 
 To coordinate script behavior with a filter group and its schedule, a script may create its own empty, zero-size DOM marker and include that selector in the group. Read the marker's computed hidden state without accessing Hourleaf storage or duplicating scheduling logic. Prefer verified native website controls and save page-local state that needs restoration. Discover late controls through inserted subtrees or affected local containers only, and restore state when styles are removed. Clearly describe any reduced functionality in a separately maintained script-free edition.
 
@@ -134,7 +134,7 @@ A PR exceeding these soft budgets must explain why and provide reproducible perf
 - Describe actual behavior without marketing claims or unverified compatibility.
 - Avoid common browser/site shortcuts and protect text input.
 - Preserve focus outlines and keyboard navigation, and do not use color alone for state.
-- Record manual results separately for Chromium, Firefox, and Safari. Script-bearing packages are Chromium-only; never mark an untested platform as passed.
+- Record manual results separately for Chromium and Safari. Script-bearing packages are Chromium-only; never mark an untested platform as passed.
 - Changed selectors should safely do nothing rather than hide essential content.
 
 ## 8. Local verification
@@ -171,7 +171,7 @@ Update manifest metadata, CSS/script headers, and release notes together. `npm r
 - [ ] No DNR, remote resources, account data, network access, or extension privileges are present.
 - [ ] Essential controls, privacy notices, and accessibility entry points remain visible.
 - [ ] Script events protect input and fail safely, without polling or unbounded scans.
-- [ ] Chromium, Firefox, and Safari capability differences are recorded.
+- [ ] Chromium and Safari capability differences are recorded.
 - [ ] Actual module files pass import and packaging checks.
 - [ ] README and release notes state unofficial status and known limitations.
 

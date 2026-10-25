@@ -616,7 +616,7 @@ describe("local module boundary", () => {
     ]);
     const service = new LocalModuleService(new LocalModuleRepository(storage), "safari");
 
-    await expect(service.import(definition)).rejects.toThrow("Safari 商店版");
+    await expect(service.import(definition)).rejects.toThrow("当前浏览器不支持导入或执行用户脚本");
     expect((await service.getSnapshot()).runtime.userScripts).toBe("disabled-by-platform");
     expect((await service.getSnapshot()).store.installations).toEqual({});
 
